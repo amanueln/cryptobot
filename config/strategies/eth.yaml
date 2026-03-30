@@ -2,13 +2,15 @@ pair: "ETH-USD"
 granularity: "ONE_HOUR"
 upper_price: 3500
 lower_price: 1700
-num_grids: 18
+num_grids: 5
 total_investment_usd: 2000
 stop_loss_pct: 0.15
 take_profit_pct: 0.10
 adaptive_range: true
 range_lookback_days: 14
-recalc_interval_hours: 24
+recalc_interval_hours: 48
+min_spacing_pct: 0.05
+max_trades_per_day: 20
 range_only_filter: true
 ema_convergence_pct: 3.0
 ema_fast_period: 50
