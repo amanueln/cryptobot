@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+data/candles.db
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+docs/
+.superpowers/

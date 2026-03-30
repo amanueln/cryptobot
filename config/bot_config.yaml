@@ -1,0 +1,13 @@
+mode: "backtest"
+default_pair: "BTC-USD"
+default_granularity: "ONE_HOUR"
+starting_balance_usd: 3000
+
+simulation:
+  maker_fee: 0.004
+  taker_fee: 0.006
+  slippage: 0.001
+
+data:
+  db_path: "data/candles.db"
+  cache_candles: true

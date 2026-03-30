@@ -1,0 +1,8 @@
+pair: "BTC-USD"
+granularity: "ONE_HOUR"
+upper_price: 90000
+lower_price: 80000
+num_grids: 20
+total_investment_usd: 3000
+stop_loss_pct: 0.15
+take_profit_pct: 0.10

@@ -1,0 +1,6 @@
+coinbase-advanced-py
+pandas
+pandas-ta
+numpy
+pyyaml
+pytest
