@@ -25,6 +25,52 @@ class CoinbaseClient:
     def __init__(self):
         self.session = requests.Session()
 
+    def get_ticker_price(self, pair: str) -> float | None:
+        """Fetch current spot price for a pair. Free, no auth needed."""
+        url = f"{BASE_URL}/{pair}"
+        try:
+            resp = self.session.get(url, timeout=10)
+            resp.raise_for_status()
+            return float(resp.json().get("price", 0))
+        except (requests.RequestException, ValueError, KeyError):
+            return None
+
+    def get_latest_candles(self, pair: str, granularity: str, count: int = 5) -> list[Candle]:
+        """Fetch the most recent N candles. Used for live polling in simulate mode."""
+        interval = GRANULARITY_MAP.get(granularity, timedelta(hours=1))
+        end = datetime.now()
+        start = end - interval * count
+
+        url = f"{BASE_URL}/{pair}/candles"
+        params = {
+            "start": str(int(start.timestamp())),
+            "end": str(int(end.timestamp())),
+            "granularity": granularity,
+        }
+
+        try:
+            resp = self.session.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException:
+            return []
+
+        candles = []
+        for raw in data.get("candles", []):
+            candles.append(Candle(
+                pair=pair,
+                granularity=granularity,
+                timestamp=datetime.fromtimestamp(int(raw["start"])),
+                open=float(raw["open"]),
+                high=float(raw["high"]),
+                low=float(raw["low"]),
+                close=float(raw["close"]),
+                volume=float(raw["volume"]),
+            ))
+
+        candles.sort(key=lambda c: c.timestamp)
+        return candles
+
     def get_candles(
         self,
         pair: str,

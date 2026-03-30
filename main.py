@@ -10,6 +10,7 @@ from data.candle_store import CandleStore
 from strategies.grid_strategy import GridStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from engine.backtester import Backtester
+from engine.bot_engine import BotEngine
 
 
 STRATEGY_MAP = {
@@ -28,11 +29,15 @@ STRATEGY_MAP = {
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="CryptoBot Backtester")
-    parser.add_argument("--backtest", action="store_true", help="Run in backtest mode")
-    parser.add_argument("--strategy", type=str, required=True, help="Strategy name (e.g. grid)")
+    parser = argparse.ArgumentParser(description="CryptoBot — Backtest & Simulate")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--backtest", action="store_true", help="Run in backtest mode")
+    mode.add_argument("--simulate", action="store_true", help="Run in simulation mode (live prices, virtual balance)")
+    parser.add_argument("--strategy", type=str, required=True, help="Strategy name (e.g. grid, doge, mean_reversion)")
     parser.add_argument("--pair", type=str, default=None, help="Trading pair (overrides strategy config)")
     parser.add_argument("--days", type=int, default=90, help="Number of days to backtest")
+    parser.add_argument("--poll", type=int, default=60, help="Poll interval in seconds for simulate mode")
+    parser.add_argument("--warmup", type=int, default=30, help="Days of historical data for strategy warmup")
     return parser.parse_args(argv)
 
 
@@ -175,10 +180,6 @@ def load_candles(pair: str, granularity: str, days: int, db_path: str) -> list[C
 def main() -> None:
     args = parse_args()
 
-    if not args.backtest:
-        print("Only --backtest mode is supported in this MVP.")
-        return
-
     bot_config_path = os.path.join("config", "bot_config.yaml")
     with open(bot_config_path) as f:
         bot_config = yaml.safe_load(f)
@@ -188,7 +189,7 @@ def main() -> None:
         strategy_config = yaml.safe_load(f)
 
     pair = args.pair or strategy_config.get("pair", bot_config.get("default_pair", "BTC-USD"))
-    strategy_config["pair"] = pair  # ensure strategy uses the resolved pair
+    strategy_config["pair"] = pair
     granularity = strategy_config.get("granularity", bot_config.get("default_granularity", "ONE_HOUR"))
     starting_balance = bot_config.get("starting_balance_usd", 3000)
     sim_config = bot_config.get("simulation", {})
@@ -196,6 +197,22 @@ def main() -> None:
 
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
+    if args.simulate:
+        engine = BotEngine(
+            strategy_name=args.strategy,
+            strategy_config=strategy_config,
+            starting_balance=starting_balance,
+            maker_fee=sim_config.get("maker_fee", 0.004),
+            taker_fee=sim_config.get("taker_fee", 0.006),
+            slippage=sim_config.get("slippage", 0.001),
+            db_path=db_path,
+            poll_seconds=args.poll,
+            warmup_days=args.warmup,
+        )
+        engine.run()
+        return
+
+    # Backtest mode
     candles = load_candles(pair, granularity, args.days, db_path)
     if not candles:
         print("No candle data available. Check your connection and try again.")

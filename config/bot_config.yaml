@@ -7,6 +7,8 @@ simulation:
   maker_fee: 0.004
   taker_fee: 0.006
   slippage: 0.001
+  poll_seconds: 60
+  warmup_days: 30
 
 data:
   db_path: "data/candles.db"
