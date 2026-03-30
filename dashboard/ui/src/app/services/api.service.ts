@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 
-const API = 'http://localhost:5001/api';
+const API = '/api';
 
 export interface CandleData {
   time: string;

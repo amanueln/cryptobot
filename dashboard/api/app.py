@@ -14,15 +14,17 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from ta.trend import ADXIndicator, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.momentum import RSIIndicator
 from ta.volume import OnBalanceVolumeIndicator
 
-app = Flask(__name__)
-CORS(app, origins=["http://localhost:4200"])
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "ui", "dist", "ui", "browser")
+
+app = Flask(__name__, static_folder=None)
+CORS(app)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "candles.db")
 
@@ -387,8 +389,23 @@ def api_grid_levels():
     })
 
 
+@app.route("/")
+def serve_index():
+    return send_from_directory(STATIC_DIR, "index.html")
+
+
+@app.route("/<path:path>")
+def serve_frontend(path):
+    """Serve Angular SPA — static files or index.html for client-side routes."""
+    full = os.path.join(STATIC_DIR, path)
+    if os.path.isfile(full):
+        return send_from_directory(STATIC_DIR, path)
+    return send_from_directory(STATIC_DIR, "index.html")
+
+
 if __name__ == "__main__":
-    print(f"\n  CryptoBot Dashboard API")
+    print(f"\n  CryptoBot Dashboard")
     print(f"  DB: {os.path.abspath(DB_PATH)}")
-    print(f"  Serving on http://localhost:5001\n")
+    print(f"  UI: {os.path.abspath(STATIC_DIR)}")
+    print(f"  Open http://localhost:5001\n")
     app.run(host="0.0.0.0", port=5001, debug=True)
