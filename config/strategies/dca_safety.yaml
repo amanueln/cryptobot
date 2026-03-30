@@ -1,0 +1,13 @@
+pairs: ["DOGE-USD", "PEPE-USD", "ETH-USD", "SOL-USD", "AVAX-USD"]
+pair: "ETH-USD"
+granularity: "ONE_HOUR"
+risk_per_deal_pct: 0.35
+volume_scale: 1.5
+step_scale: 1.5
+max_safety_orders: 5
+atr_period: 14
+bounce_lookback_days: 30
+min_take_profit_pct: 0.8
+max_take_profit_pct: 3.0
+max_portfolio_drawdown_pct: 0.10
+cooldown_candles: 5

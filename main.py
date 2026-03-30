@@ -9,6 +9,7 @@ from exchange.coinbase_client import CoinbaseClient
 from data.candle_store import CandleStore
 from strategies.grid_strategy import GridStrategy
 from strategies.mean_reversion import MeanReversionStrategy
+from strategies.dca_safety import DCASafetyStrategy
 from engine.backtester import Backtester
 from engine.bot_engine import BotEngine
 
@@ -25,6 +26,7 @@ STRATEGY_MAP = {
     "btc": GridStrategy,
     "eth": GridStrategy,
     "mean_reversion": MeanReversionStrategy,
+    "dca_safety": DCASafetyStrategy,
 }
 
 

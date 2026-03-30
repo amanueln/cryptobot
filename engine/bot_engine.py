@@ -14,10 +14,12 @@ from data.trade_logger import TradeLogger
 from strategies.base_strategy import BaseStrategy
 from strategies.grid_strategy import GridStrategy
 from strategies.mean_reversion import MeanReversionStrategy
+from strategies.dca_safety import DCASafetyStrategy
 
 STRATEGY_MAP = {
     "grid": GridStrategy,
     "mean_reversion": MeanReversionStrategy,
+    "dca_safety": DCASafetyStrategy,
 }
 
 
