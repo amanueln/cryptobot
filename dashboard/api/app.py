@@ -229,24 +229,38 @@ def _detect_regime_for_pair(conn, pair: str) -> str:
 
     price = closes.iloc[-1]
 
-    if adx is None or pd.isna(adx):
-        return "ranging"  # Not enough data for ADX — default to ranging
+    adx_val = None if (adx is None or pd.isna(adx)) else float(adx)
 
-    # Squeeze: very narrow BB + low ADX
-    if bb_width < 3.0 and adx < 20:
+    # Squeeze: very narrow BB + low ADX (only needs 20 candles)
+    if adx_val is not None and bb_width < 3.0 and adx_val < 20:
         return "squeeze"
 
-    # Volatile: wide BB + volume spike
+    # Volatile: wide BB + volume spike (only needs 20 candles)
     if bb_width > 8.0 and vol_ratio >= 1.5:
         return "volatile"
 
-    # Trending
-    if adx > 25:
-        if ema_fast and ema_slow and ema_fast > ema_slow and price > ema_fast:
-            return "trending_up"
-        if ema_fast and ema_slow and ema_fast < ema_slow and price < ema_fast:
-            return "trending_down"
+    # Trending: use ADX + BB for strength, EMA for direction when available
+    if adx_val is not None and adx_val > 25:
+        # Prefer EMA50/200 for trend direction
+        if ema_fast and ema_slow:
+            if ema_fast > ema_slow and price > ema_fast:
+                return "trending_up"
+            if ema_fast < ema_slow and price < ema_fast:
+                return "trending_down"
+        # Fallback: use EMA50 alone (needs only 50 candles)
+        elif ema_fast:
+            if price > ema_fast:
+                return "trending_up"
+            else:
+                return "trending_down"
+        # Fallback: use BB position for direction
+        elif bb_mid > 0:
+            if price > bb_mid and bb_width > 4.0:
+                return "trending_up"
+            elif price < bb_mid and bb_width > 4.0:
+                return "trending_down"
 
+    # Low ADX or no strong signal
     return "ranging"
 
 

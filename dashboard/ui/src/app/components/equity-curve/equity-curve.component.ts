@@ -416,6 +416,8 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
             border: { color: '#2d3148' },
           },
           y: {
+            min: this.equityValues.length ? Math.min(...this.equityValues) * 0.99 : undefined,
+            max: this.equityValues.length ? Math.max(...this.equityValues) * 1.01 : undefined,
             ticks: {
               color:    '#8b8fa3',
               font:     { size: 10 },
