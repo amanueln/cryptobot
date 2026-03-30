@@ -1,0 +1,14 @@
+adx_period: 14
+adx_trend_threshold: 25
+adx_range_threshold: 20
+bb_period: 20
+bb_std_dev: 2
+bb_squeeze_percentile: 10
+volume_spike_threshold: 1.5
+ema_fast: 50
+ema_slow: 200
+ema_convergence_pct: 3.0
+risk_per_trade_pct: 0.02
+atr_multiplier: 2.0
+atr_period: 14
+regime_lookback_candles: 5
