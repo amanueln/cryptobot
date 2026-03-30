@@ -8,6 +8,7 @@ from exchange.models import Candle, BacktestResult, Trade
 from exchange.coinbase_client import CoinbaseClient
 from data.candle_store import CandleStore
 from strategies.grid_strategy import GridStrategy
+from strategies.mean_reversion import MeanReversionStrategy
 from engine.backtester import Backtester
 
 
@@ -22,6 +23,7 @@ STRATEGY_MAP = {
     "pepe": GridStrategy,
     "btc": GridStrategy,
     "eth": GridStrategy,
+    "mean_reversion": MeanReversionStrategy,
 }
 
 
