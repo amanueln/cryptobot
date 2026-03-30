@@ -10,6 +10,7 @@ class GridLevel:
     price: float
     holding: bool = False
     crypto_amount: float = 0.0
+    entry_price: float = 0.0  # actual fill price when bought
 
 
 class EMACalculator:
@@ -181,27 +182,57 @@ class GridStrategy(BaseStrategy):
         if new_lower == self.lower_price and new_upper == self.upper_price:
             return []
 
-        # Liquidate positions outside new range
+        # Handle positions outside new range:
+        # - Force-liquidate only if >10% below entry (stop-loss territory)
+        # - Otherwise hold and set limit sell at breakeven or nearest grid level above entry
         liquidation_signals: list[Signal] = []
+        new_spacing = (new_upper - new_lower) / (self.num_grids - 1) if self.num_grids > 1 else 0
         for level in self.grid_levels:
             if level.holding and level.crypto_amount > 0:
                 if level.price < new_lower or level.price > new_upper:
-                    liquidation_signals.append(Signal(
-                        action="sell",
-                        pair=self.pair,
-                        price=candle.close,
-                        order_type="market",
-                        amount_crypto=level.crypto_amount,
-                        reason=f"adaptive liquidation: level {level.price:.2f} outside [{new_lower:.2f}, {new_upper:.2f}]",
-                    ))
-                    level.holding = False
-                    level.crypto_amount = 0.0
+                    entry = level.entry_price if level.entry_price > 0 else level.price
+                    loss_pct = (candle.close - entry) / entry if entry > 0 else 0
 
-        # Snapshot in-range holdings before rebuilding
-        old_holdings: dict[float, tuple[bool, float]] = {}
+                    if loss_pct < -0.10:
+                        # More than 10% below entry — force liquidate
+                        liquidation_signals.append(Signal(
+                            action="sell",
+                            pair=self.pair,
+                            price=candle.close,
+                            order_type="market",
+                            amount_crypto=level.crypto_amount,
+                            reason=f"adaptive stop-loss: {loss_pct*100:.1f}% below entry {entry:.4f}",
+                        ))
+                        level.holding = False
+                        level.crypto_amount = 0.0
+                    else:
+                        # Hold position — find nearest new grid level above entry for limit sell
+                        sell_target = entry  # breakeven floor
+                        if new_spacing > 0:
+                            for i in range(self.num_grids):
+                                grid_price = new_lower + i * new_spacing
+                                if grid_price >= entry:
+                                    sell_target = grid_price
+                                    break
+                            else:
+                                sell_target = new_upper  # all levels below entry, sell at top
+
+                        liquidation_signals.append(Signal(
+                            action="sell",
+                            pair=self.pair,
+                            price=candle.close,
+                            order_type="limit",
+                            amount_crypto=level.crypto_amount,
+                            limit_price=sell_target,
+                            reason=f"adaptive hold: limit sell at {sell_target:.4f} (entry {entry:.4f})",
+                        ))
+                        # Keep holding — don't clear; position transfers to new grid
+
+        # Snapshot in-range holdings before rebuilding (include entry_price)
+        old_holdings: dict[float, tuple[bool, float, float]] = {}
         for level in self.grid_levels:
             if level.holding:
-                old_holdings[level.price] = (True, level.crypto_amount)
+                old_holdings[level.price] = (True, level.crypto_amount, level.entry_price)
 
         # Rebuild grid with new boundaries
         self.lower_price = new_lower
@@ -217,24 +248,46 @@ class GridStrategy(BaseStrategy):
         tolerance = max(self.grid_spacing * 0.1, 0.01)
         mapped: set[float] = set()
         for new_level in self.grid_levels:
-            for old_price, (holding, amount) in old_holdings.items():
+            for old_price, (holding, amount, entry) in old_holdings.items():
                 if old_price not in mapped and abs(new_level.price - old_price) <= tolerance:
                     new_level.holding = holding
                     new_level.crypto_amount = amount
+                    new_level.entry_price = entry
                     mapped.add(old_price)
                     break
 
-        # Liquidate old positions that couldn't map to any new level
-        for old_price, (holding, amount) in old_holdings.items():
+        # Unmapped positions: hold with limit sell instead of market dumping
+        for old_price, (holding, amount, entry) in old_holdings.items():
             if old_price not in mapped and amount > 0:
-                liquidation_signals.append(Signal(
-                    action="sell",
-                    pair=self.pair,
-                    price=candle.close,
-                    order_type="market",
-                    amount_crypto=amount,
-                    reason=f"adaptive liquidation: unmapped level {old_price:.2f}",
-                ))
+                entry = entry if entry > 0 else old_price
+                loss_pct = (candle.close - entry) / entry if entry > 0 else 0
+
+                if loss_pct < -0.10:
+                    liquidation_signals.append(Signal(
+                        action="sell",
+                        pair=self.pair,
+                        price=candle.close,
+                        order_type="market",
+                        amount_crypto=amount,
+                        reason=f"adaptive stop-loss: unmapped {old_price:.4f}, {loss_pct*100:.1f}% below entry",
+                    ))
+                else:
+                    # Place limit sell at breakeven or nearest grid above entry
+                    sell_target = entry
+                    if self.grid_spacing > 0:
+                        for gl in self.grid_levels:
+                            if gl.price >= entry:
+                                sell_target = gl.price
+                                break
+                        else:
+                            sell_target = self.upper_price
+
+                    # Park the position on the nearest new grid level
+                    best_level = min(self.grid_levels, key=lambda gl: abs(gl.price - old_price))
+                    if not best_level.holding:
+                        best_level.holding = True
+                        best_level.crypto_amount = amount
+                        best_level.entry_price = entry
 
         return liquidation_signals
 
@@ -292,6 +345,7 @@ class GridStrategy(BaseStrategy):
                     ))
                     level.holding = True
                     level.crypto_amount = crypto_amount
+                    level.entry_price = level.price
 
         # Sell detection: upward crossings
         # During range-only divergence or trade cap, grid sells are paused

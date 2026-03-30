@@ -79,7 +79,7 @@ class RegimeDetector:
         self._candles_processed += 1
 
         if self._candles_processed < self._min_candles:
-            return MarketRegime.UNKNOWN
+            return MarketRegime.RANGING  # Default to ranging during warmup
 
         self._update_indicators()
         raw_regime = self._classify_regime()

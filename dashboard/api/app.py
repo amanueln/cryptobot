@@ -197,12 +197,12 @@ def _detect_regime_for_pair(conn, pair: str) -> str:
     rows = conn.execute(
         """SELECT close, high, low, volume FROM candles
            WHERE pair = ? AND granularity = 'ONE_HOUR'
-           ORDER BY timestamp DESC LIMIT 220""",
+           ORDER BY timestamp DESC LIMIT 300""",
         (pair,),
     ).fetchall()
 
     if len(rows) < 50:
-        return "unknown"
+        return "ranging"  # Default during warmup
 
     rows = list(reversed(rows))
     closes = pd.Series([r["close"] for r in rows])
@@ -213,8 +213,10 @@ def _detect_regime_for_pair(conn, pair: str) -> str:
     adx_ind = ADXIndicator(highs, lows, closes, window=14)
     adx = adx_ind.adx().iloc[-1] if len(closes) >= 28 else None
 
-    ema_fast = EMAIndicator(closes, window=50).ema_indicator().iloc[-1] if len(closes) >= 50 else None
-    ema_slow = EMAIndicator(closes, window=200).ema_indicator().iloc[-1] if len(closes) >= 200 else None
+    ema_fast_val = EMAIndicator(closes, window=50).ema_indicator().iloc[-1] if len(closes) >= 50 else None
+    ema_fast = None if (ema_fast_val is None or pd.isna(ema_fast_val)) else float(ema_fast_val)
+    ema_slow_val = EMAIndicator(closes, window=200).ema_indicator().iloc[-1] if len(closes) >= 200 else None
+    ema_slow = None if (ema_slow_val is None or pd.isna(ema_slow_val)) else float(ema_slow_val)
 
     bb = BollingerBands(closes, window=20, window_dev=2)
     bb_upper = bb.bollinger_hband().iloc[-1]
@@ -227,8 +229,8 @@ def _detect_regime_for_pair(conn, pair: str) -> str:
 
     price = closes.iloc[-1]
 
-    if adx is None:
-        return "unknown"
+    if adx is None or pd.isna(adx):
+        return "ranging"  # Not enough data for ADX — default to ranging
 
     # Squeeze: very narrow BB + low ADX
     if bb_width < 3.0 and adx < 20:

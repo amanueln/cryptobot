@@ -89,11 +89,12 @@ def test_detector_init():
     assert d.ema_slow_period == 200
 
 
-def test_unknown_during_warmup():
+def test_ranging_during_warmup():
+    """During warmup (not enough candles for EMA200), default to RANGING."""
     d = RegimeDetector(DETECTOR_CONFIG)
     for i in range(50):
         regime = d.update(make_candle(close=3000, hour=i))
-    assert regime == MarketRegime.UNKNOWN
+    assert regime == MarketRegime.RANGING
 
 
 def test_indicators_populated_after_warmup():
