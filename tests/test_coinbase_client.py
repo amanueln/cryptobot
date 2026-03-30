@@ -2,7 +2,15 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 
 
-def test_get_candles_calls_sdk():
+def _mock_response(json_data, status_code=200):
+    mock = MagicMock()
+    mock.json.return_value = json_data
+    mock.raise_for_status.return_value = None
+    mock.status_code = status_code
+    return mock
+
+
+def test_get_candles_calls_api():
     from exchange.coinbase_client import CoinbaseClient
 
     mock_candle = {
@@ -14,9 +22,9 @@ def test_get_candles_calls_sdk():
         "volume": "123.45",
     }
 
-    with patch("exchange.coinbase_client.RESTClient") as MockClient:
-        instance = MockClient.return_value
-        instance.get_candles.return_value = {"candles": [mock_candle]}
+    with patch("exchange.coinbase_client.requests.Session") as MockSession:
+        instance = MockSession.return_value
+        instance.get.return_value = _mock_response({"candles": [mock_candle]})
 
         client = CoinbaseClient()
         result = client.get_candles(
@@ -50,26 +58,26 @@ def test_get_candles_pagination():
         for i in range(300)
     ]
 
-    with patch("exchange.coinbase_client.RESTClient") as MockClient:
-        instance = MockClient.return_value
-        instance.get_candles.side_effect = [
-            {"candles": mock_candles_batch},
-            {"candles": mock_candles_batch[:100]},
+    with patch("exchange.coinbase_client.requests.Session") as MockSession:
+        instance = MockSession.return_value
+        instance.get.side_effect = [
+            _mock_response({"candles": mock_candles_batch}),
+            _mock_response({"candles": mock_candles_batch[:100]}),
         ]
 
         client = CoinbaseClient()
         result = client.get_candles("BTC-USD", "ONE_HOUR", start, end)
 
-        assert instance.get_candles.call_count == 2
+        assert instance.get.call_count == 2
         assert len(result) == 400
 
 
 def test_get_candles_empty_response():
     from exchange.coinbase_client import CoinbaseClient
 
-    with patch("exchange.coinbase_client.RESTClient") as MockClient:
-        instance = MockClient.return_value
-        instance.get_candles.return_value = {"candles": []}
+    with patch("exchange.coinbase_client.requests.Session") as MockSession:
+        instance = MockSession.return_value
+        instance.get.return_value = _mock_response({"candles": []})
 
         client = CoinbaseClient()
         result = client.get_candles(

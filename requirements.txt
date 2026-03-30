@@ -1,6 +1,6 @@
 coinbase-advanced-py
 pandas
-pandas-ta
+ta
 numpy
 pyyaml
 pytest

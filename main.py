@@ -13,6 +13,15 @@ from engine.backtester import Backtester
 
 STRATEGY_MAP = {
     "grid": GridStrategy,
+    "sol": GridStrategy,
+    "avax": GridStrategy,
+    "doge": GridStrategy,
+    "ada": GridStrategy,
+    "link": GridStrategy,
+    "dot": GridStrategy,
+    "pepe": GridStrategy,
+    "btc": GridStrategy,
+    "eth": GridStrategy,
 }
 
 
@@ -20,7 +29,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CryptoBot Backtester")
     parser.add_argument("--backtest", action="store_true", help="Run in backtest mode")
     parser.add_argument("--strategy", type=str, required=True, help="Strategy name (e.g. grid)")
-    parser.add_argument("--pair", type=str, default="BTC-USD", help="Trading pair")
+    parser.add_argument("--pair", type=str, default=None, help="Trading pair (overrides strategy config)")
     parser.add_argument("--days", type=int, default=90, help="Number of days to backtest")
     return parser.parse_args(argv)
 
@@ -140,7 +149,12 @@ def load_candles(pair: str, granularity: str, days: int, db_path: str) -> list[C
     store = CandleStore(db_path)
     cached = store.get_candles(pair, granularity, start, end)
 
-    if cached:
+    # Estimate expected candle count for this window
+    granularity_hours = {"ONE_HOUR": 1, "TWO_HOUR": 2, "SIX_HOUR": 6, "ONE_DAY": 24}
+    hours_per_candle = granularity_hours.get(granularity, 1)
+    expected = int(days * 24 / hours_per_candle * 0.9)  # 90% threshold
+
+    if cached and len(cached) >= expected:
         return cached
 
     print(f"Fetching {days} days of {granularity} candles for {pair} from Coinbase...")
@@ -151,7 +165,9 @@ def load_candles(pair: str, granularity: str, days: int, db_path: str) -> list[C
         store.save_candles(pair, granularity, candles)
         print(f"Cached {len(candles)} candles to {db_path}")
 
-    return candles
+    # Merge fetched with any existing cached data
+    all_candles = store.get_candles(pair, granularity, start, end)
+    return all_candles if all_candles else candles
 
 
 def main() -> None:
@@ -169,7 +185,8 @@ def main() -> None:
     with open(strategy_config_path) as f:
         strategy_config = yaml.safe_load(f)
 
-    pair = args.pair
+    pair = args.pair or strategy_config.get("pair", bot_config.get("default_pair", "BTC-USD"))
+    strategy_config["pair"] = pair  # ensure strategy uses the resolved pair
     granularity = strategy_config.get("granularity", bot_config.get("default_granularity", "ONE_HOUR"))
     starting_balance = bot_config.get("starting_balance_usd", 3000)
     sim_config = bot_config.get("simulation", {})

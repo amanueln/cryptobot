@@ -1,0 +1,15 @@
+pair: "PEPE-USD"
+granularity: "ONE_HOUR"
+upper_price: 0.000007
+lower_price: 0.000003
+num_grids: 16
+total_investment_usd: 500
+stop_loss_pct: 0.20
+take_profit_pct: 0.15
+adaptive_range: true
+range_lookback_days: 14
+recalc_interval_hours: 24
+range_only_filter: true
+ema_convergence_pct: 3.0
+ema_fast_period: 50
+ema_slow_period: 200

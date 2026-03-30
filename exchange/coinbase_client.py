@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from coinbase.rest import RESTClient
+import requests
 
 from exchange.models import Candle
 
@@ -15,12 +15,15 @@ GRANULARITY_MAP = {
     "ONE_DAY": timedelta(days=1),
 }
 
+# Coinbase Advanced Trade API public endpoint
+BASE_URL = "https://api.coinbase.com/api/v3/brokerage/market/products"
+
 MAX_CANDLES_PER_REQUEST = 300
 
 
 class CoinbaseClient:
     def __init__(self):
-        self.client = RESTClient()
+        self.session = requests.Session()
 
     def get_candles(
         self,
@@ -37,14 +40,19 @@ class CoinbaseClient:
 
         while chunk_start < end:
             chunk_end = min(chunk_start + chunk_duration, end)
-            response = self.client.get_candles(
-                product_id=pair,
-                start=str(int(chunk_start.timestamp())),
-                end=str(int(chunk_end.timestamp())),
-                granularity=granularity,
-            )
 
-            raw_candles = response.get("candles", [])
+            url = f"{BASE_URL}/{pair}/candles"
+            params = {
+                "start": str(int(chunk_start.timestamp())),
+                "end": str(int(chunk_end.timestamp())),
+                "granularity": granularity,
+            }
+
+            resp = self.session.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+
+            raw_candles = data.get("candles", [])
             if not raw_candles:
                 break
 
