@@ -110,20 +110,27 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
 
         <div class="stat-divider" *ngIf="status()"></div>
 
-        <button
-          class="update-btn"
-          [class.checking]="updateChecking()"
-          [disabled]="updateChecking()"
-          (click)="checkForUpdates()"
-          [title]="updateStatus()"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span>{{ updateChecking() ? 'Checking...' : 'Update' }}</span>
-        </button>
+        <div class="update-wrapper">
+          <button
+            class="update-btn"
+            [class.checking]="updateChecking()"
+            [disabled]="updateChecking()"
+            (click)="checkForUpdates()"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>{{ updateChecking() ? 'Checking...' : 'Update' }}</span>
+          </button>
+          <span
+            *ngIf="updateResultVisible()"
+            class="update-result"
+            [class.success]="updateSuccess()"
+            [class.error]="!updateSuccess()"
+          >{{ updateStatus() }}</span>
+        </div>
 
         <div class="stat-divider"></div>
 
@@ -401,6 +408,33 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
       color: #a78bfa;
       border-color: #a78bfa;
     }
+
+    .update-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .update-result {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .update-result.success {
+      color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+    }
+
+    .update-result.error {
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+    }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   `],
 })
 export class StatsBarComponent implements OnInit {
@@ -412,7 +446,10 @@ export class StatsBarComponent implements OnInit {
   readonly positions = signal<PositionData[]>([]);
   readonly pnlAttrib = signal<PnlAttribution | null>(null);
   readonly updateChecking = signal(false);
-  readonly updateStatus = signal('Click to check for updates');
+  readonly updateStatus = signal('');
+  readonly updateResultVisible = signal(false);
+  readonly updateSuccess = signal(true);
+  private _updateTimeout: any;
 
   readonly activePairsCount = computed(() => {
     const s = this.status();
@@ -434,15 +471,22 @@ export class StatsBarComponent implements OnInit {
 
   checkForUpdates(): void {
     this.updateChecking.set(true);
-    this.updateStatus.set('Checking for updates...');
+    this.updateResultVisible.set(false);
+    clearTimeout(this._updateTimeout);
     this.api.triggerUpdate().subscribe({
       next: (res) => {
         this.updateChecking.set(false);
-        this.updateStatus.set(res.update_status ?? res.output);
+        this.updateStatus.set(res.update_status ?? res.output ?? 'Done');
+        this.updateSuccess.set(res.status === 'ok');
+        this.updateResultVisible.set(true);
+        this._updateTimeout = setTimeout(() => this.updateResultVisible.set(false), 8000);
       },
-      error: (err) => {
+      error: () => {
         this.updateChecking.set(false);
-        this.updateStatus.set('Update check failed');
+        this.updateStatus.set('Update failed');
+        this.updateSuccess.set(false);
+        this.updateResultVisible.set(true);
+        this._updateTimeout = setTimeout(() => this.updateResultVisible.set(false), 8000);
       },
     });
   }
