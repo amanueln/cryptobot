@@ -50,6 +50,8 @@ export interface PairInfo {
   last_candle: string | null;
   trade_count: number;
   regime: string;
+  grid_held: number;
+  grid_total: number;
 }
 
 export interface StatusData {

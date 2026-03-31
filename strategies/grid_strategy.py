@@ -94,6 +94,10 @@ class GridStrategy(BaseStrategy):
         self._vol_ml_override: bool = False  # True when ML has actively set the multiplier
         self._vol_regime: str = "unknown"
 
+        # Indicator snapshot (injected by orchestrator for trade annotations)
+        self._last_adx: float = 0.0
+        self._last_rsi: float = 0.0
+
         # Event logging
         self._prev_atr_mult: float = 1.0
         self._trade_logger = None

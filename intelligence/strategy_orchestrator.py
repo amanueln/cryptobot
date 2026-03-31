@@ -89,6 +89,11 @@ class StrategyOrchestrator(BaseStrategy):
         self._prev_regime = self._current_regime
         self._current_regime = self.detector.update(candle)
 
+        # Inject ADX/RSI snapshot into grid strategy for trade annotations
+        if self.detector and self.grid_strategy:
+            self.grid_strategy._last_adx = self.detector._last_adx or 0.0
+            self.grid_strategy._last_rsi = self.detector._last_rsi or 0.0
+
         # Log regime changes
         if self._current_regime != self._prev_regime and self._prev_regime != MarketRegime.UNKNOWN:
             self._regime_changes.append({
@@ -165,6 +170,10 @@ class StrategyOrchestrator(BaseStrategy):
                 amount_crypto=(signal.amount_crypto * multiplier) if signal.amount_crypto else None,
                 limit_price=signal.limit_price,
                 reason=f"[{self._current_regime.value}] {signal.reason}",
+                regime=signal.regime,
+                adx=signal.adx,
+                rsi=signal.rsi,
+                atr_multiplier=signal.atr_multiplier,
             )
             scaled.append(new_signal)
         return scaled

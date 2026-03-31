@@ -85,6 +85,8 @@ const STARTING_BALANCE = 3000;
               [isDimmed]="expandedPair() !== null && expandedPair() !== p.pair"
               [positions]="positions()"
               [volPrediction]="volForPair(p.pair)"
+              [gridHeld]="p.grid_held"
+              [gridTotal]="p.grid_total"
               (cardClicked)="toggleExpandedPair($event)"
             />
           }

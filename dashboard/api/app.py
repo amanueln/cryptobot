@@ -311,12 +311,24 @@ def api_status():
             (pair,),
         ).fetchone()["cnt"]
 
+        # Grid fill: net held levels = buys - sells
+        buys = conn.execute(
+            "SELECT COUNT(*) as c FROM sim_trades WHERE pair = ? AND side = 'buy'",
+            (pair,),
+        ).fetchone()["c"]
+        sells = conn.execute(
+            "SELECT COUNT(*) as c FROM sim_trades WHERE pair = ? AND side = 'sell'",
+            (pair,),
+        ).fetchone()["c"]
+
         pairs_info.append({
             "pair": pair,
             "price": price_row["close"] if price_row else 0,
             "last_candle": price_row["timestamp"] if price_row else None,
             "trade_count": trade_count,
             "regime": _detect_regime_for_pair(conn, pair),
+            "grid_held": max(0, buys - sells),
+            "grid_total": 10,
         })
 
     # Last trade
