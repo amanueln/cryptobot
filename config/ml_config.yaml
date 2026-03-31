@@ -1,5 +1,6 @@
-# ML prediction configuration — FreqAI-inspired regression model
+# ML prediction configuration
 enabled: true
+prediction_mode: "volatility"        # "volatility" (GARCH-LightGBM) or "price" (legacy regression)
 model_type: "lightgbm_regressor"
 
 # Training windows (Fix 8: sliding window)
@@ -54,6 +55,17 @@ hyperopt:
   enabled: false
   n_trials: 50
   timeout_seconds: 300
+
+# --- Volatility prediction (GARCH-LightGBM hybrid) ---
+volatility:
+  use_garch: true
+  har_lags: [1, 6, 12, 24, 168]      # HAR model horizons (hours)
+  forecast_horizon: 12                 # predict realized vol over next N hours
+  include_btc_vol: true                # BTC cross-market volatility spillover
+  retrain_interval_hours: 24           # retrain volatility model every N hours
+  min_training_candles: 200
+  spacing_clamp_min: 0.5               # min spacing multiplier
+  spacing_clamp_max: 2.0               # max spacing multiplier
 
 # LightGBM hyperparameters (Fix 1: regression)
 lgb_params:

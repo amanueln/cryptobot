@@ -24,6 +24,7 @@ from strategies.grid_strategy import GridStrategy
 from intelligence.strategy_orchestrator import StrategyOrchestrator
 from intelligence.pair_selector import PairSelector, load_pair_selector_config
 from intelligence.ml_predictor import MLPredictor, load_ml_config
+from intelligence.volatility_predictor import VolatilityPredictor, VolatilityPrediction
 from strategies.base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,11 @@ class SimRunner:
         # Pending outcome checks: {prediction_id: (pair, predicted_candle_ts, candles_remaining)}
         self._pending_outcomes: dict[int, dict] = {}
 
+        # Volatility predictor (always active when prediction_mode=volatility)
+        self.vol_predictor: VolatilityPredictor | None = None
+        self._latest_vol_predictions: dict[str, VolatilityPrediction] = {}
+        self._last_vol_train: datetime | None = None
+
         # Pair selector for periodic rescans
         self.pair_selector: PairSelector | None = None
         self._last_full_scan: datetime | None = None
@@ -201,6 +207,76 @@ class SimRunner:
             )
             self.trade_logger.log_trade(trade)
 
+    def _train_vol_models(self):
+        """Train volatility models for all active pairs."""
+        if not self.vol_predictor:
+            return
+
+        print("\n  Training volatility models (GARCH-LightGBM)...")
+
+        # Fetch BTC candles for cross-market features
+        btc_candles = None
+        end = datetime.now()
+        start = end - timedelta(days=30)
+        btc_candles_raw = self.candle_store.get_candles("BTC-USD", "ONE_HOUR", start, end)
+        if btc_candles_raw and len(btc_candles_raw) >= 100:
+            btc_candles = btc_candles_raw
+
+        for engine in self.engines:
+            candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+            if not candles or len(candles) < 200:
+                print(f"  {engine.pair:<12} vol skipped (only {len(candles) if candles else 0} candles)")
+                continue
+
+            meta = self.vol_predictor.train(engine.pair, candles, btc_candles)
+            if meta:
+                print(
+                    f"  {engine.pair:<12} vol trained v{meta.version} "
+                    f"(RMSE: {meta.validation_rmse:.4f}  R²: {meta.validation_r2:.3f}  "
+                    f"vol_mean: {meta.vol_mean:.1f}%)"
+                )
+            else:
+                print(f"  {engine.pair:<12} vol training failed")
+
+        self._last_vol_train = datetime.now()
+
+    def _run_vol_predictions(self):
+        """Run volatility predictions for all engines and adjust grid spacing."""
+        if not self.vol_predictor:
+            return
+
+        end = datetime.now()
+        start = end - timedelta(days=7)
+
+        # BTC candles for cross-market feature
+        btc_candles = self.candle_store.get_candles("BTC-USD", "ONE_HOUR", start, end)
+
+        for engine in self.engines:
+            candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+            if not candles or len(candles) < 50:
+                continue
+
+            pred = self.vol_predictor.predict(engine.pair, candles, btc_candles)
+            if pred is None:
+                continue
+
+            self._latest_vol_predictions[engine.pair] = pred
+            self.trade_logger.log_vol_prediction(pred)
+
+            # Apply to grid strategy
+            if hasattr(engine.strategy, 'apply_volatility_adjustment'):
+                engine.strategy.apply_volatility_adjustment(
+                    pred.spacing_multiplier, pred.vol_regime, pred.recommended_num_grids
+                )
+
+            print(
+                f"  [VOL] {engine.pair:<12} "
+                f"pred={pred.predicted_vol_12h:.1f}%  "
+                f"regime={pred.vol_regime:<8} "
+                f"spacing={pred.spacing_multiplier:.2f}x  "
+                f"grids={pred.recommended_num_grids}"
+            )
+
     def _train_ml_models(self):
         """Train ML models for all active pairs using cached candles."""
         if not self.ml_predictor:
@@ -230,9 +306,15 @@ class SimRunner:
         if self.use_ml:
             self._train_ml_models()
 
+        # Train volatility models (always, independent of --ml flag)
+        if self.vol_predictor:
+            self._train_vol_models()
+
         print(f"\n  Live polling every {self.poll_seconds}s")
         if self.use_ml:
             print(f"  ML predictions: ENABLED")
+        if self.vol_predictor:
+            print(f"  Volatility forecasting: ENABLED (GARCH-LightGBM)")
         print(f"  Press Ctrl+C to stop.\n")
 
         try:
@@ -274,6 +356,10 @@ class SimRunner:
         # Check pending ML outcome evaluations
         if self.use_ml:
             self._evaluate_pending_outcomes()
+
+        # Run volatility predictions and adjust grid spacing
+        if self.vol_predictor:
+            self._run_vol_predictions()
 
         # Snapshot combined equity with proper balance/positions breakdown
         total_balance = sum(e.simulator.balance_usd for e in self.engines)
@@ -364,6 +450,14 @@ class SimRunner:
             hours_since_full = (now - self._last_full_scan).total_seconds() / 3600
             if hours_since_full >= 24:
                 self._run_full_rescan()
+
+        # Retrain volatility models periodically
+        if self.vol_predictor and self._last_vol_train:
+            vol_cfg = load_ml_config().get("volatility", {})
+            retrain_hours = vol_cfg.get("retrain_interval_hours", 24)
+            hours_since_vol = (now - self._last_vol_train).total_seconds() / 3600
+            if hours_since_vol >= retrain_hours:
+                self._train_vol_models()
 
         # Retrain ML models every 24 hours
         if self.use_ml and self.ml_predictor and self._last_full_scan:
@@ -639,6 +733,13 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
         ml_config = load_ml_config()
         runner.ml_predictor = MLPredictor(config=ml_config, models_dir="models")
         print(f"\n  ML predictor initialized (regression, expires every {ml_config.get('expiration_hours', 48)}h)")
+
+    # --- Volatility Predictor (always enabled when prediction_mode=volatility) ---
+    ml_config = load_ml_config()
+    if ml_config.get("prediction_mode") == "volatility":
+        vol_cfg = ml_config.get("volatility", {})
+        runner.vol_predictor = VolatilityPredictor(config=vol_cfg)
+        print(f"\n  Volatility predictor initialized (GARCH-LightGBM, horizon={vol_cfg.get('forecast_horizon', 12)}h)")
 
     # Print pair selection explanation
     print(f"\n  {selector.generate_explanation(scan_result)}")

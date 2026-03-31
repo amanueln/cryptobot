@@ -138,6 +138,21 @@ export interface MLModelInfo {
   next_retrain_hours: number;
 }
 
+export interface VolPredictionData {
+  id: number;
+  timestamp: string;
+  pair: string;
+  predicted_vol_12h: number;
+  current_vol_12h: number;
+  vol_30d_avg: number;
+  vol_regime: string;
+  spacing_multiplier: number;
+  recommended_num_grids: number;
+  confidence: number;
+  garch_vol: number;
+  feature_importance: Record<string, number>;
+}
+
 export interface PairScanData {
   id: number;
   timestamp: string;
@@ -311,6 +326,16 @@ export class ApiService {
 
   fetchMLModelInfo() {
     return this.http.get<MLModelInfo[]>(`${API}/ml/model-info`);
+  }
+
+  fetchVolPredictions(pair?: string, limit = 50) {
+    const params: any = { limit: limit.toString() };
+    if (pair) params.pair = pair;
+    return this.http.get<VolPredictionData[]>(`${API}/volatility/predictions`, { params });
+  }
+
+  fetchVolLatest() {
+    return this.http.get<VolPredictionData[]>(`${API}/volatility/latest`);
   }
 
   fetchPairScans(limit = 10) {

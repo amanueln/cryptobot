@@ -66,6 +66,22 @@ class TradeLogger:
                     swapped_in TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vol_predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    predicted_vol_12h REAL NOT NULL,
+                    current_vol_12h REAL NOT NULL,
+                    vol_30d_avg REAL NOT NULL,
+                    vol_regime TEXT NOT NULL,
+                    spacing_multiplier REAL NOT NULL,
+                    recommended_num_grids INTEGER NOT NULL,
+                    confidence REAL NOT NULL,
+                    garch_vol REAL NOT NULL,
+                    feature_importance TEXT
+                )
+            """)
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -188,6 +204,35 @@ class TradeLogger:
                 (outcome, price_change, prediction_id),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def log_vol_prediction(self, prediction) -> int:
+        """Log a volatility prediction."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                """INSERT INTO vol_predictions
+                   (timestamp, pair, predicted_vol_12h, current_vol_12h,
+                    vol_30d_avg, vol_regime, spacing_multiplier,
+                    recommended_num_grids, confidence, garch_vol, feature_importance)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    prediction.timestamp.isoformat(),
+                    prediction.pair,
+                    prediction.predicted_vol_12h,
+                    prediction.current_vol_12h,
+                    prediction.vol_30d_avg,
+                    prediction.vol_regime,
+                    prediction.spacing_multiplier,
+                    prediction.recommended_num_grids,
+                    prediction.confidence,
+                    prediction.garch_vol,
+                    json.dumps(prediction.feature_importance),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
         finally:
             conn.close()
 

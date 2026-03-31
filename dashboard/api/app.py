@@ -826,6 +826,105 @@ def api_ml_model_info():
     return jsonify(models)
 
 
+# ---------- /api/volatility ----------
+
+@app.route("/api/volatility/predictions")
+def api_vol_predictions():
+    """Return recent volatility predictions."""
+    pair = request.args.get("pair")
+    limit = int(request.args.get("limit", 50))
+
+    conn = get_db()
+
+    table_check = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vol_predictions'"
+    ).fetchone()
+    if not table_check:
+        conn.close()
+        return jsonify([])
+
+    if pair:
+        rows = conn.execute(
+            """SELECT id, timestamp, pair, predicted_vol_12h, current_vol_12h,
+                      vol_30d_avg, vol_regime, spacing_multiplier,
+                      recommended_num_grids, confidence, garch_vol, feature_importance
+               FROM vol_predictions WHERE pair = ?
+               ORDER BY id DESC LIMIT ?""",
+            (pair, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT id, timestamp, pair, predicted_vol_12h, current_vol_12h,
+                      vol_30d_avg, vol_regime, spacing_multiplier,
+                      recommended_num_grids, confidence, garch_vol, feature_importance
+               FROM vol_predictions
+               ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    conn.close()
+
+    return jsonify([
+        {
+            "id": r["id"],
+            "timestamp": r["timestamp"],
+            "pair": r["pair"],
+            "predicted_vol_12h": r["predicted_vol_12h"],
+            "current_vol_12h": r["current_vol_12h"],
+            "vol_30d_avg": r["vol_30d_avg"],
+            "vol_regime": r["vol_regime"],
+            "spacing_multiplier": r["spacing_multiplier"],
+            "recommended_num_grids": r["recommended_num_grids"],
+            "confidence": r["confidence"],
+            "garch_vol": r["garch_vol"],
+            "feature_importance": json.loads(r["feature_importance"]) if r["feature_importance"] else {},
+        }
+        for r in rows
+    ])
+
+
+@app.route("/api/volatility/latest")
+def api_vol_latest():
+    """Return the latest volatility prediction per pair."""
+    conn = get_db()
+
+    table_check = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vol_predictions'"
+    ).fetchone()
+    if not table_check:
+        conn.close()
+        return jsonify([])
+
+    pairs = _get_active_pairs(conn)
+    result = []
+    for pair in pairs:
+        row = conn.execute(
+            """SELECT id, timestamp, pair, predicted_vol_12h, current_vol_12h,
+                      vol_30d_avg, vol_regime, spacing_multiplier,
+                      recommended_num_grids, confidence, garch_vol, feature_importance
+               FROM vol_predictions WHERE pair = ?
+               ORDER BY id DESC LIMIT 1""",
+            (pair,),
+        ).fetchone()
+        if row:
+            result.append({
+                "id": row["id"],
+                "timestamp": row["timestamp"],
+                "pair": row["pair"],
+                "predicted_vol_12h": row["predicted_vol_12h"],
+                "current_vol_12h": row["current_vol_12h"],
+                "vol_30d_avg": row["vol_30d_avg"],
+                "vol_regime": row["vol_regime"],
+                "spacing_multiplier": row["spacing_multiplier"],
+                "recommended_num_grids": row["recommended_num_grids"],
+                "confidence": row["confidence"],
+                "garch_vol": row["garch_vol"],
+                "feature_importance": json.loads(row["feature_importance"]) if row["feature_importance"] else {},
+            })
+
+    conn.close()
+    return jsonify(result)
+
+
 # ---------- /api/pair-scans ----------
 
 @app.route("/api/pair-scans")

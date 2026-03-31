@@ -80,6 +80,10 @@ class GridStrategy(BaseStrategy):
         self._trade_timestamps: deque[float] = deque()  # unix timestamps of recent trades
         self._trade_cap_paused: bool = False
 
+        # Volatility-based spacing adjustment
+        self._vol_spacing_multiplier: float = 1.0  # from VolatilityPredictor
+        self._vol_regime: str = "unknown"
+
     def configure(self, config: dict) -> None:
         self.pair = config["pair"]
         self.upper_price = float(config["upper_price"])
@@ -128,6 +132,16 @@ class GridStrategy(BaseStrategy):
         # Daily trade cap
         self.max_trades_per_day = int(config.get("max_trades_per_day", 0))
 
+    def apply_volatility_adjustment(self, spacing_multiplier: float, vol_regime: str,
+                                       recommended_grids: int = 0) -> None:
+        """Apply volatility-based spacing adjustment from VolatilityPredictor.
+
+        Called externally by sim_runner each polling cycle.
+        Adjusts grid spacing: high vol → wider spacing, low vol → tighter spacing.
+        """
+        self._vol_spacing_multiplier = max(0.5, min(2.0, spacing_multiplier))
+        self._vol_regime = vol_regime
+
     def _update_trend_filter(self, close: float) -> None:
         if self.ema_fast is None or self.ema_slow is None:
             return
@@ -167,6 +181,14 @@ class GridStrategy(BaseStrategy):
 
         new_lower = min(c.low for c in self._candle_history)
         new_upper = max(c.high for c in self._candle_history)
+
+        # Apply volatility-based spacing adjustment
+        if self._vol_spacing_multiplier != 1.0:
+            mid = (new_lower + new_upper) / 2
+            half_range = (new_upper - new_lower) / 2
+            adjusted_half = half_range * self._vol_spacing_multiplier
+            new_lower = mid - adjusted_half
+            new_upper = mid + adjusted_half
 
         # Enforce minimum grid spacing floor
         if self.min_spacing_pct > 0 and self.num_grids > 1:
@@ -423,4 +445,7 @@ class GridStrategy(BaseStrategy):
             state["max_trades_per_day"] = self.max_trades_per_day
             state["trades_in_window"] = len(self._trade_timestamps)
             state["trade_cap_paused"] = self._trade_cap_paused
+        if self._vol_spacing_multiplier != 1.0 or self._vol_regime != "unknown":
+            state["vol_spacing_multiplier"] = self._vol_spacing_multiplier
+            state["vol_regime"] = self._vol_regime
         return state
