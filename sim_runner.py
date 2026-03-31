@@ -206,8 +206,11 @@ class SimRunner:
                 engine.process_candles(candles, warmup=True)
                 engine.trade_count = 0
                 engine.candles_fed = 0
+                # Set last_candle_ts to NOW so first live poll only picks up fresh candles
+                engine.last_candle_ts = datetime.now()
                 print(f"  {engine.name:<20} warmed up with {len(candles)} candles (last: {engine.last_candle_ts})")
             else:
+                engine.last_candle_ts = datetime.now()
                 print(f"  {engine.name:<20} WARNING: no warmup data")
 
     def _evaluate_vol_accuracy(self):
