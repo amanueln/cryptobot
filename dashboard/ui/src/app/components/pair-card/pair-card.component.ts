@@ -2,7 +2,7 @@ import {
   Component, input, output, computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { PairInfo, PositionData, VolPredictionData } from '../../services/api.service';
+import { PairInfo, PositionData, VolPredictionData, GridLevelData } from '../../services/api.service';
 
 interface RegimeCfg {
   label: string;
@@ -65,16 +65,16 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
           <span class="sc-value">{{ gridFillText() }}</span>
         </div>
         <div class="stat-cell">
-          <span class="sc-label">ATR mult</span>
-          <span class="sc-value">{{ atrMultText() }}</span>
+          <span class="sc-label">Next buy</span>
+          <span class="sc-value entry-price">{{ nextBuyText() }}</span>
         </div>
         <div class="stat-cell">
           <span class="sc-label">Trades</span>
           <span class="sc-value">{{ pair().trade_count }}</span>
         </div>
         <div class="stat-cell">
-          <span class="sc-label">Vol R²</span>
-          <span class="sc-value">{{ volR2Text() }}</span>
+          <span class="sc-label">Range</span>
+          <span class="sc-value range-value">{{ gridRangeText() }}</span>
         </div>
       </div>
 
@@ -182,6 +182,8 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
 
     .sc-value.positive { color: #4ade80; }
     .sc-value.negative { color: #f87171; }
+    .sc-value.entry-price { color: #fbbf24; }
+    .sc-value.range-value { font-size: 10px; color: #9ca3af; }
 
     /* Progress bar */
     .grid-bar-track {
@@ -206,6 +208,7 @@ export class PairCardComponent {
   readonly volPrediction = input<VolPredictionData | null>(null);
   readonly gridHeld   = input<number>(0);
   readonly gridTotal  = input<number>(10);
+  readonly gridLevels = input<GridLevelData | null>(null);
 
   readonly cardClicked = output<string>();
 
@@ -256,15 +259,25 @@ export class PairCardComponent {
     return '#6b7280';
   });
 
-  readonly atrMultText = computed(() => {
-    const vp = this.volPrediction();
-    if (!vp) return '—';
-    return vp.spacing_multiplier.toFixed(2) + 'x';
+  private formatPrice(p: number): string {
+    if (p >= 1) return '$' + p.toFixed(2);
+    return '$' + p.toPrecision(4);
+  }
+
+  readonly nextBuyText = computed(() => {
+    const gl = this.gridLevels();
+    if (!gl) return '—';
+    const price = this.pair().price;
+    // Find the highest buy level below current price (next trigger)
+    const buyLevels = gl.levels.filter(l => l.type === 'buy').map(l => l.price).sort((a, b) => b - a);
+    const next = buyLevels.find(p => p <= price) ?? buyLevels[buyLevels.length - 1];
+    if (!next) return '—';
+    return this.formatPrice(next);
   });
 
-  readonly volR2Text = computed(() => {
-    const vp = this.volPrediction();
-    if (!vp) return '—';
-    return vp.confidence.toFixed(2);
+  readonly gridRangeText = computed(() => {
+    const gl = this.gridLevels();
+    if (!gl) return '—';
+    return this.formatPrice(gl.lower) + '–' + this.formatPrice(gl.upper);
   });
 }

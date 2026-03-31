@@ -89,6 +89,7 @@ const STARTING_BALANCE = 3000;
               [volPrediction]="volForPair(p.pair)"
               [gridHeld]="p.grid_held"
               [gridTotal]="p.grid_total"
+              [gridLevels]="gridLevels().get(p.pair) ?? null"
               (cardClicked)="toggleExpandedPair($event)"
             />
           }
