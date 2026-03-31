@@ -56,7 +56,7 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
         <div class="stat-divider"></div>
 
         <div class="stat-block">
-          <span class="stat-label">POSITIONS</span>
+          <span class="stat-label">PAIRS</span>
           <span class="stat-value accent">
             {{ status() ? activePairsCount() : '—' }}
           </span>
