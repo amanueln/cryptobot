@@ -76,11 +76,8 @@ def _get_active_pairs(conn) -> list[str]:
     ).fetchall()
     if rows:
         return [r["pair"] for r in rows]
-    # 3. Last resort: candles table
-    rows = conn.execute(
-        "SELECT DISTINCT pair FROM candles ORDER BY pair"
-    ).fetchall()
-    return [r["pair"] for r in rows]
+    # 3. No scans and no trades — bot hasn't started trading yet
+    return []
 
 
 # ---------- /api/candles ----------
