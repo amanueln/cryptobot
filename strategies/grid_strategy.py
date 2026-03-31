@@ -296,6 +296,10 @@ class GridStrategy(BaseStrategy):
                             order_type="market",
                             amount_crypto=level.crypto_amount,
                             reason=f"adaptive stop-loss: {loss_pct*100:.1f}% below entry {entry:.4f}",
+                            regime=getattr(self, '_vol_regime', ''),
+                            adx=getattr(self, '_last_adx', 0.0),
+                            rsi=getattr(self, '_last_rsi', 0.0),
+                            atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                         ))
                         level.holding = False
                         level.crypto_amount = 0.0
@@ -319,6 +323,10 @@ class GridStrategy(BaseStrategy):
                             amount_crypto=level.crypto_amount,
                             limit_price=sell_target,
                             reason=f"adaptive hold: limit sell at {sell_target:.4f} (entry {entry:.4f})",
+                            regime=getattr(self, '_vol_regime', ''),
+                            adx=getattr(self, '_last_adx', 0.0),
+                            rsi=getattr(self, '_last_rsi', 0.0),
+                            atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                         ))
                         # Keep holding — don't clear; position transfers to new grid
 
@@ -364,6 +372,10 @@ class GridStrategy(BaseStrategy):
                         order_type="market",
                         amount_crypto=amount,
                         reason=f"adaptive stop-loss: unmapped {old_price:.4f}, {loss_pct*100:.1f}% below entry",
+                        regime=getattr(self, '_vol_regime', ''),
+                        adx=getattr(self, '_last_adx', 0.0),
+                        rsi=getattr(self, '_last_rsi', 0.0),
+                        atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                     ))
                 else:
                     # Place limit sell at breakeven or nearest grid above entry
@@ -501,6 +513,10 @@ class GridStrategy(BaseStrategy):
                     order_type="market",
                     amount_crypto=level.crypto_amount,
                     reason=reason,
+                    regime=getattr(self, '_vol_regime', ''),
+                    adx=getattr(self, '_last_adx', 0.0),
+                    rsi=getattr(self, '_last_rsi', 0.0),
+                    atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                 ))
                 level.holding = False
                 level.crypto_amount = 0.0
