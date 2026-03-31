@@ -46,7 +46,7 @@ _update_process: multiprocessing.Process | None = None
 # Bot process
 # ---------------------------------------------------------------------------
 
-def run_bot(use_ml: bool = True):
+def run_bot(use_ml: bool = False):
     """Run the sim_runner polling loop."""
     from sim_runner import build_runner
     logger.info("Bot process starting (ML=%s)", use_ml)
@@ -99,8 +99,7 @@ def _handle_sighup(signum, frame):
     if _bot_process and _bot_process.is_alive():
         _bot_process.terminate()
         _bot_process.join(timeout=10)
-    mode = os.environ.get("BOT_MODE", "simulate")
-    use_ml = mode != "backtest"
+    use_ml = os.environ.get("USE_ML", "false").lower() in ("true", "1", "yes")
     _bot_process = multiprocessing.Process(target=run_bot, args=(use_ml,), daemon=True)
     _bot_process.start()
     logger.info("Bot process restarted (pid=%d)", _bot_process.pid)
@@ -136,7 +135,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     mode = os.environ.get("BOT_MODE", "simulate")
-    use_ml = mode != "backtest"
+    use_ml = os.environ.get("USE_ML", "false").lower() in ("true", "1", "yes")
 
     logger.info("Mode: %s | ML: %s", mode, use_ml)
 
