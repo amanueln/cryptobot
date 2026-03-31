@@ -829,7 +829,7 @@ class SimRunner:
     def _default_grid_config(self, pair: str, allocation: float) -> dict:
         """Build a fallback grid config for a pair."""
         end = datetime.now()
-        start = end - timedelta(days=14)
+        start = end - timedelta(days=3)
         candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end)
 
         low = 0.01
@@ -843,12 +843,12 @@ class SimRunner:
             "granularity": "ONE_HOUR",
             "upper_price": high,
             "lower_price": low,
-            "num_grids": 10,
+            "num_grids": 20,
             "total_investment_usd": allocation,
             "stop_loss_pct": 0.15,
             "take_profit_pct": 0.10,
             "adaptive_range": True,
-            "range_lookback_days": 14,
+            "range_lookback_days": 3,
             "recalc_interval_hours": 12,
             "min_spacing_pct": 0.01,
             "max_trades_per_day": 20,

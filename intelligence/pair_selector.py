@@ -126,7 +126,7 @@ def _score_pair_worker(args: tuple) -> "PairScore | None":
         high = max(c.high for c in candles) * 1.02
         bt_config = {
             "pair": pair, "granularity": "ONE_HOUR",
-            "upper_price": high, "lower_price": low, "num_grids": 10,
+            "upper_price": high, "lower_price": low, "num_grids": 20,
             "total_investment_usd": alloc, "stop_loss_pct": 0.15,
             "take_profit_pct": 0.10, "adaptive_range": False,
             "max_trades_per_day": 20,
@@ -635,7 +635,7 @@ class PairSelector:
             "granularity": "ONE_HOUR",
             "upper_price": high,
             "lower_price": low,
-            "num_grids": 10,
+            "num_grids": 20,
             "total_investment_usd": allocation,
             "stop_loss_pct": 0.15,
             "take_profit_pct": 0.10,
@@ -709,7 +709,7 @@ class PairSelector:
         grid_counts = [8, 10, 12, 15, 20]
         range_pads = [0.02, 0.05, 0.08]  # % padding beyond observed range
         spacing_floors = [0.005, 0.01, 0.015, 0.02]
-        lookbacks = [7, 14, 21]
+        lookbacks = [3, 7, 14]
 
         best_pnl = float("-inf")
         best_config = None
