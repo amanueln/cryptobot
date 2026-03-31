@@ -67,6 +67,10 @@ class Simulator:
             fee=fee,
             strategy="grid",
             reason=signal.reason,
+            regime=getattr(signal, 'regime', ''),
+            adx=getattr(signal, 'adx', 0.0),
+            rsi=getattr(signal, 'rsi', 0.0),
+            atr_multiplier=getattr(signal, 'atr_multiplier', 1.0),
         )
         self.trades.append(trade)
         return trade
@@ -104,6 +108,10 @@ class Simulator:
             fee=fee,
             strategy="grid",
             reason=signal.reason,
+            regime=getattr(signal, 'regime', ''),
+            adx=getattr(signal, 'adx', 0.0),
+            rsi=getattr(signal, 'rsi', 0.0),
+            atr_multiplier=getattr(signal, 'atr_multiplier', 1.0),
         )
         self.trades.append(trade)
         return trade

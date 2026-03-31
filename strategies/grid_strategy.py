@@ -448,6 +448,10 @@ class GridStrategy(BaseStrategy):
                         amount_usd=self.investment_per_grid,
                         limit_price=level.price,
                         reason=f"grid buy at {level.price:.2f}",
+                        regime=getattr(self, '_vol_regime', ''),
+                        adx=getattr(self, '_last_adx', 0.0),
+                        rsi=getattr(self, '_last_rsi', 0.0),
+                        atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                     ))
                     level.holding = True
                     level.crypto_amount = crypto_amount
@@ -468,6 +472,10 @@ class GridStrategy(BaseStrategy):
                         amount_crypto=level.crypto_amount,
                         limit_price=sell_price,
                         reason=f"grid sell at {sell_price:.2f}",
+                        regime=getattr(self, '_vol_regime', ''),
+                        adx=getattr(self, '_last_adx', 0.0),
+                        rsi=getattr(self, '_last_rsi', 0.0),
+                        atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                     ))
                     level.holding = False
                     level.crypto_amount = 0.0

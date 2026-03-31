@@ -24,6 +24,10 @@ class Signal:
     amount_crypto: float | None = None
     limit_price: float | None = None
     reason: str = ""
+    regime: str = ""
+    adx: float = 0.0
+    rsi: float = 0.0
+    atr_multiplier: float = 1.0
 
 
 @dataclass
@@ -37,6 +41,10 @@ class Trade:
     fee: float  # fee in USD
     strategy: str
     reason: str = ""
+    regime: str = ""
+    adx: float = 0.0
+    rsi: float = 0.0
+    atr_multiplier: float = 1.0
 
 
 @dataclass

@@ -107,13 +107,15 @@ def api_trades():
     # Fetch ALL trades chronologically to compute cost basis
     if pair:
         all_rows = conn.execute(
-            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason
+            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason,
+                      regime, adx, rsi, atr_multiplier
                FROM sim_trades WHERE pair = ? ORDER BY id ASC""",
             (pair,),
         ).fetchall()
     else:
         all_rows = conn.execute(
-            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason
+            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason,
+                      regime, adx, rsi, atr_multiplier
                FROM sim_trades ORDER BY id ASC""",
         ).fetchall()
 
@@ -148,6 +150,10 @@ def api_trades():
             "fee": row["fee"],
             "strategy": row["strategy"],
             "reason": row["reason"],
+            "regime": row["regime"] if "regime" in row.keys() else "",
+            "adx": row["adx"] if "adx" in row.keys() else 0,
+            "rsi": row["rsi"] if "rsi" in row.keys() else 0,
+            "atr_multiplier": row["atr_multiplier"] if "atr_multiplier" in row.keys() else 1.0,
             "cost_basis": None,
             "revenue": None,
             "net_profit": None,

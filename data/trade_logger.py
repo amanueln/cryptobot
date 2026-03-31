@@ -25,9 +25,24 @@ class TradeLogger:
                     fee REAL NOT NULL,
                     strategy TEXT NOT NULL,
                     reason TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    regime TEXT DEFAULT '',
+                    adx REAL DEFAULT 0,
+                    rsi REAL DEFAULT 0,
+                    atr_multiplier REAL DEFAULT 1.0
                 )
             """)
+            # Migrate existing tables
+            for col, typedef in [
+                ("regime", "TEXT DEFAULT ''"),
+                ("adx", "REAL DEFAULT 0"),
+                ("rsi", "REAL DEFAULT 0"),
+                ("atr_multiplier", "REAL DEFAULT 1.0"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE sim_trades ADD COLUMN {col} {typedef}")
+                except Exception:
+                    pass  # Column already exists
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS equity_snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,8 +161,9 @@ class TradeLogger:
         try:
             conn.execute(
                 """INSERT INTO sim_trades
-                   (timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (timestamp, pair, side, price, amount, cost_usd, fee, strategy, reason, created_at,
+                    regime, adx, rsi, atr_multiplier)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     trade.timestamp.isoformat(),
                     trade.pair,
@@ -159,6 +175,10 @@ class TradeLogger:
                     trade.strategy,
                     trade.reason,
                     datetime.now().isoformat(),
+                    getattr(trade, 'regime', ''),
+                    getattr(trade, 'adx', 0.0),
+                    getattr(trade, 'rsi', 0.0),
+                    getattr(trade, 'atr_multiplier', 1.0),
                 ),
             )
             conn.commit()
