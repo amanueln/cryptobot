@@ -405,6 +405,10 @@ export class ApiService {
     return this.http.post<UpdateResult>(`${API}/update`, {});
   }
 
+  resetData() {
+    return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/reset-data`, {});
+  }
+
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }

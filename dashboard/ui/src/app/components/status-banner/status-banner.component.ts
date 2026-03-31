@@ -77,6 +77,13 @@ import { ApiService, HealthData } from '../../services/api.service';
           </div>
         </div>
 
+        <button class="btn btn-reset" (click)="onResetClicked()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          Reset Data
+        </button>
         <button class="btn btn-update" (click)="onUpdateClicked()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10"></polyline>
@@ -234,6 +241,17 @@ import { ApiService, HealthData } from '../../services/api.service';
       color: #e2e8f0;
     }
 
+    .btn-reset {
+      background: #3b1a1a;
+      border-color: #dc2626;
+      color: #f87171;
+    }
+
+    .btn-reset:hover {
+      background: #dc2626;
+      color: #fff;
+    }
+
     .btn-update {
       background: #1e3a5f;
       border-color: #2563eb;
@@ -295,6 +313,7 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
 
   readonly toolSelected = output<'simulator' | 'regime' | 'self-check'>();
   readonly updateClicked = output<void>();
+  readonly resetClicked = output<void>();
 
   readonly health = signal<HealthData | null>(null);
   readonly dropdownOpen = signal(false);
@@ -377,6 +396,10 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
   selectTool(tool: 'simulator' | 'regime' | 'self-check'): void {
     this.dropdownOpen.set(false);
     this.toolSelected.emit(tool);
+  }
+
+  onResetClicked(): void {
+    this.resetClicked.emit();
   }
 
   onUpdateClicked(): void {

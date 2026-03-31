@@ -37,6 +37,7 @@ const STARTING_BALANCE = 3000;
       <app-status-banner
         (toolSelected)="openTool($event)"
         (updateClicked)="triggerUpdate()"
+        (resetClicked)="resetData()"
       />
 
       <!-- 2. Equity + Activity Log row -->
@@ -326,6 +327,17 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
     this.api.triggerUpdate().subscribe({
       next: () => console.log('[CommandCenter] update triggered'),
       error: (err) => console.error('[CommandCenter] update failed', err),
+    });
+  }
+
+  resetData(): void {
+    if (!confirm('Clear all trading data (trades, equity, events)? This cannot be undone.')) return;
+    this.api.resetData().subscribe({
+      next: () => {
+        console.log('[CommandCenter] data reset');
+        window.location.reload();
+      },
+      error: (err) => console.error('[CommandCenter] reset failed', err),
     });
   }
 
