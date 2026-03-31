@@ -201,7 +201,7 @@ class PairSelector:
         self.min_daily_vol_pct: float = float(config.get("min_daily_volatility_pct", 3.0))
         self.min_fee_clearance: float = float(config.get("min_fee_clearance_ratio", 1.5))
         self.excluded: set[str] = set(config.get("excluded_pairs", [])) | DEFAULT_EXCLUDED
-        self.optimization_combos: int = int(config.get("optimization_combos_per_pair", 100))
+        self.optimization_combos: int = int(config.get("optimization_combos_per_pair", 120))
         self.backtest_days: int = int(config.get("backtest_days_for_scoring", 14))
         self.scan_interval_hours: int = int(config.get("scan_interval_hours", 24))
         self.quick_check_hours: int = int(config.get("quick_check_interval_hours", 6))
@@ -701,12 +701,18 @@ class PairSelector:
         if not candles or len(candles) < 50:
             return None
 
-        closes = [c.close for c in candles]
-        low = min(c.low for c in candles)
-        high = max(c.high for c in candles)
+        # Use only the last 3 days for range bounds (tighter grids)
+        range_cutoff = candles[-1].timestamp - timedelta(days=3)
+        range_candles = [c for c in candles if c.timestamp >= range_cutoff]
+        if len(range_candles) < 20:
+            range_candles = candles[-72:]  # fallback: last 72 hours of candles
 
-        # Parameter grid
-        grid_counts = [8, 10, 12, 15, 20]
+        closes = [c.close for c in candles]
+        low = min(c.low for c in range_candles)
+        high = max(c.high for c in range_candles)
+
+        # Parameter grid — minimum 15 grids to ensure tight spacing
+        grid_counts = [15, 20, 25]
         range_pads = [0.02, 0.05, 0.08]  # % padding beyond observed range
         spacing_floors = [0.005, 0.01, 0.015, 0.02]
         lookbacks = [3, 7, 14]
