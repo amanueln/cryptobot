@@ -65,6 +65,9 @@ import { ApiService, HealthData } from '../../services/api.service';
             </svg>
           </button>
           <div class="dropdown-menu" *ngIf="dropdownOpen()">
+            <button class="dropdown-item" (click)="selectTool('scanner')">
+              <span class="tool-icon">⊕</span> Pair Scanner
+            </button>
             <button class="dropdown-item" (click)="selectTool('simulator')">
               <span class="tool-icon">⟳</span> DCA Simulator
             </button>
@@ -311,7 +314,7 @@ import { ApiService, HealthData } from '../../services/api.service';
 export class StatusBannerComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
 
-  readonly toolSelected = output<'simulator' | 'regime' | 'self-check'>();
+  readonly toolSelected = output<'scanner' | 'simulator' | 'regime' | 'self-check'>();
   readonly updateClicked = output<void>();
   readonly resetClicked = output<void>();
 
@@ -393,7 +396,7 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
     this.dropdownOpen.update(v => !v);
   }
 
-  selectTool(tool: 'simulator' | 'regime' | 'self-check'): void {
+  selectTool(tool: 'scanner' | 'simulator' | 'regime' | 'self-check'): void {
     this.dropdownOpen.set(false);
     this.toolSelected.emit(tool);
   }

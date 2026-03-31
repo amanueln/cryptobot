@@ -16,6 +16,7 @@ import { TradeLogComponent } from '../trade-log/trade-log.component';
 import { DcaSimulatorComponent } from '../dca-simulator/dca-simulator.component';
 import { RegimeVisualizerComponent } from '../regime-visualizer/regime-visualizer.component';
 import { SelfCheckComponent } from '../self-check/self-check.component';
+import { PairScannerComponent } from '../pair-scanner/pair-scanner.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -28,7 +29,7 @@ const STARTING_BALANCE = 3000;
   imports: [
     CommonModule, StatusBannerComponent, ActivityLogComponent,
     PairCardComponent, ExpandedPairChartComponent, HealthBarComponent,
-    TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent, SelfCheckComponent,
+    TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent, SelfCheckComponent, PairScannerComponent,
   ],
   template: `
     <div class="cc-root">
@@ -137,6 +138,9 @@ const STARTING_BALANCE = 3000;
             <span>{{ toolLabel(activeTool()!) }}</span>
             <button class="tool-close" (click)="activeTool.set(null)">✕ Close</button>
           </div>
+          @if (activeTool() === 'scanner') {
+            <app-pair-scanner />
+          }
           @if (activeTool() === 'simulator') {
             <app-dca-simulator />
           }
@@ -347,6 +351,7 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
 
   toolLabel(tool: string): string {
     const labels: Record<string, string> = {
+      scanner: 'Pair Scanner',
       simulator: 'DCA Simulator',
       regime: 'Regime Visualizer',
       'self-check': 'Self-Check',
