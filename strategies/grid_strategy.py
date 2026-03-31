@@ -313,8 +313,17 @@ class GridStrategy(BaseStrategy):
 
         return liquidation_signals
 
-    def on_candle(self, candle: Candle) -> list[Signal]:
+    def on_candle(self, candle: Candle, warmup: bool = False) -> list[Signal]:
         if self.paused:
+            return []
+
+        # During warmup: update indicators but don't generate trade signals
+        if warmup:
+            if self.adaptive_range:
+                self._candle_history.append(candle)
+                self._candles_since_recalc += 1
+            self._update_trend_filter(candle.close)
+            self.prev_price = candle.close
             return []
 
         signals: list[Signal] = []

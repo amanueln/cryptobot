@@ -64,7 +64,8 @@ class PairEngine:
         self.candles_fed: int = 0
         self.trade_count: int = 0
 
-    def process_candles(self, candles: list[Candle], size_multiplier: float = 1.0) -> list[dict]:
+    def process_candles(self, candles: list[Candle], size_multiplier: float = 1.0,
+                        warmup: bool = False) -> list[dict]:
         """Feed new candles to strategy, execute signals. Returns trade events."""
         events = []
         for candle in candles:
@@ -75,7 +76,7 @@ class PairEngine:
             self.last_price = candle.close
             self.candles_fed += 1
 
-            signals = self.strategy.on_candle(candle)
+            signals = self.strategy.on_candle(candle, warmup=warmup)
             for signal in signals:
                 # Apply ML size multiplier to buy signals
                 if size_multiplier < 1.0 and signal.action == "buy" and signal.amount_usd:
@@ -175,7 +176,11 @@ class SimRunner:
         self.total_allocation += allocation_usd
 
     def warmup_all(self):
-        """Warmup all pair engines with historical data."""
+        """Warmup all pair engines with historical data.
+
+        Warmup only updates indicators (EMA, ADX, candle history for adaptive range).
+        No trades are executed and no positions are created during warmup.
+        """
         for engine in self.engines:
             end = datetime.now()
             start = end - timedelta(days=self.warmup_days)
@@ -192,35 +197,12 @@ class SimRunner:
                 candles = self.candle_store.get_candles(engine.pair, engine.granularity, start, end) or fetched
 
             if candles:
-                engine.process_candles(candles)
-                engine.trade_count = 0  # Reset — warmup trades don't count
+                engine.process_candles(candles, warmup=True)
+                engine.trade_count = 0
+                engine.candles_fed = 0
                 print(f"  {engine.name:<20} warmed up with {len(candles)} candles (last: {engine.last_candle_ts})")
             else:
                 print(f"  {engine.name:<20} WARNING: no warmup data")
-
-        # Persist warmup positions to DB so the dashboard can display them
-        self._persist_warmup_positions()
-
-    def _persist_warmup_positions(self):
-        """Write synthetic buy trades for positions created during warmup."""
-        now = datetime.now()
-        for engine in self.engines:
-            pos = engine.simulator.positions.get(engine.pair)
-            if not pos or pos.amount < 1e-12:
-                continue
-            from exchange.models import Trade
-            trade = Trade(
-                timestamp=now,
-                pair=engine.pair,
-                side="buy",
-                price=pos.avg_entry_price,
-                amount=pos.amount,
-                cost_usd=pos.cost_basis,
-                fee=0.0,
-                strategy="grid",
-                reason="warmup position",
-            )
-            self.trade_logger.log_trade(trade)
 
     def _evaluate_vol_accuracy(self):
         """Compare predicted volatility vs actual realized volatility.
@@ -433,9 +415,26 @@ class SimRunner:
             else:
                 print(f"  {engine.pair:<12} training failed")
 
+    def _cleanup_warmup_trades(self):
+        """Remove any synthetic warmup trades from previous runs."""
+        import sqlite3
+        conn = sqlite3.connect("data/candles.db")
+        try:
+            deleted = conn.execute(
+                "DELETE FROM sim_trades WHERE reason = 'warmup position'"
+            ).rowcount
+            conn.commit()
+            if deleted > 0:
+                logger.info(f"Cleaned up {deleted} old warmup position trades from DB")
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
     def run(self):
         """Main polling loop — polls all pairs, prints combined dashboard."""
         self.running = True
+        self._cleanup_warmup_trades()
         self._print_header()
         self.warmup_all()
 

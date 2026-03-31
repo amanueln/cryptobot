@@ -11,8 +11,9 @@ class BaseStrategy(ABC):
         """Load strategy params from YAML config dict."""
 
     @abstractmethod
-    def on_candle(self, candle: Candle) -> list[Signal]:
-        """Process a new candle. Returns zero or more signals."""
+    def on_candle(self, candle: Candle, warmup: bool = False) -> list[Signal]:
+        """Process a new candle. Returns zero or more signals.
+        When warmup=True, update indicators but skip trade logic."""
 
     @abstractmethod
     def get_state(self) -> dict:
