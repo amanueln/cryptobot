@@ -50,7 +50,7 @@ def run_bot(use_ml: bool = False):
     """Run the sim_runner polling loop."""
     from sim_runner import build_runner
     logger.info("Bot process starting (ML=%s)", use_ml)
-    runner = build_runner(poll_seconds=60, warmup_days=30, use_ml=use_ml)
+    runner = build_runner(poll_seconds=60, warmup_days=7, use_ml=use_ml)
     runner.run()
 
 
