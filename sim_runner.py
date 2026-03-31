@@ -99,6 +99,12 @@ class PairEngine:
     def get_equity(self) -> float:
         return self.simulator.get_equity({self.pair: self.last_price})
 
+    def has_open_positions(self) -> bool:
+        """Check if this engine has any open grid positions (holding crypto)."""
+        if hasattr(self.strategy, 'grid_levels'):
+            return any(level.holding for level in self.strategy.grid_levels)
+        return self.simulator.balance_usd < (self.simulator.starting_balance - 1.0)
+
 
 # --- Multi-pair runner ---
 
@@ -777,6 +783,7 @@ class SimRunner:
         alloc_per_pair = self.total_allocation / max(len(selected_pairs), 1)
 
         # Keep engines that are still active, remove stale ones
+        # BUT: never drop an engine that has open positions
         existing = {e.pair: e for e in self.engines}
         new_engines = []
 
@@ -806,6 +813,13 @@ class SimRunner:
                 )
                 new_engines.append(engine)
                 print(f"  [SCAN] Added engine for {pair}")
+
+        # Keep engines with open positions even if deselected by scanner
+        kept_pairs = {e.pair for e in new_engines}
+        for pair, engine in existing.items():
+            if pair not in kept_pairs and engine.has_open_positions():
+                new_engines.append(engine)
+                print(f"  [SCAN] Keeping {pair} — has open positions")
 
         self.engines = new_engines
 
