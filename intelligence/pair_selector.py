@@ -255,12 +255,12 @@ class PairSelector:
 
         # Step 2a: Pre-fetch all candles in parallel (I/O bound — threads help)
         total = len(eligible)
-        logger.info(f"Pre-fetching candles for {total} pairs with 50 workers...")
+        logger.info(f"Pre-fetching candles for {total} pairs with 5 workers...")
         t0 = time.time()
         self._update_progress(scanning=True, total_pairs=total, scanned=0,
                               elapsed_seconds=0, estimated_remaining=0)
         candle_cache: dict[str, list] = {}
-        with ThreadPoolExecutor(max_workers=50) as pool:
+        with ThreadPoolExecutor(max_workers=5) as pool:
             futures = {
                 pool.submit(self._get_candles, prod["pair"], self.backtest_days): prod["pair"]
                 for prod in eligible

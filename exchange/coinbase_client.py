@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import datetime, timedelta
 
 import requests
@@ -25,11 +27,30 @@ BOOK_URL = "https://api.coinbase.com/api/v3/brokerage/market/product_book"
 
 
 class CoinbaseClient:
+    # Thread-safe rate limiter: max N requests per second
+    _rate_lock = threading.Lock()
+    _request_times: list[float] = []
+    _max_rps = 8  # stay under Coinbase's ~10 req/s public limit
+
     def __init__(self):
         self.session = requests.Session()
 
+    def _rate_limit(self):
+        """Block until we can make a request without exceeding rate limit."""
+        while True:
+            with self._rate_lock:
+                now = time.monotonic()
+                self._request_times = [t for t in self._request_times if now - t < 1.0]
+                if len(self._request_times) < self._max_rps:
+                    self._request_times.append(now)
+                    return
+                sleep_for = 1.0 - (now - self._request_times[0])
+            # Sleep outside the lock so other threads aren't blocked
+            time.sleep(max(sleep_for, 0.05))
+
     def get_product_book(self, pair: str, limit: int = 50) -> dict:
         """Fetch order book for a pair. Returns {bids: [(price, size)], asks: [(price, size)]}."""
+        self._rate_limit()
         resp = self.session.get(
             BOOK_URL,
             params={"product_id": pair, "limit": limit},
@@ -46,6 +67,7 @@ class CoinbaseClient:
         """Fetch current spot price for a pair. Free, no auth needed."""
         url = f"{BASE_URL}/{pair}"
         try:
+            self._rate_limit()
             resp = self.session.get(url, timeout=10)
             resp.raise_for_status()
             return float(resp.json().get("price", 0))
@@ -66,6 +88,7 @@ class CoinbaseClient:
         }
 
         try:
+            self._rate_limit()
             resp = self.session.get(url, params=params, timeout=15)
             resp.raise_for_status()
             data = resp.json()
@@ -111,6 +134,7 @@ class CoinbaseClient:
                 "granularity": granularity,
             }
 
+            self._rate_limit()
             resp = self.session.get(url, params=params, timeout=30)
             resp.raise_for_status()
             data = resp.json()
