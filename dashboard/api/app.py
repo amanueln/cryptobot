@@ -1494,6 +1494,28 @@ def api_trigger_update():
         return jsonify({"status": "error", "output": str(e)}), 500
 
 
+# ---------- /api/reset-data ----------
+
+@app.route("/api/reset-data", methods=["POST"])
+def api_reset_data():
+    """Clear stale trading data (equity snapshots, trades, events) for a fresh start."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        tables = ["equity_snapshots", "sim_trades", "bot_events"]
+        deleted = {}
+        for table in tables:
+            try:
+                cur = conn.execute(f"DELETE FROM {table}")
+                deleted[table] = cur.rowcount
+            except Exception:
+                deleted[table] = 0
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "ok", "deleted": deleted})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ---------- Static file serving ----------
 
 @app.after_request
