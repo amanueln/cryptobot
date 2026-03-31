@@ -18,7 +18,7 @@ const DAILY_LIMIT = 30; // USD — configurable default
         <span class="hbar-label">DAILY P&L</span>
         <span class="hbar-value" [style.color]="dailyPnlColor()">
           {{ dailyPnlText() }}
-          <span class="hbar-limit">/ -${{ dailyLimit }}</span>
+          <span class="hbar-limit">/ -{{ '$' + dailyLimit }}</span>
         </span>
       </div>
 
