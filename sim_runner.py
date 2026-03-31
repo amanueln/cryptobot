@@ -988,7 +988,7 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
     runner.trade_logger.log_event(
         "scan_complete",
         f"Initial scan selected {len(scan_result.selected)} pairs: {', '.join(pair_names)}",
-        f"Scanned {scan_result.total_evaluated} pairs, rejected {scan_result.total_evaluated - len(scan_result.selected)}",
+        f"Scanned {scan_result.total_scanned} pairs, rejected {scan_result.total_scanned - len(scan_result.selected)}",
     )
 
     # --- Build engines ---
