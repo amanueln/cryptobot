@@ -36,6 +36,26 @@ def get_db():
     return conn
 
 
+def _migrate_db():
+    """Ensure newer columns exist in sim_trades (matches trade_logger migrations)."""
+    conn = sqlite3.connect(DB_PATH)
+    for col, typedef in [
+        ("regime", "TEXT DEFAULT ''"),
+        ("adx", "REAL DEFAULT 0"),
+        ("rsi", "REAL DEFAULT 0"),
+        ("atr_multiplier", "REAL DEFAULT 1.0"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE sim_trades ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+
+_migrate_db()
+
+
 def _get_active_pairs(conn) -> list[str]:
     """Get the pairs the bot is actively trading."""
     # 1. Check pair_scans for selected pairs (most accurate)
