@@ -177,6 +177,30 @@ class SimRunner:
             else:
                 print(f"  {engine.name:<20} WARNING: no warmup data")
 
+        # Persist warmup positions to DB so the dashboard can display them
+        self._persist_warmup_positions()
+
+    def _persist_warmup_positions(self):
+        """Write synthetic buy trades for positions created during warmup."""
+        now = datetime.now()
+        for engine in self.engines:
+            pos = engine.simulator.positions.get(engine.pair)
+            if not pos or pos.amount < 1e-12:
+                continue
+            from exchange.models import Trade
+            trade = Trade(
+                timestamp=now,
+                pair=engine.pair,
+                side="buy",
+                price=pos.avg_entry_price,
+                amount=pos.amount,
+                cost_usd=pos.cost_basis,
+                fee=0.0,
+                strategy="grid",
+                reason="warmup position",
+            )
+            self.trade_logger.log_trade(trade)
+
     def _train_ml_models(self):
         """Train ML models for all active pairs using cached candles."""
         if not self.ml_predictor:
@@ -251,9 +275,11 @@ class SimRunner:
         if self.use_ml:
             self._evaluate_pending_outcomes()
 
-        # Snapshot combined equity
+        # Snapshot combined equity with proper balance/positions breakdown
+        total_balance = sum(e.simulator.balance_usd for e in self.engines)
+        total_positions = total_equity - total_balance
         self.equity_history.append((now, total_equity))
-        self.trade_logger.log_equity(now, total_equity, total_equity, 0)
+        self.trade_logger.log_equity(now, total_equity, total_balance, total_positions)
 
         self._print_dashboard(total_equity)
 
