@@ -1,0 +1,9 @@
+best_r2: -0.03169386093969151
+best_rmse: 1.0876971036852567
+label_period_candles: 8
+n_estimators: 100
+pair: DOGE-USD
+pred_std: 1.5207626800728575
+size_full_threshold: 0.44999999999999996
+size_half_threshold: 0.3
+train_period_days: 30

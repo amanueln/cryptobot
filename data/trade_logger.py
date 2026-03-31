@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime
 
@@ -36,6 +37,45 @@ class TradeLogger:
                     positions_value REAL NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ml_predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    feature_values TEXT NOT NULL,
+                    feature_contributions TEXT NOT NULL,
+                    top_bullish TEXT NOT NULL,
+                    top_bearish TEXT NOT NULL,
+                    recommended_action TEXT NOT NULL,
+                    recommended_size_pct REAL NOT NULL,
+                    actual_outcome TEXT,
+                    actual_price_change REAL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pair_scans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    scan_type TEXT NOT NULL,
+                    total_pairs_scanned INTEGER,
+                    results TEXT NOT NULL,
+                    selected_pairs TEXT NOT NULL,
+                    swapped_out TEXT,
+                    swapped_in TEXT
+                )
+            """)
+            # Migrate: add new columns for regression predictions
+            for col, ctype in [
+                ("predicted_change_pct", "REAL"),
+                ("do_predict", "INTEGER"),
+                ("di_value", "REAL"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE ml_predictions ADD COLUMN {col} {ctype}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             conn.commit()
         finally:
             conn.close()
@@ -104,6 +144,75 @@ class TradeLogger:
             )
             for row in rows
         ]
+
+    def log_ml_prediction(self, prediction) -> int:
+        """Log an ML prediction. Returns the row ID for later outcome update."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                """INSERT INTO ml_predictions
+                   (timestamp, pair, direction, confidence, feature_values,
+                    feature_contributions, top_bullish, top_bearish,
+                    recommended_action, recommended_size_pct,
+                    predicted_change_pct, do_predict, di_value)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    prediction.timestamp.isoformat(),
+                    prediction.pair,
+                    prediction.direction,
+                    prediction.confidence,
+                    json.dumps(prediction.feature_values),
+                    json.dumps(prediction.feature_contributions),
+                    json.dumps(prediction.top_bullish_factors),
+                    json.dumps(prediction.top_bearish_factors),
+                    prediction.recommended_action,
+                    prediction.recommended_size_pct,
+                    getattr(prediction, "predicted_change_pct", None),
+                    getattr(prediction, "do_predict", None),
+                    getattr(prediction, "di_value", None),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def update_ml_outcome(self, prediction_id: int, outcome: str, price_change: float) -> None:
+        """Fill in actual outcome for a prediction (4 candles later)."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """UPDATE ml_predictions
+                   SET actual_outcome = ?, actual_price_change = ?
+                   WHERE id = ?""",
+                (outcome, price_change, prediction_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_pair_scan(self, scan_result_dict: dict) -> None:
+        """Log a pair scan result."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO pair_scans
+                   (timestamp, scan_type, total_pairs_scanned, results,
+                    selected_pairs, swapped_out, swapped_in)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    scan_result_dict["timestamp"],
+                    scan_result_dict["scan_type"],
+                    scan_result_dict["total_scanned"],
+                    json.dumps(scan_result_dict["ranked"]),
+                    json.dumps(scan_result_dict["selected"]),
+                    json.dumps(scan_result_dict.get("swapped_out", [])),
+                    json.dumps(scan_result_dict.get("swapped_in", [])),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def get_session_pnl(self, starting_balance: float) -> dict:
         conn = sqlite3.connect(self.db_path)

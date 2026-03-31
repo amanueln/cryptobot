@@ -1,0 +1,16 @@
+# Pair selection configuration
+enabled: true
+scan_interval_hours: 24
+quick_check_interval_hours: 6
+max_active_pairs: 3                    # limited by $3K capital
+min_24h_volume_usd: 100000
+min_daily_volatility_pct: 3.0          # skip boring coins
+min_fee_clearance_ratio: 1.5           # daily move must be 1.5x fees
+excluded_pairs:                        # never trade these
+  - USDT-USD
+  - USDC-USD
+  - DAI-USD
+  - WBTC-USD
+  - WETH-USD
+optimization_combos_per_pair: 100       # mini sweep for config optimization
+backtest_days_for_scoring: 14

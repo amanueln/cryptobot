@@ -21,9 +21,26 @@ BASE_URL = "https://api.coinbase.com/api/v3/brokerage/market/products"
 MAX_CANDLES_PER_REQUEST = 300
 
 
+BOOK_URL = "https://api.coinbase.com/api/v3/brokerage/market/product_book"
+
+
 class CoinbaseClient:
     def __init__(self):
         self.session = requests.Session()
+
+    def get_product_book(self, pair: str, limit: int = 50) -> dict:
+        """Fetch order book for a pair. Returns {bids: [(price, size)], asks: [(price, size)]}."""
+        resp = self.session.get(
+            BOOK_URL,
+            params={"product_id": pair, "limit": limit},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        pb = resp.json().get("pricebook", {})
+        return {
+            "bids": [(float(b["price"]), float(b["size"])) for b in pb.get("bids", [])],
+            "asks": [(float(a["price"]), float(a["size"])) for a in pb.get("asks", [])],
+        }
 
     def get_ticker_price(self, pair: str) -> float | None:
         """Fetch current spot price for a pair. Free, no auth needed."""

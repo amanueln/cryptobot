@@ -10,3 +10,5 @@ build/
 .env
 docs/
 .superpowers/
+models/
+config/active_pairs.yaml

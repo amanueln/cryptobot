@@ -1,0 +1,27 @@
+# ============================================
+# MASTER CONFIG — the only file you ever edit
+# Everything else is automatic
+# ============================================
+
+# Capital
+starting_balance: 3000
+
+# Risk limits (hard safety rails — bot CANNOT exceed these)
+max_risk_per_trade_pct: 0.02          # never risk more than 2% per trade
+max_portfolio_drawdown_pct: 0.05      # pause everything at 5% loss from peak
+max_loss_per_day_usd: 30              # stop trading if down $30 in one day
+max_loss_per_week_usd: 75             # stop for the week at $75 loss
+max_single_trade_usd: 150             # no single trade bigger than this
+
+# How many pairs to trade (scales with capital automatically if set to 0)
+max_active_pairs: 0                   # 0 = auto (floor(balance / 1000))
+
+# Mode
+mode: "simulate"                       # "simulate" or "live"
+exchange: "coinbase"
+
+# Everything below is managed by the bot — do NOT edit manually
+# active_pairs: auto-selected by pair_selector.py
+# strategy_configs: auto-optimized per pair
+# ml_models: auto-trained per pair
+# retrain_schedule: auto-managed

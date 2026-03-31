@@ -10,8 +10,9 @@ class CandleStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         try:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS candles (
                     pair TEXT NOT NULL,
@@ -30,7 +31,7 @@ class CandleStore:
             conn.close()
 
     def save_candles(self, pair: str, granularity: str, candles: list[Candle]) -> None:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         try:
             conn.executemany(
                 """INSERT OR REPLACE INTO candles
@@ -49,7 +50,7 @@ class CandleStore:
     def get_candles(
         self, pair: str, granularity: str, start: datetime, end: datetime
     ) -> list[Candle]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         try:
             rows = conn.execute(
                 """SELECT pair, granularity, timestamp, open, high, low, close, volume

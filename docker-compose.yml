@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  cryptobot:
+    image: python:3.13-slim
+    container_name: cryptobot
+    ports:
+      - "5001:5001"
+    volumes:
+      - /DATA/AppData/cryptobot/data:/app/data
+      - /DATA/AppData/cryptobot/models:/app/models
+      - /DATA/AppData/cryptobot/config:/app/config
+      - /DATA/AppData/cryptobot/logs:/app/logs
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+      - PYTHONUNBUFFERED=1
+      - BOT_MODE=simulate
+      - GITHUB_REPO=https://github.com/amanueln/cryptobot.git
+      - GIT_BRANCH=master
+      - AUTO_UPDATE_INTERVAL=6h
+    entrypoint: >
+      bash -c "
+        apt-get update && apt-get install -y git cron curl > /dev/null 2>&1 &&
+        if [ ! -f /app/src/start.py ]; then
+          echo 'First run — cloning repo...' &&
+          git clone $$GITHUB_REPO /app/src;
+        else
+          echo 'Repo exists — pulling latest...' &&
+          cd /app/src && git pull origin $$GIT_BRANCH;
+        fi &&
+        cd /app/src &&
+        pip install --no-cache-dir -r requirements.txt > /dev/null 2>&1 &&
+        ln -sf /app/data data 2>/dev/null;
+        ln -sf /app/models models 2>/dev/null;
+        ln -sf /app/config config 2>/dev/null;
+        ln -sf /app/logs logs 2>/dev/null;
+        python start.py
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3

@@ -1,6 +1,6 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, inject, computed, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ApiService } from '../../services/api.service';
+import { ApiService, PositionData, ScanProgressData, PnlAttribution, HealthData } from '../../services/api.service';
 
 const REGIME_CONFIG: Record<string, { label: string; bg: string; text: string; ring: string }> = {
   RANGING:       { label: 'RANGING',        bg: '#14532d', text: '#4ade80', ring: '#16a34a' },
@@ -31,8 +31,10 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
 
         <div class="stat-divider"></div>
 
-        <div class="stat-block">
-          <span class="stat-label">P&amp;L</span>
+        <div class="stat-block pnl-block" [title]="'Net = realized gains from completed trades minus unrealized losses on open positions'">
+          <span class="stat-label">NET P&amp;L
+            <span class="info-icon" title="Net = realized gains from completed trades minus unrealized losses on open positions">i</span>
+          </span>
           <ng-container *ngIf="status(); else dash1">
             <span class="stat-value" [class.positive]="status()!.pnl >= 0" [class.negative]="status()!.pnl < 0">
               {{ (status()!.pnl >= 0 ? '+' : '') + '$' + formatNumber(status()!.pnl) }}
@@ -42,6 +44,13 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
             </span>
           </ng-container>
           <ng-template #dash1><span class="stat-value">—</span></ng-template>
+          <span class="stat-breakdown" *ngIf="positions().length > 0">
+            Realized: {{ formatRealized() }} | Unrealized: {{ formatUnrealized() }}
+          </span>
+          <span class="stat-breakdown" *ngIf="pnlAttrib() as a">
+            Legacy: <span [class.positive]="a.legacy_total_pnl >= 0" [class.negative]="a.legacy_total_pnl < 0">{{ formatSignedDollar(a.legacy_total_pnl) }}</span>
+            | Auto: <span [class.positive]="a.auto_total_pnl >= 0" [class.negative]="a.auto_total_pnl < 0">{{ formatSignedDollar(a.auto_total_pnl) }}</span>
+          </span>
         </div>
 
         <div class="stat-divider"></div>
@@ -87,12 +96,36 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
       <!-- Right cluster: time & refresh -->
       <div class="stat-cluster right-cluster">
 
+        <div class="scan-indicator" *ngIf="scanProgress().scanning" title="Pair scan in progress">
+          <span class="scan-spinner"></span>
+          <span class="scan-text">Scanning {{ scanProgress().scanned }}/{{ scanProgress().total_pairs }}</span>
+        </div>
+
+        <div class="stat-divider" *ngIf="scanProgress().scanning"></div>
+
         <div class="stat-block" *ngIf="status()">
           <span class="stat-label">LAST TRADE</span>
           <span class="stat-value mono">{{ formatLastTrade(status()!.last_trade_time) }}</span>
         </div>
 
         <div class="stat-divider" *ngIf="status()"></div>
+
+        <button
+          class="update-btn"
+          [class.checking]="updateChecking()"
+          [disabled]="updateChecking()"
+          (click)="checkForUpdates()"
+          [title]="updateStatus()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>{{ updateChecking() ? 'Checking...' : 'Update' }}</span>
+        </button>
+
+        <div class="stat-divider"></div>
 
         <div class="refresh-block" [class.urgent]="refreshCountdown() <= 10">
           <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -182,6 +215,35 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
       font-size: 11px;
       font-weight: 500;
       margin-left: -2px;
+    }
+
+    .pnl-block {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-breakdown {
+      font-size: 9px;
+      color: #6b7094;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #2d3148;
+      color: #6b7094;
+      font-size: 8px;
+      font-weight: 700;
+      font-style: italic;
+      margin-left: 3px;
+      cursor: help;
+      vertical-align: middle;
     }
 
     .stat-value.positive,
@@ -276,26 +338,122 @@ const DEFAULT_REGIME = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8', ring:
       font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
       min-width: 28px;
     }
+
+    /* ── Scan indicator ── */
+
+    .scan-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 14px;
+    }
+
+    .scan-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #3b3f5c;
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: statspin 0.8s linear infinite;
+    }
+
+    @keyframes statspin { to { transform: rotate(360deg); } }
+
+    .scan-text {
+      font-size: 11px;
+      font-weight: 600;
+      color: #a78bfa;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      white-space: nowrap;
+    }
+
+    /* ── Update button ── */
+
+    .update-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border: 1px solid #3b3f5c;
+      border-radius: 6px;
+      background: #1e2130;
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .update-btn:hover:not(:disabled) {
+      background: #2d3148;
+      color: #e1e4ed;
+      border-color: #818cf8;
+    }
+
+    .update-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .update-btn.checking {
+      color: #a78bfa;
+      border-color: #a78bfa;
+    }
   `],
 })
-export class StatsBarComponent {
+export class StatsBarComponent implements OnInit {
   private readonly api = inject(ApiService);
 
   readonly status = this.api.status;
   readonly refreshCountdown = this.api.refreshCountdown;
+  readonly scanProgress = this.api.scanProgress;
+  readonly positions = signal<PositionData[]>([]);
+  readonly pnlAttrib = signal<PnlAttribution | null>(null);
+  readonly updateChecking = signal(false);
+  readonly updateStatus = signal('Click to check for updates');
 
   readonly activePairsCount = computed(() => {
     const s = this.status();
     return s ? s.pairs.length : 0;
   });
 
+  ngOnInit(): void {
+    this.api.fetchPositions().subscribe({
+      next: (data) => this.positions.set(data),
+      error: () => {},
+    });
+    this.api.fetchPnlAttribution().subscribe({
+      next: (data) => this.pnlAttrib.set(data),
+      error: () => {},
+    });
+    // Start polling scan progress (shared signal updates stats bar reactively)
+    this.api.startScanProgressPolling();
+  }
+
+  checkForUpdates(): void {
+    this.updateChecking.set(true);
+    this.updateStatus.set('Checking for updates...');
+    this.api.triggerUpdate().subscribe({
+      next: (res) => {
+        this.updateChecking.set(false);
+        this.updateStatus.set(res.update_status ?? res.output);
+      },
+      error: (err) => {
+        this.updateChecking.set(false);
+        this.updateStatus.set('Update check failed');
+      },
+    });
+  }
+
   regimeConfig(regime: string) {
-    return REGIME_CONFIG[regime] ?? DEFAULT_REGIME;
+    const key = (regime ?? '').toUpperCase().replace(/ /g, '_');
+    return REGIME_CONFIG[key] ?? DEFAULT_REGIME;
   }
 
   shortPair(pair: string): string {
-    // "BTC/USDT" -> "BTC", "ETH/USDT:USDT" -> "ETH"
-    return pair.split('/')[0];
+    return pair.replace('-USD', '');
   }
 
   formatNumber(value: number): string {
@@ -311,6 +469,26 @@ export class StatsBarComponent {
     return price.toFixed(6);
   }
 
+  formatRealized(): string {
+    const s = this.status();
+    if (!s) return '—';
+    const unrealized = this.positions().reduce((sum, p) => sum + p.unrealized_pnl, 0);
+    const realized = s.pnl - unrealized;
+    const sign = realized >= 0 ? '+' : '';
+    return sign + '$' + Math.abs(realized).toFixed(2);
+  }
+
+  formatUnrealized(): string {
+    const unrealized = this.positions().reduce((sum, p) => sum + p.unrealized_pnl, 0);
+    const sign = unrealized >= 0 ? '+' : '';
+    return sign + '$' + Math.abs(unrealized).toFixed(2);
+  }
+
+  formatSignedDollar(value: number): string {
+    const sign = value >= 0 ? '+' : '';
+    return sign + '$' + Math.abs(value).toFixed(2);
+  }
+
   formatLastTrade(ts: string | null): string {
     if (!ts) return 'None';
     try {
@@ -322,7 +500,7 @@ export class StatsBarComponent {
       if (diffMin < 60)  return `${diffMin}m ago`;
       const diffH = Math.floor(diffMin / 60);
       if (diffH < 24)    return `${diffH}h ago`;
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
     } catch {
       return ts;
     }

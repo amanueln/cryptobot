@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+.pytest_cache
+.git
+node_modules
+dashboard/ui/node_modules
+dashboard/ui/.angular
+data/*.db
+models/*.pkl
+models/*.txt
+models/*.json
+logs/*.log
+archive/

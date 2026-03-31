@@ -1,0 +1,72 @@
+# ML prediction configuration — FreqAI-inspired regression model
+enabled: true
+model_type: "lightgbm_regressor"
+
+# Training windows (Fix 8: sliding window)
+train_period_days: 30
+backtest_period_days: 7
+min_training_candles: 400          # Fix 23: need enough for indicator startup
+validation_split: 0.2
+
+# Regression labels (Fix 1)
+label_period_candles: 24           # predict % change over next 24 candles (overridden by auto-tune)
+dynamic_threshold: true            # Fix 5: calibrated from model's prediction distribution
+
+# Feature expansion (Fix 2, 3, 12)
+indicator_periods: [10, 14, 20]
+include_timeframes: ["1h", "4h"]   # 4h resampled from 1h base
+include_shifted_candles: 2         # shift 0, 1, 2
+include_corr_pairlist: ["BTC-USD", "ETH-USD"]
+
+# Normalization & regularization (Fix 7, 9)
+noise_standard_deviation: 0.05
+weight_factor: 0.1                 # Fix 6: exponential recency weighting alpha
+
+# Outlier detection (Fix 4, 10, 21)
+DI_threshold: 1.0
+outlier_protection_pct: 0.30       # force retrain if >30% outliers
+
+# Prediction calibration (Fix 11)
+fit_live_predictions_candles: 100
+
+# Model management (Fix 13, 14, 15)
+expiration_hours: 168
+purge_old_models: 2
+reverse_train_test_order: true
+
+# Continual learning (Fix 22)
+continual_learning: false
+
+# Position sizing from prediction confidence (overridden by auto-tune)
+size_full_threshold: 0.65
+size_half_threshold: 0.40
+
+# Dynamic stoploss (Fix 25)
+dynamic_stoploss:
+  enabled: true
+  initial_pct: 3.0
+  trailing: true
+  time_decay_hours: 24
+  confidence_decay: true
+
+# Hyperopt (Fix 24)
+hyperopt:
+  enabled: false
+  n_trials: 50
+  timeout_seconds: 300
+
+# LightGBM hyperparameters (Fix 1: regression)
+lgb_params:
+  objective: "regression"
+  metric: "rmse"
+  num_leaves: 16
+  learning_rate: 0.03
+  feature_fraction: 0.5
+  bagging_fraction: 0.7
+  bagging_freq: 5
+  n_estimators: 200
+  verbose: -1
+  min_child_samples: 20
+  reg_alpha: 0.5
+  reg_lambda: 0.5
+  max_depth: 6

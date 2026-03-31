@@ -1,11 +1,11 @@
 import { Component, input, effect, ElementRef, viewChild, OnDestroy } from '@angular/core';
 import {
-  createChart, IChartApi, ISeriesApi, Time,
+  createChart, IChartApi, ISeriesApi, Time, IPriceLine,
   CandlestickSeries, LineSeries,
   CandlestickData, LineData,
   createSeriesMarkers,
 } from 'lightweight-charts';
-import { CandleData, TradeData, IndicatorData } from '../../services/api.service';
+import { CandleData, TradeData, IndicatorData, PositionData } from '../../services/api.service';
 
 @Component({
   selector: 'app-price-chart',
@@ -33,6 +33,9 @@ export class PriceChartComponent implements OnDestroy {
   trades = input<TradeData[]>([]);
   indicators = input<IndicatorData[]>([]);
   gridLevels = input<{ price: number; type: string }[]>([]);
+  rangeLower = input<number>(0);
+  rangeUpper = input<number>(0);
+  positions = input<PositionData[]>([]);
 
   chartContainer = viewChild<ElementRef<HTMLDivElement>>('chartContainer');
 
@@ -42,7 +45,10 @@ export class PriceChartComponent implements OnDestroy {
   private ema200Series: ISeriesApi<'Line'> | null = null;
   private bbUpperSeries: ISeriesApi<'Line'> | null = null;
   private bbLowerSeries: ISeriesApi<'Line'> | null = null;
-  private gridLineSeries: ISeriesApi<'Line'>[] = [];
+  private gridPriceLines: IPriceLine[] = [];
+  private rangePriceLines: IPriceLine[] = [];
+  private currentPriceLine: IPriceLine | null = null;
+  private entryPriceLines: IPriceLine[] = [];
   private markersPlugin: any = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -208,36 +214,102 @@ export class PriceChartComponent implements OnDestroy {
   }
 
   private updateGridLevels(): void {
-    if (!this.chart) return;
+    if (!this.chart || !this.candleSeries) return;
 
-    for (const series of this.gridLineSeries) {
-      this.chart.removeSeries(series);
+    // Remove old grid price lines
+    for (const pl of this.gridPriceLines) {
+      this.candleSeries.removePriceLine(pl);
     }
-    this.gridLineSeries = [];
+    this.gridPriceLines = [];
+
+    // Remove old range price lines
+    for (const pl of this.rangePriceLines) {
+      this.candleSeries.removePriceLine(pl);
+    }
+    this.rangePriceLines = [];
+
+    // Remove old current price line
+    if (this.currentPriceLine) {
+      this.candleSeries.removePriceLine(this.currentPriceLine);
+      this.currentPriceLine = null;
+    }
+
+    // Remove old entry price lines
+    for (const pl of this.entryPriceLines) {
+      this.candleSeries.removePriceLine(pl);
+    }
+    this.entryPriceLines = [];
 
     const levels = this.gridLevels();
     const candles = this.candles();
-    if (!levels.length || !candles.length) return;
 
-    const firstTime = this.toTime(candles[0].time);
-    const lastTime = this.toTime(candles[candles.length - 1].time);
-
-    for (const level of levels) {
-      const lineSeries = this.chart.addSeries(LineSeries, {
-        color: level.type === 'buy' ? 'rgba(38, 166, 154, 0.3)' : 'rgba(239, 83, 80, 0.3)',
-        lineWidth: 1,
-        lineStyle: 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
+    // Current price line (bright white)
+    if (candles.length) {
+      const currentPrice = candles[candles.length - 1].close;
+      this.currentPriceLine = this.candleSeries.createPriceLine({
+        price: currentPrice,
+        color: '#ffffff',
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'Current',
       });
+    }
 
-      lineSeries.setData([
-        { time: firstTime, value: level.price },
-        { time: lastTime, value: level.price },
-      ]);
+    // Grid level price lines — green for buy, red for sell
+    if (levels.length) {
+      for (const level of levels) {
+        const pl = this.candleSeries.createPriceLine({
+          price: level.price,
+          color: level.type === 'buy' ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: false,
+          title: '',
+        });
+        this.gridPriceLines.push(pl);
+      }
+    }
 
-      this.gridLineSeries.push(lineSeries);
+    // Range boundary price lines
+    const lower = this.rangeLower();
+    const upper = this.rangeUpper();
+    if (lower > 0 && upper > 0) {
+      this.rangePriceLines.push(
+        this.candleSeries.createPriceLine({
+          price: lower,
+          color: 'rgba(139, 143, 163, 0.6)',
+          lineWidth: 2,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: 'Range Low',
+        }),
+        this.candleSeries.createPriceLine({
+          price: upper,
+          color: 'rgba(139, 143, 163, 0.6)',
+          lineWidth: 2,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: 'Range High',
+        })
+      );
+    }
+
+    // Entry price lines for open positions (amber)
+    const positionList = this.positions();
+    for (const pos of positionList) {
+      if (pos.quantity > 0) {
+        const label = `Entry ${pos.pair.replace('-USD', '')}`;
+        const pl = this.candleSeries.createPriceLine({
+          price: pos.entry_price,
+          color: '#f59e0b',
+          lineWidth: 2,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: label,
+        });
+        this.entryPriceLines.push(pl);
+      }
     }
   }
 
@@ -246,6 +318,10 @@ export class PriceChartComponent implements OnDestroy {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+    this.gridPriceLines = [];
+    this.rangePriceLines = [];
+    this.currentPriceLine = null;
+    this.entryPriceLines = [];
     if (this.chart) {
       this.chart.remove();
       this.chart = null;

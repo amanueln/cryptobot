@@ -1,6 +1,6 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { ApiService, CandleData, TradeData, IndicatorData, GridLevelData } from '../../services/api.service';
+import { ApiService, CandleData, TradeData, IndicatorData, GridLevelData, PositionData } from '../../services/api.service';
 import { PriceChartComponent } from './price-chart.component';
 import { IndicatorPanelComponent } from '../indicator-panel/indicator-panel.component';
 import { TradeLogComponent } from '../trade-log/trade-log.component';
@@ -22,6 +22,9 @@ import { TradeLogComponent } from '../trade-log/trade-log.component';
           [trades]="trades()"
           [indicators]="indicators()"
           [gridLevels]="gridLevelPrices()"
+          [rangeLower]="rangeLower()"
+          [rangeUpper]="rangeUpper()"
+          [positions]="positions()"
         />
       </div>
 
@@ -44,6 +47,9 @@ export class PairViewComponent implements OnInit {
   trades = signal<TradeData[]>([]);
   indicators = signal<IndicatorData[]>([]);
   gridLevelPrices = signal<{ price: number; type: string }[]>([]);
+  rangeLower = signal<number>(0);
+  rangeUpper = signal<number>(0);
+  positions = signal<PositionData[]>([]);
 
   ngOnInit(): void {
     const sym = this.route.snapshot.paramMap.get('symbol') ?? '';
@@ -63,7 +69,15 @@ export class PairViewComponent implements OnInit {
     });
 
     this.api.fetchGridLevels(sym).subscribe({
-      next: (data: GridLevelData) => this.gridLevelPrices.set(data.levels),
+      next: (data: GridLevelData) => {
+        this.gridLevelPrices.set(data.levels);
+        this.rangeLower.set(data.lower);
+        this.rangeUpper.set(data.upper);
+      },
+    });
+
+    this.api.fetchPositions().subscribe({
+      next: (data) => this.positions.set(data.filter(p => p.pair === sym)),
     });
   }
 }

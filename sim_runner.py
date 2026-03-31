@@ -1,16 +1,16 @@
 """Multi-pair simultaneous simulation runner.
 
-Runs multiple pairs with their optimal strategies in parallel,
-tracks combined equity, and displays a unified dashboard.
+Dynamically discovers the best pairs via PairSelector, optionally uses
+ML predictions for position sizing, and runs multiple strategies in parallel.
 
 Usage:
-    py sim_runner.py [--poll 60] [--warmup 30]
+    py sim_runner.py [--poll 60] [--warmup 30] [--ml]
 """
 
 import argparse
+import logging
 import os
 import time
-import sqlite3
 from datetime import datetime, timedelta
 
 import yaml
@@ -22,7 +22,11 @@ from data.candle_store import CandleStore
 from data.trade_logger import TradeLogger
 from strategies.grid_strategy import GridStrategy
 from intelligence.strategy_orchestrator import StrategyOrchestrator
+from intelligence.pair_selector import PairSelector, load_pair_selector_config
+from intelligence.ml_predictor import MLPredictor, load_ml_config
 from strategies.base_strategy import BaseStrategy
+
+logger = logging.getLogger(__name__)
 
 
 # --- Per-pair engine (lightweight, no polling loop) ---
@@ -59,7 +63,7 @@ class PairEngine:
         self.candles_fed: int = 0
         self.trade_count: int = 0
 
-    def process_candles(self, candles: list[Candle]) -> list[dict]:
+    def process_candles(self, candles: list[Candle], size_multiplier: float = 1.0) -> list[dict]:
         """Feed new candles to strategy, execute signals. Returns trade events."""
         events = []
         for candle in candles:
@@ -72,6 +76,12 @@ class PairEngine:
 
             signals = self.strategy.on_candle(candle)
             for signal in signals:
+                # Apply ML size multiplier to buy signals
+                if size_multiplier < 1.0 and signal.action == "buy" and signal.amount_usd:
+                    signal.amount_usd = signal.amount_usd * size_multiplier
+                    if signal.amount_usd < 1.0:
+                        continue  # Skip tiny trades
+
                 price = signal.limit_price if signal.order_type == "limit" and signal.limit_price else candle.close
                 trade = self.simulator.execute(signal, price, candle.timestamp)
                 if trade:
@@ -91,9 +101,15 @@ class PairEngine:
 # --- Multi-pair runner ---
 
 class SimRunner:
-    def __init__(self, poll_seconds: int = 60, warmup_days: int = 30):
+    def __init__(
+        self,
+        poll_seconds: int = 60,
+        warmup_days: int = 30,
+        use_ml: bool = False,
+    ):
         self.poll_seconds = poll_seconds
         self.warmup_days = warmup_days
+        self.use_ml = use_ml
         self.client = CoinbaseClient()
         self.candle_store = CandleStore("data/candles.db")
         self.trade_logger = TradeLogger("data/candles.db")
@@ -102,6 +118,16 @@ class SimRunner:
         self.session_start = datetime.now()
         self.equity_history: list[tuple[datetime, float]] = []
         self.running = False
+
+        # ML predictor (only created if --ml)
+        self.ml_predictor: MLPredictor | None = None
+        # Pending outcome checks: {prediction_id: (pair, predicted_candle_ts, candles_remaining)}
+        self._pending_outcomes: dict[int, dict] = {}
+
+        # Pair selector for periodic rescans
+        self.pair_selector: PairSelector | None = None
+        self._last_full_scan: datetime | None = None
+        self._last_quick_check: datetime | None = None
 
     def add_pair(
         self,
@@ -151,18 +177,44 @@ class SimRunner:
             else:
                 print(f"  {engine.name:<20} WARNING: no warmup data")
 
+    def _train_ml_models(self):
+        """Train ML models for all active pairs using cached candles."""
+        if not self.ml_predictor:
+            return
+
+        print("\n  Training ML models...")
+        for engine in self.engines:
+            end = datetime.now()
+            start = end - timedelta(days=30)
+            candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+            if not candles or len(candles) < 100:
+                print(f"  {engine.pair:<12} skipped (only {len(candles) if candles else 0} candles)")
+                continue
+
+            meta = self.ml_predictor.train(engine.pair, candles)
+            if meta:
+                print(f"  {engine.pair:<12} trained v{meta.version} (RMSE: {meta.validation_rmse:.4f}  R²: {meta.validation_r2:.3f}  features: {len(meta.feature_names)})")
+            else:
+                print(f"  {engine.pair:<12} training failed")
+
     def run(self):
         """Main polling loop — polls all pairs, prints combined dashboard."""
         self.running = True
         self._print_header()
         self.warmup_all()
 
+        if self.use_ml:
+            self._train_ml_models()
+
         print(f"\n  Live polling every {self.poll_seconds}s")
+        if self.use_ml:
+            print(f"  ML predictions: ENABLED")
         print(f"  Press Ctrl+C to stop.\n")
 
         try:
             while self.running:
                 self._poll_all()
+                self._check_periodic_tasks()
                 time.sleep(self.poll_seconds)
         except KeyboardInterrupt:
             pass
@@ -173,20 +225,31 @@ class SimRunner:
         """Poll all pairs and process new candles."""
         now = datetime.now()
         total_equity = 0.0
-        any_trade = False
 
         for engine in self.engines:
             candles = self.client.get_latest_candles(engine.pair, engine.granularity, count=5)
-            if candles:
-                self.candle_store.save_candles(engine.pair, engine.granularity, candles)
-                events = engine.process_candles(candles)
-                for event in events:
-                    self._print_trade(event)
-                    self.trade_logger.log_trade(event["trade"])
-                    any_trade = True
+            if not candles:
+                total_equity += engine.get_equity()
+                continue
+
+            self.candle_store.save_candles(engine.pair, engine.granularity, candles)
+
+            # ML prediction for latest candle
+            size_multiplier = 1.0
+            if self.use_ml and self.ml_predictor:
+                size_multiplier = self._run_ml_prediction(engine, candles)
+
+            events = engine.process_candles(candles, size_multiplier)
+            for event in events:
+                self._print_trade(event)
+                self.trade_logger.log_trade(event["trade"])
 
             equity = engine.get_equity()
             total_equity += equity
+
+        # Check pending ML outcome evaluations
+        if self.use_ml:
+            self._evaluate_pending_outcomes()
 
         # Snapshot combined equity
         self.equity_history.append((now, total_equity))
@@ -194,10 +257,211 @@ class SimRunner:
 
         self._print_dashboard(total_equity)
 
+    def _run_ml_prediction(self, engine: PairEngine, candles: list[Candle]) -> float:
+        """Run ML prediction for a pair. Returns size multiplier."""
+        if not self.ml_predictor:
+            return 1.0
+
+        # Get longer history for feature extraction
+        end = datetime.now()
+        start = end - timedelta(days=7)
+        history = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+        if not history or len(history) < 30:
+            return 1.0
+
+        pred = self.ml_predictor.predict(engine.pair, history)
+        if pred is None:
+            return 1.0
+
+        # Log prediction to SQLite
+        pred_id = self.trade_logger.log_ml_prediction(pred)
+
+        # Track for outcome evaluation (4 candles later)
+        self._pending_outcomes[pred_id] = {
+            "pair": engine.pair,
+            "timestamp": pred.timestamp,
+            "price_at_prediction": candles[-1].close,
+            "candles_remaining": self.ml_predictor.prediction_horizon,
+        }
+
+        # Print ML info
+        arrow = "^" if pred.direction == "up" else ("v" if pred.direction == "down" else "-")
+        dp = pred.do_predict if hasattr(pred, "do_predict") else "?"
+        pct = pred.predicted_change_pct if hasattr(pred, "predicted_change_pct") else 0
+        print(
+            f"  [ML] {engine.pair:<12} {arrow} {pred.direction:<8} "
+            f"pred={pct:+.2f}%  conf={pred.confidence:.1%}  "
+            f"DI={dp}  action={pred.recommended_action}  "
+            f"size={pred.recommended_size_pct:.0%}"
+        )
+
+        return self.ml_predictor.get_size_multiplier(pred)
+
+    def _evaluate_pending_outcomes(self):
+        """Check predictions that are now 4+ candles old and record actual outcome."""
+        resolved = []
+        for pred_id, info in self._pending_outcomes.items():
+            info["candles_remaining"] -= 1
+            if info["candles_remaining"] > 0:
+                continue
+
+            # Get current price for this pair
+            pair = info["pair"]
+            current_price = None
+            for engine in self.engines:
+                if engine.pair == pair:
+                    current_price = engine.last_price
+                    break
+
+            if current_price and current_price > 0:
+                price_change = (current_price - info["price_at_prediction"]) / info["price_at_prediction"]
+                outcome = "up" if price_change > 0.005 else ("down" if price_change < -0.005 else "flat")
+                self.trade_logger.update_ml_outcome(pred_id, outcome, price_change)
+
+            resolved.append(pred_id)
+
+        for pred_id in resolved:
+            del self._pending_outcomes[pred_id]
+
+    def _check_periodic_tasks(self):
+        """Run periodic rescans and retrains."""
+        now = datetime.now()
+
+        # Quick check every 6 hours
+        if self.pair_selector and self._last_quick_check:
+            hours_since_quick = (now - self._last_quick_check).total_seconds() / 3600
+            if hours_since_quick >= 6:
+                self._run_quick_check()
+
+        # Full rescan every 24 hours
+        if self.pair_selector and self._last_full_scan:
+            hours_since_full = (now - self._last_full_scan).total_seconds() / 3600
+            if hours_since_full >= 24:
+                self._run_full_rescan()
+
+        # Retrain ML models every 24 hours
+        if self.use_ml and self.ml_predictor and self._last_full_scan:
+            for engine in self.engines:
+                end = datetime.now()
+                start = end - timedelta(days=30)
+                candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+                if candles and len(candles) >= 100:
+                    self.ml_predictor.retrain_in_background(engine.pair, candles)
+
+    def _run_quick_check(self):
+        """Quick check active pairs — swap out any in TRENDING_DOWN."""
+        if not self.pair_selector:
+            return
+
+        print("\n  [SCAN] Running quick check on active pairs...")
+        result = self.pair_selector.quick_check(self.total_allocation)
+        self._last_quick_check = datetime.now()
+
+        if result.swapped_out:
+            for swap in result.swapped_out:
+                print(f"  [SCAN] Swapped OUT: {swap['pair']} ({swap['reason']})")
+            for swap in result.swapped_in:
+                print(f"  [SCAN] Swapped IN: {swap['pair']} ({swap['reason']})")
+            self._rebuild_engines(result)
+
+        self.trade_logger.log_pair_scan(self.pair_selector.scan_result_to_dict(result))
+
+    def _run_full_rescan(self):
+        """Full rescan of all Coinbase pairs."""
+        if not self.pair_selector:
+            return
+
+        print("\n  [SCAN] Running full pair rescan...")
+        result = self.pair_selector.full_scan(self.total_allocation)
+        self._last_full_scan = datetime.now()
+        self._last_quick_check = datetime.now()
+
+        new_pairs = {s.pair for s in result.selected}
+        old_pairs = {e.pair for e in self.engines}
+
+        if new_pairs != old_pairs:
+            print(f"  [SCAN] Pair change: {old_pairs} -> {new_pairs}")
+            self._rebuild_engines(result)
+
+        self.trade_logger.log_pair_scan(self.pair_selector.scan_result_to_dict(result))
+
+        # Retrain ML for any new pairs
+        if self.use_ml and self.ml_predictor:
+            self._train_ml_models()
+
+    def _rebuild_engines(self, scan_result):
+        """Rebuild pair engines after a rescan changed the active set."""
+        configs = self.pair_selector.get_active_configs()
+        selected_pairs = [s.pair for s in scan_result.selected]
+        alloc_per_pair = self.total_allocation / max(len(selected_pairs), 1)
+
+        # Keep engines that are still active, remove stale ones
+        existing = {e.pair: e for e in self.engines}
+        new_engines = []
+
+        with open("config/bot_config.yaml") as f:
+            bot_config = yaml.safe_load(f)
+        sim = bot_config.get("simulation", {})
+        maker_fee = sim.get("maker_fee", 0.004)
+        taker_fee = sim.get("taker_fee", 0.006)
+        slippage = sim.get("slippage", 0.001)
+
+        for pair in selected_pairs:
+            if pair in existing:
+                new_engines.append(existing[pair])
+            else:
+                config = configs.get(pair, self._default_grid_config(pair, alloc_per_pair))
+                strategy = GridStrategy()
+                strategy.configure(config)
+                engine = PairEngine(
+                    name=f"{pair.split('-')[0]}-grid",
+                    strategy=strategy,
+                    pair=pair,
+                    granularity="ONE_HOUR",
+                    allocation_usd=alloc_per_pair,
+                    maker_fee=maker_fee,
+                    taker_fee=taker_fee,
+                    slippage=slippage,
+                )
+                new_engines.append(engine)
+                print(f"  [SCAN] Added engine for {pair}")
+
+        self.engines = new_engines
+
+    def _default_grid_config(self, pair: str, allocation: float) -> dict:
+        """Build a fallback grid config for a pair."""
+        end = datetime.now()
+        start = end - timedelta(days=14)
+        candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end)
+
+        low = 0.01
+        high = 1.0
+        if candles:
+            low = min(c.low for c in candles) * 0.95
+            high = max(c.high for c in candles) * 1.05
+
+        return {
+            "pair": pair,
+            "granularity": "ONE_HOUR",
+            "upper_price": high,
+            "lower_price": low,
+            "num_grids": 10,
+            "total_investment_usd": allocation,
+            "stop_loss_pct": 0.15,
+            "take_profit_pct": 0.10,
+            "adaptive_range": True,
+            "range_lookback_days": 14,
+            "recalc_interval_hours": 12,
+            "min_spacing_pct": 0.01,
+            "max_trades_per_day": 20,
+        }
+
     def _print_header(self):
         print()
         print("=" * 80)
         print("  CRYPTOBOT MULTI-PAIR SIMULATION")
+        if self.use_ml:
+            print("  ML PREDICTIONS: ENABLED")
         print("=" * 80)
         for engine in self.engines:
             print(f"  {engine.name:<20} {engine.pair:<12} ${engine.allocation:>10,.2f}")
@@ -250,6 +514,8 @@ class SimRunner:
         print(f"  Duration:     {hours:.1f} hours")
         print(f"  Total Equity: ${total_equity:,.2f}")
         print(f"  P&L:          {sign}${pnl:,.2f} ({sign}{pnl_pct:.1f}%)")
+        if self.use_ml:
+            print(f"  ML Mode:      ENABLED")
         print()
 
         for engine in self.engines:
@@ -292,17 +558,8 @@ class SimRunner:
         print(f"  {' ' * 12}+{'-' * len(sampled)}")
 
 
-def auto_fit_grid(candles: list[Candle], base_config: dict) -> dict:
-    lows = [c.low for c in candles]
-    highs = [c.high for c in candles]
-    config = dict(base_config)
-    config["lower_price"] = min(lows) * 0.95
-    config["upper_price"] = max(highs) * 1.05
-    return config
-
-
-def build_runner(poll_seconds: int = 60, warmup_days: int = 30) -> SimRunner:
-    """Build the multi-pair runner with optimal strategies per pair."""
+def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = False) -> SimRunner:
+    """Build the multi-pair runner using PairSelector for dynamic pair discovery."""
 
     with open("config/bot_config.yaml") as f:
         bot_config = yaml.safe_load(f)
@@ -313,87 +570,52 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30) -> SimRunner:
     taker_fee = sim.get("taker_fee", 0.006)
     slippage = sim.get("slippage", 0.001)
 
-    # Allocate capital: DOGE 40%, ETH 35%, PEPE 25%
-    doge_alloc = starting_balance * 0.40
-    eth_alloc = starting_balance * 0.35
-    pepe_alloc = starting_balance * 0.25
+    runner = SimRunner(poll_seconds=poll_seconds, warmup_days=warmup_days, use_ml=use_ml)
 
-    runner = SimRunner(poll_seconds=poll_seconds, warmup_days=warmup_days)
-    client = CoinbaseClient()
-    store = CandleStore("data/candles.db")
+    # --- Pair Selection ---
+    print("\n  Scanning Coinbase for optimal pairs...")
+    ps_config = load_pair_selector_config()
+    selector = PairSelector(ps_config, db_path="data/candles.db")
+    scan_result = selector.full_scan(starting_balance)
 
-    # Helper to get recent candles for auto-fitting grid ranges
-    def get_recent(pair, gran, days):
-        end = datetime.now()
-        start = end - timedelta(days=days)
-        candles = store.get_candles(pair, gran, start, end)
-        if not candles or len(candles) < days * 20:
-            fetched = client.get_candles(pair, gran, start, end)
-            if fetched:
-                store.save_candles(pair, gran, fetched)
-            candles = store.get_candles(pair, gran, start, end) or fetched
-        return candles or []
+    runner.pair_selector = selector
+    runner._last_full_scan = datetime.now()
+    runner._last_quick_check = datetime.now()
 
-    # --- DOGE: Adaptive grid + death cross filter ---
-    with open("config/strategies/doge.yaml") as f:
-        doge_config = yaml.safe_load(f)
-    doge_config["pair"] = "DOGE-USD"
-    doge_candles = get_recent("DOGE-USD", "ONE_HOUR", 30)
-    if doge_candles:
-        doge_config = auto_fit_grid(doge_candles, doge_config)
+    if not scan_result.selected:
+        print("  ERROR: No pairs selected. Check internet connection.")
+        return runner
 
-    doge_strategy = GridStrategy()
-    doge_strategy.configure(doge_config)
-    runner.add_pair("DOGE-grid", doge_strategy, "DOGE-USD", "ONE_HOUR", doge_alloc, maker_fee, taker_fee, slippage)
+    selected_pairs = [s.pair for s in scan_result.selected]
+    configs = selector.get_active_configs()
+    alloc_per_pair = starting_balance / len(selected_pairs)
 
-    # --- ETH: Intelligent regime-aware orchestrator ---
-    with open("config/strategies/eth.yaml") as f:
-        eth_grid_config = yaml.safe_load(f)
-    eth_grid_config["pair"] = "ETH-USD"
-    eth_candles = get_recent("ETH-USD", "ONE_HOUR", 30)
-    if eth_candles:
-        eth_grid_config = auto_fit_grid(eth_candles, eth_grid_config)
+    print(f"\n  Selected {len(selected_pairs)} pairs: {', '.join(selected_pairs)}")
+    print(f"  Allocation per pair: ${alloc_per_pair:,.2f}")
 
-    with open("config/intelligence.yaml") as f:
-        intel_config = yaml.safe_load(f)
+    # Log initial scan
+    runner.trade_logger.log_pair_scan(selector.scan_result_to_dict(scan_result))
 
-    eth_dca_config = {
-        "pair": "ETH-USD",
-        "granularity": "ONE_HOUR",
-        "risk_per_deal_pct": 0.35,
-        "volume_scale": 1.5,
-        "step_scale": 1.5,
-        "max_safety_orders": 5,
-        "atr_period": 14,
-        "bounce_lookback_days": 30,
-        "min_take_profit_pct": 0.8,
-        "max_take_profit_pct": 3.0,
-        "max_portfolio_drawdown_pct": 0.10,
-        "cooldown_candles": 5,
-        "starting_balance": eth_alloc,
-    }
+    # --- Build engines ---
+    for pair in selected_pairs:
+        config = configs.get(pair)
+        if not config:
+            config = runner._default_grid_config(pair, alloc_per_pair)
 
-    eth_orchestrator = StrategyOrchestrator()
-    eth_orchestrator.configure({
-        "pair": "ETH-USD",
-        "detector": intel_config,
-        "grid": eth_grid_config,
-        "dca": eth_dca_config,
-        "starting_balance": eth_alloc,
-    })
-    runner.add_pair("ETH-intelligent", eth_orchestrator, "ETH-USD", "ONE_HOUR", eth_alloc, maker_fee, taker_fee, slippage)
+        strategy = GridStrategy()
+        strategy.configure(config)
 
-    # --- PEPE: Adaptive grid ---
-    with open("config/strategies/pepe.yaml") as f:
-        pepe_config = yaml.safe_load(f)
-    pepe_config["pair"] = "PEPE-USD"
-    pepe_candles = get_recent("PEPE-USD", "ONE_HOUR", 30)
-    if pepe_candles:
-        pepe_config = auto_fit_grid(pepe_candles, pepe_config)
+        name = f"{pair.split('-')[0]}-grid"
+        runner.add_pair(name, strategy, pair, "ONE_HOUR", alloc_per_pair, maker_fee, taker_fee, slippage)
 
-    pepe_strategy = GridStrategy()
-    pepe_strategy.configure(pepe_config)
-    runner.add_pair("PEPE-grid", pepe_strategy, "PEPE-USD", "ONE_HOUR", pepe_alloc, maker_fee, taker_fee, slippage)
+    # --- ML Predictor ---
+    if use_ml:
+        ml_config = load_ml_config()
+        runner.ml_predictor = MLPredictor(config=ml_config, models_dir="models")
+        print(f"\n  ML predictor initialized (regression, expires every {ml_config.get('expiration_hours', 48)}h)")
+
+    # Print pair selection explanation
+    print(f"\n  {selector.generate_explanation(scan_result)}")
 
     return runner
 
@@ -402,10 +624,13 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-pair simulation runner")
     parser.add_argument("--poll", type=int, default=60, help="Poll interval in seconds")
     parser.add_argument("--warmup", type=int, default=30, help="Warmup days of historical data")
+    parser.add_argument("--ml", action="store_true", help="Enable ML predictions for position sizing")
     args = parser.parse_args()
 
     os.makedirs("data", exist_ok=True)
-    runner = build_runner(poll_seconds=args.poll, warmup_days=args.warmup)
+    os.makedirs("models", exist_ok=True)
+
+    runner = build_runner(poll_seconds=args.poll, warmup_days=args.warmup, use_ml=args.ml)
     runner.run()
 
 
