@@ -282,13 +282,12 @@ class PairSelector:
         fetch_elapsed = time.time() - t0
         logger.info(f"Candles fetched in {fetch_elapsed:.1f}s")
 
-        # Step 2b: Score each pair (CPU bound — use ProcessPoolExecutor to bypass GIL)
+        # Step 2b: Score each pair (uses threads — daemon processes can't spawn children)
         worker_config = {
             "max_active_pairs": self.max_active_pairs,
             "min_daily_vol_pct": self.min_daily_vol_pct,
             "min_fee_clearance": self.min_fee_clearance,
         }
-        # Serialize candles to dicts for pickling
         work_items = []
         for prod in eligible:
             pair = prod["pair"]
@@ -304,8 +303,8 @@ class PairSelector:
 
         scored: list[PairScore] = []
         num_workers = min(os.cpu_count() or 4, 16)
-        logger.info(f"Scoring {total} pairs with {num_workers} processes...")
-        with ProcessPoolExecutor(max_workers=num_workers) as pool:
+        logger.info(f"Scoring {total} pairs with {num_workers} threads...")
+        with ThreadPoolExecutor(max_workers=num_workers) as pool:
             futures = {
                 pool.submit(_score_pair_worker, item): item[0]
                 for item in work_items
