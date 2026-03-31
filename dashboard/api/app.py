@@ -37,13 +37,26 @@ def get_db():
 
 
 def _get_active_pairs(conn) -> list[str]:
-    """Get all pairs that have trades in the database."""
+    """Get the pairs the bot is actively trading."""
+    # 1. Check pair_scans for selected pairs (most accurate)
+    try:
+        row = conn.execute(
+            "SELECT selected_pairs FROM pair_scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row and row["selected_pairs"]:
+            selected = json.loads(row["selected_pairs"])
+            pairs = [p["pair"] if isinstance(p, dict) else p for p in selected]
+            if pairs:
+                return sorted(pairs)
+    except Exception:
+        pass
+    # 2. Pairs that have actual trades
     rows = conn.execute(
         "SELECT DISTINCT pair FROM sim_trades ORDER BY pair"
     ).fetchall()
     if rows:
         return [r["pair"] for r in rows]
-    # Fallback: get pairs from candles table
+    # 3. Last resort: candles table
     rows = conn.execute(
         "SELECT DISTINCT pair FROM candles ORDER BY pair"
     ).fetchall()
