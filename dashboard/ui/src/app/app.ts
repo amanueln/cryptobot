@@ -27,6 +27,8 @@ import { ApiService } from './services/api.service';
            class="tab-link">Simulator</a>
         <a routerLink="/regime" routerLinkActive="tab-active"
            class="tab-link">Regime</a>
+        <a routerLink="/self-check" routerLinkActive="tab-active"
+           class="tab-link tab-ai">Self-Check</a>
       </nav>
 
       <main class="p-4">

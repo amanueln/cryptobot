@@ -153,6 +153,23 @@ export interface VolPredictionData {
   feature_importance: Record<string, number>;
 }
 
+export interface SelfCheckData {
+  vol_accuracy_24h: { count: number; avg_error_pct: number; min_error_pct: number; max_error_pct: number };
+  vol_accuracy_7d: { count: number; avg_error_pct: number; min_error_pct: number; max_error_pct: number };
+  grid_performance: {
+    vol_regime: string;
+    avg_spacing_mult: number;
+    cycles: number;
+    total_pnl: number;
+    avg_pnl: number;
+    avg_spacing_pct: number;
+  }[];
+  streak: { type: string; days: number };
+  events: { timestamp: string; event_type: string; details: string }[];
+  trading_paused: { paused: boolean; reason: string; since: string };
+  daily_pnl: number;
+}
+
 export interface PairScanData {
   id: number;
   timestamp: string;
@@ -326,6 +343,10 @@ export class ApiService {
 
   fetchMLModelInfo() {
     return this.http.get<MLModelInfo[]>(`${API}/ml/model-info`);
+  }
+
+  fetchSelfCheck() {
+    return this.http.get<SelfCheckData>(`${API}/self-check`);
   }
 
   fetchVolPredictions(pair?: string, limit = 50) {

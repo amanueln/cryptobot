@@ -7,4 +7,5 @@ export const routes: Routes = [
   { path: 'pair-scanner', loadComponent: () => import('./components/pair-scanner/pair-scanner.component').then(m => m.PairScannerComponent) },
   { path: 'simulator', loadComponent: () => import('./components/dca-simulator/dca-simulator.component').then(m => m.DcaSimulatorComponent) },
   { path: 'regime', loadComponent: () => import('./components/regime-visualizer/regime-visualizer.component').then(m => m.RegimeVisualizerComponent) },
+  { path: 'self-check', loadComponent: () => import('./components/self-check/self-check.component').then(m => m.SelfCheckComponent) },
 ];

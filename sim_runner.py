@@ -129,6 +129,21 @@ class SimRunner:
         self.vol_predictor: VolatilityPredictor | None = None
         self._latest_vol_predictions: dict[str, VolatilityPrediction] = {}
         self._last_vol_train: datetime | None = None
+        self._last_vol_eval: datetime | None = None
+        self._vol_eval_errors: list[float] = []  # recent error percentages for auto-retrain
+
+        # Loss limits
+        self._trading_paused: bool = False
+        self._pause_reason: str = ""
+        self._pause_until: datetime | None = None
+        self._day_start_equity: float = 0.0
+        self._week_start_equity: float = 0.0
+        self._last_day_reset: datetime | None = None
+        self._last_week_reset: datetime | None = None
+
+        # Risk config from bot_master.yaml
+        self._max_loss_per_day: float = 30.0
+        self._max_loss_per_week: float = 75.0
 
         # Pair selector for periodic rescans
         self.pair_selector: PairSelector | None = None
@@ -206,6 +221,127 @@ class SimRunner:
                 reason="warmup position",
             )
             self.trade_logger.log_trade(trade)
+
+    def _evaluate_vol_accuracy(self):
+        """Compare predicted volatility vs actual realized volatility.
+
+        Runs every 12 hours. If predictions are off by >50% for 3 consecutive
+        days (6 checks), triggers immediate retrain.
+        """
+        if not self.vol_predictor:
+            return
+
+        now = datetime.now()
+        end = now
+        start = end - timedelta(hours=12)
+
+        for engine in self.engines:
+            candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
+            if not candles or len(candles) < 10:
+                continue
+
+            # Compute actual realized vol over last 12h
+            import numpy as np
+            closes = [c.close for c in candles]
+            log_rets = [np.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+            actual_vol = float(np.std(log_rets) * np.sqrt(24) * 100) if log_rets else 0
+
+            # Get the prediction that was made ~12h ago
+            pred = self._latest_vol_predictions.get(engine.pair)
+            if pred is None:
+                continue
+
+            predicted_vol = pred.predicted_vol_12h
+            error_pct = abs(predicted_vol - actual_vol) / actual_vol * 100 if actual_vol > 0 else 0
+
+            self.trade_logger.log_vol_accuracy(engine.pair, predicted_vol, actual_vol)
+            logger.info(
+                f"[VOL EVAL] {engine.pair}: predicted={predicted_vol:.1f}% actual={actual_vol:.1f}% "
+                f"error={error_pct:.0f}%"
+            )
+
+            self._vol_eval_errors.append(error_pct)
+
+        self._last_vol_eval = now
+
+        # Check if we need emergency retrain: >50% error for 6 consecutive checks (3 days)
+        if len(self._vol_eval_errors) >= 6:
+            recent = self._vol_eval_errors[-6:]
+            if all(e > 50 for e in recent):
+                logger.warning("[VOL] Predictions off by >50%% for 3 days — emergency retrain")
+                self.trade_logger.log_self_check(
+                    "vol_emergency_retrain",
+                    f"Last 6 error checks all >50%: {[f'{e:.0f}%' for e in recent]}"
+                )
+                self._train_vol_models()
+                self._vol_eval_errors.clear()
+
+        # Keep only last 14 checks (7 days)
+        if len(self._vol_eval_errors) > 14:
+            self._vol_eval_errors = self._vol_eval_errors[-14:]
+
+    def _check_loss_limits(self, total_equity: float) -> bool:
+        """Check daily/weekly loss limits. Returns True if trading should be paused."""
+        now = datetime.now()
+
+        # Reset day tracker at midnight
+        if self._last_day_reset is None or now.date() != self._last_day_reset.date():
+            self._day_start_equity = total_equity
+            self._last_day_reset = now
+            # Clear daily pause if new day
+            if self._pause_reason.startswith("daily"):
+                self._trading_paused = False
+                self._pause_reason = ""
+                self._pause_until = None
+
+        # Reset week tracker on Monday
+        if self._last_week_reset is None or (now.weekday() == 0 and
+                (now - self._last_week_reset).days >= 1):
+            self._week_start_equity = total_equity
+            self._last_week_reset = now
+            if self._pause_reason.startswith("weekly"):
+                self._trading_paused = False
+                self._pause_reason = ""
+                self._pause_until = None
+
+        if self._trading_paused:
+            if self._pause_until and now >= self._pause_until:
+                logger.info("[SAFETY] Loss limit pause expired — resuming trading")
+                self._trading_paused = False
+                self._pause_reason = ""
+                self._pause_until = None
+            return self._trading_paused
+
+        # Check daily loss
+        day_loss = self._day_start_equity - total_equity
+        if day_loss >= self._max_loss_per_day:
+            tomorrow = now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+            hours_left = (tomorrow - now).total_seconds() / 3600
+            self._trading_paused = True
+            self._pause_reason = f"daily loss limit (${day_loss:.2f} >= ${self._max_loss_per_day:.0f})"
+            self._pause_until = tomorrow
+            msg = (f"Trading paused — {self._pause_reason}. "
+                   f"Resumes in {hours_left:.0f} hours.")
+            logger.warning(f"[SAFETY] {msg}")
+            self.trade_logger.log_self_check("daily_loss_pause", msg)
+            return True
+
+        # Check weekly loss
+        week_loss = self._week_start_equity - total_equity
+        if week_loss >= self._max_loss_per_week:
+            days_until_monday = (7 - now.weekday()) % 7 or 7
+            next_monday = now.replace(hour=0, minute=0, second=0) + timedelta(days=days_until_monday)
+            hours_left = (next_monday - now).total_seconds() / 3600
+            self._trading_paused = True
+            self._pause_reason = f"weekly loss limit (${week_loss:.2f} >= ${self._max_loss_per_week:.0f})"
+            self._pause_until = next_monday
+            msg = (f"Trading paused — {self._pause_reason}. "
+                   f"Resumes in {hours_left:.0f} hours.")
+            logger.warning(f"[SAFETY] {msg}")
+            self.trade_logger.log_self_check("weekly_loss_pause", msg)
+            return True
+
+        return False
 
     def _train_vol_models(self):
         """Train volatility models for all active pairs."""
@@ -340,6 +476,11 @@ class SimRunner:
 
             self.candle_store.save_candles(engine.pair, engine.granularity, candles)
 
+            # Skip trading signals if loss limits are hit (still poll/track equity)
+            if self._trading_paused:
+                total_equity += engine.get_equity()
+                continue
+
             # ML prediction for latest candle
             size_multiplier = 1.0
             if self.use_ml and self.ml_predictor:
@@ -349,6 +490,8 @@ class SimRunner:
             for event in events:
                 self._print_trade(event)
                 self.trade_logger.log_trade(event["trade"])
+                # Track completed grid cycles (sell = cycle complete)
+                self._track_grid_cycle(engine, event)
 
             equity = engine.get_equity()
             total_equity += equity
@@ -366,6 +509,9 @@ class SimRunner:
         total_positions = total_equity - total_balance
         self.equity_history.append((now, total_equity))
         self.trade_logger.log_equity(now, total_equity, total_balance, total_positions)
+
+        # Check loss limits
+        self._check_loss_limits(total_equity)
 
         self._print_dashboard(total_equity)
 
@@ -435,6 +581,48 @@ class SimRunner:
         for pred_id in resolved:
             del self._pending_outcomes[pred_id]
 
+    def _track_grid_cycle(self, engine: PairEngine, event: dict):
+        """Log completed grid cycles (sell events) with spacing and regime context."""
+        trade = event["trade"]
+        if trade.side != "sell" or "grid sell" not in trade.reason:
+            return
+
+        # Extract buy price from the grid level's entry_price
+        sell_price = trade.price
+        buy_price = 0.0
+        amount = trade.amount
+
+        # Try to find the matching buy entry from the strategy's grid levels
+        if hasattr(engine.strategy, 'grid_spacing'):
+            buy_price = sell_price - engine.strategy.grid_spacing
+            if buy_price <= 0:
+                buy_price = sell_price * 0.97  # fallback estimate
+
+        # Calculate P&L
+        cost = buy_price * amount
+        revenue = sell_price * amount
+        fee_rate = 0.006  # taker fee
+        pnl = revenue - cost - (cost + revenue) * fee_rate
+
+        # Spacing as percentage
+        spacing_pct = (engine.strategy.grid_spacing / buy_price * 100) if buy_price > 0 else 0
+
+        # Get current vol context
+        vol_pred = self._latest_vol_predictions.get(engine.pair)
+        vol_regime = vol_pred.vol_regime if vol_pred else ""
+        spacing_mult = vol_pred.spacing_multiplier if vol_pred else 1.0
+
+        self.trade_logger.log_grid_cycle(
+            pair=engine.pair,
+            buy_price=buy_price,
+            sell_price=sell_price,
+            amount=amount,
+            pnl_usd=pnl,
+            spacing_pct=spacing_pct,
+            vol_regime=vol_regime,
+            spacing_multiplier=spacing_mult,
+        )
+
     def _check_periodic_tasks(self):
         """Run periodic rescans and retrains."""
         now = datetime.now()
@@ -450,6 +638,17 @@ class SimRunner:
             hours_since_full = (now - self._last_full_scan).total_seconds() / 3600
             if hours_since_full >= 24:
                 self._run_full_rescan()
+
+        # Evaluate vol prediction accuracy every 12 hours
+        if self.vol_predictor and self._last_vol_eval:
+            hours_since_eval = (now - self._last_vol_eval).total_seconds() / 3600
+            if hours_since_eval >= 12:
+                self._evaluate_vol_accuracy()
+        elif self.vol_predictor and self._last_vol_train:
+            # First eval 12h after initial training
+            hours_since_train = (now - self._last_vol_train).total_seconds() / 3600
+            if hours_since_train >= 12:
+                self._evaluate_vol_accuracy()
 
         # Retrain volatility models periodically
         if self.vol_predictor and self._last_vol_train:
@@ -611,12 +810,20 @@ class SimRunner:
             e_sign = "+" if e_pnl >= 0 else ""
             parts.append(f"{engine.pair}: ${e_equity:,.2f}({e_sign}{e_pnl:.2f})")
 
+        pause_tag = ""
+        if self._trading_paused:
+            hours_left = 0
+            if self._pause_until:
+                hours_left = max(0, (self._pause_until - now).total_seconds() / 3600)
+            pause_tag = f"  !! PAUSED ({self._pause_reason}, {hours_left:.0f}h left)"
+
         print(
             f"  [{now.strftime('%m-%d %H:%M')}]  "
             f"Combined: ${total_equity:>10,.2f}  "
             f"P&L: {sign}${pnl:>8,.2f} ({sign}{pnl_pct:.1f}%)  "
             f"Trades: {sum(e.trade_count for e in self.engines)}  |  "
             + "  ".join(parts)
+            + pause_tag
         )
 
     def _print_summary(self):
@@ -740,6 +947,16 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
         vol_cfg = ml_config.get("volatility", {})
         runner.vol_predictor = VolatilityPredictor(config=vol_cfg)
         print(f"\n  Volatility predictor initialized (GARCH-LightGBM, horizon={vol_cfg.get('forecast_horizon', 12)}h)")
+
+    # --- Load risk limits from bot_master.yaml ---
+    try:
+        with open("config/bot_master.yaml") as f:
+            master_config = yaml.safe_load(f) or {}
+        runner._max_loss_per_day = float(master_config.get("max_loss_per_day_usd", 30))
+        runner._max_loss_per_week = float(master_config.get("max_loss_per_week_usd", 75))
+        print(f"\n  Loss limits: ${runner._max_loss_per_day:.0f}/day, ${runner._max_loss_per_week:.0f}/week")
+    except Exception:
+        pass  # use defaults
 
     # Print pair selection explanation
     print(f"\n  {selector.generate_explanation(scan_result)}")

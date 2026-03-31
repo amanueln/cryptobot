@@ -82,6 +82,40 @@ class TradeLogger:
                     feature_importance TEXT
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vol_accuracy (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    predicted_vol REAL NOT NULL,
+                    actual_vol REAL NOT NULL,
+                    error_pct REAL NOT NULL,
+                    window_hours INTEGER NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS grid_cycles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    buy_price REAL NOT NULL,
+                    sell_price REAL NOT NULL,
+                    amount REAL NOT NULL,
+                    pnl_usd REAL NOT NULL,
+                    spacing_pct REAL NOT NULL,
+                    vol_regime TEXT,
+                    spacing_multiplier REAL,
+                    hold_seconds INTEGER
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS self_check_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    details TEXT NOT NULL
+                )
+            """)
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -233,6 +267,56 @@ class TradeLogger:
             )
             conn.commit()
             return cursor.lastrowid
+        finally:
+            conn.close()
+
+    def log_vol_accuracy(self, pair: str, predicted_vol: float, actual_vol: float,
+                         window_hours: int = 12) -> None:
+        """Log predicted vs actual volatility for accuracy tracking."""
+        error_pct = abs(predicted_vol - actual_vol) / actual_vol * 100 if actual_vol > 0 else 0
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO vol_accuracy
+                   (timestamp, pair, predicted_vol, actual_vol, error_pct, window_hours)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (datetime.now().isoformat(), pair, predicted_vol, actual_vol,
+                 error_pct, window_hours),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_grid_cycle(self, pair: str, buy_price: float, sell_price: float,
+                       amount: float, pnl_usd: float, spacing_pct: float,
+                       vol_regime: str = "", spacing_multiplier: float = 1.0,
+                       hold_seconds: int = 0) -> None:
+        """Log a completed grid cycle (buy + sell)."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO grid_cycles
+                   (timestamp, pair, buy_price, sell_price, amount, pnl_usd,
+                    spacing_pct, vol_regime, spacing_multiplier, hold_seconds)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (datetime.now().isoformat(), pair, buy_price, sell_price, amount,
+                 pnl_usd, spacing_pct, vol_regime, spacing_multiplier, hold_seconds),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_self_check(self, event_type: str, details: str) -> None:
+        """Log a self-check event (auto-retrain, loss limit, etc.)."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO self_check_log
+                   (timestamp, event_type, details)
+                   VALUES (?, ?, ?)""",
+                (datetime.now().isoformat(), event_type, details),
+            )
+            conn.commit()
         finally:
             conn.close()
 

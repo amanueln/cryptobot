@@ -925,6 +925,132 @@ def api_vol_latest():
     return jsonify(result)
 
 
+# ---------- /api/self-check ----------
+
+@app.route("/api/self-check")
+def api_self_check():
+    """Return comprehensive self-check data for the dashboard."""
+    conn = get_db()
+    result = {}
+
+    # --- Vol accuracy (last 24h and 7d) ---
+    _ensure_table(conn, "vol_accuracy")
+    for label, hours in [("24h", 24), ("7d", 168)]:
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        rows = conn.execute(
+            "SELECT predicted_vol, actual_vol, error_pct FROM vol_accuracy WHERE timestamp >= ?",
+            (cutoff,),
+        ).fetchall()
+        if rows:
+            errors = [r["error_pct"] for r in rows]
+            avg_error = sum(errors) / len(errors)
+            result[f"vol_accuracy_{label}"] = {
+                "count": len(rows),
+                "avg_error_pct": round(avg_error, 1),
+                "min_error_pct": round(min(errors), 1),
+                "max_error_pct": round(max(errors), 1),
+            }
+        else:
+            result[f"vol_accuracy_{label}"] = {"count": 0, "avg_error_pct": 0, "min_error_pct": 0, "max_error_pct": 0}
+
+    # --- Grid performance by spacing level ---
+    _ensure_table(conn, "grid_cycles")
+    spacing_rows = conn.execute(
+        """SELECT vol_regime, spacing_multiplier,
+                  COUNT(*) as cycles, SUM(pnl_usd) as total_pnl,
+                  AVG(pnl_usd) as avg_pnl, AVG(spacing_pct) as avg_spacing
+           FROM grid_cycles
+           GROUP BY vol_regime
+           ORDER BY total_pnl DESC"""
+    ).fetchall()
+    result["grid_performance"] = [
+        {
+            "vol_regime": r["vol_regime"] or "unknown",
+            "avg_spacing_mult": round(r["spacing_multiplier"] or 1.0, 2),
+            "cycles": r["cycles"],
+            "total_pnl": round(r["total_pnl"] or 0, 2),
+            "avg_pnl": round(r["avg_pnl"] or 0, 4),
+            "avg_spacing_pct": round(r["avg_spacing"] or 0, 2),
+        }
+        for r in spacing_rows
+    ]
+
+    # --- Consecutive winning/losing days ---
+    day_rows = conn.execute(
+        """SELECT DATE(timestamp) as day, SUM(pnl_usd) as day_pnl
+           FROM grid_cycles
+           GROUP BY DATE(timestamp)
+           ORDER BY DATE(timestamp) DESC
+           LIMIT 30"""
+    ).fetchall()
+    streak_type = ""
+    streak_count = 0
+    for r in day_rows:
+        pnl = r["day_pnl"] or 0
+        day_is_win = pnl > 0
+        if streak_count == 0:
+            streak_type = "winning" if day_is_win else "losing"
+            streak_count = 1
+        elif (day_is_win and streak_type == "winning") or (not day_is_win and streak_type == "losing"):
+            streak_count += 1
+        else:
+            break
+    result["streak"] = {"type": streak_type or "none", "days": streak_count}
+
+    # --- Self-check events (auto-adjustments) ---
+    _ensure_table(conn, "self_check_log")
+    events = conn.execute(
+        "SELECT timestamp, event_type, details FROM self_check_log ORDER BY id DESC LIMIT 20"
+    ).fetchall()
+    result["events"] = [
+        {"timestamp": r["timestamp"], "event_type": r["event_type"], "details": r["details"]}
+        for r in events
+    ]
+
+    # --- Trading pause status ---
+    # Check for most recent pause event
+    pause_event = conn.execute(
+        """SELECT timestamp, event_type, details FROM self_check_log
+           WHERE event_type LIKE '%_loss_pause'
+           ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    if pause_event:
+        result["trading_paused"] = {
+            "paused": True,
+            "reason": pause_event["details"],
+            "since": pause_event["timestamp"],
+        }
+    else:
+        result["trading_paused"] = {"paused": False, "reason": "", "since": ""}
+
+    # --- Daily P&L ---
+    today = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+    _ensure_table(conn, "equity_snapshots")
+    day_start = conn.execute(
+        "SELECT equity FROM equity_snapshots WHERE timestamp >= ? ORDER BY id ASC LIMIT 1",
+        (today,),
+    ).fetchone()
+    day_latest = conn.execute(
+        "SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if day_start and day_latest:
+        result["daily_pnl"] = round(day_latest["equity"] - day_start["equity"], 2)
+    else:
+        result["daily_pnl"] = 0
+
+    conn.close()
+    return jsonify(result)
+
+
+def _ensure_table(conn, table_name: str) -> bool:
+    """Check if a table exists, return True if it does."""
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
 # ---------- /api/pair-scans ----------
 
 @app.route("/api/pair-scans")
