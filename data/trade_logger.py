@@ -332,12 +332,14 @@ class TradeLogger:
             conn.close()
 
     def log_event(self, event_type: str, title: str, detail: str = "", pair: str = "") -> None:
+        """Log a bot event for the activity feed (trade, ATR adjust, scan, etc.)."""
+        now = datetime.now().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute(
                 """INSERT INTO bot_events (timestamp, event_type, pair, title, detail, created_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (datetime.now().isoformat(), event_type, pair, title, detail, datetime.now().isoformat()),
+                (now, event_type, pair, title, detail, now),
             )
             conn.commit()
         finally:

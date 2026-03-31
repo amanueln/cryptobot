@@ -1335,7 +1335,8 @@ _update_status = "unknown"
 
 @app.route("/api/events")
 def api_events():
-    limit = int(request.args.get("limit", 50))
+    """Return recent bot events for the activity feed."""
+    limit = min(int(request.args.get("limit", 50)), 500)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
