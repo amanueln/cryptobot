@@ -116,6 +116,17 @@ class TradeLogger:
                     details TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS bot_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    pair TEXT,
+                    title TEXT NOT NULL,
+                    detail TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -315,6 +326,18 @@ class TradeLogger:
                    (timestamp, event_type, details)
                    VALUES (?, ?, ?)""",
                 (datetime.now().isoformat(), event_type, details),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_event(self, event_type: str, title: str, detail: str = "", pair: str = "") -> None:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO bot_events (timestamp, event_type, pair, title, detail, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (datetime.now().isoformat(), event_type, pair, title, detail, datetime.now().isoformat()),
             )
             conn.commit()
         finally:

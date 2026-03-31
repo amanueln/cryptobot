@@ -67,6 +67,10 @@ class BotEngine:
         self.candle_store = CandleStore(db_path)
         self.trade_logger = TradeLogger(db_path)
 
+        # Inject trade_logger into strategy for event logging (e.g. ATR adjustments)
+        if hasattr(self.strategy, '_trade_logger'):
+            self.strategy._trade_logger = self.trade_logger
+
         # State
         self._last_candle_ts: datetime | None = None
         self._candles_fed: int = 0
@@ -144,6 +148,10 @@ class BotEngine:
                 if trade:
                     self.trade_logger.log_trade(trade)
                     self._print_trade(trade)
+                    event_type = "trade_buy" if trade.side == "buy" else "trade_sell"
+                    title = f"{'Bought' if trade.side == 'buy' else 'Sold'} {trade.amount:,.0f} {trade.pair.replace('-USD', '')} at ${trade.price}"
+                    detail = trade.reason
+                    self.trade_logger.log_event(event_type, title, detail, pair=trade.pair)
 
             # Equity snapshot
             equity = self.simulator.get_equity({self.pair: candle.close})

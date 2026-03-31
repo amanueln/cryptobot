@@ -80,9 +80,23 @@ class GridStrategy(BaseStrategy):
         self._trade_timestamps: deque[float] = deque()  # unix timestamps of recent trades
         self._trade_cap_paused: bool = False
 
-        # Volatility-based spacing adjustment
-        self._vol_spacing_multiplier: float = 1.0  # from VolatilityPredictor
+        # ATR-based volatility adaptation (always active, no training needed)
+        self.atr_period: int = 14
+        self.atr_spacing_multiplier: float = 2.0  # configurable: grid spacing = ATR * this
+        self._atr_values: deque[float] = deque(maxlen=14)
+        self._atr_current: float = 0.0
+        self._atr_mean: float = 0.0  # rolling mean ATR for baseline comparison
+        self._atr_history: deque[float] = deque(maxlen=336)  # 14 days of ATR values
+        self._prev_close_for_atr: float | None = None
+
+        # Volatility-based spacing adjustment (ML layer, overrides ATR when R² > 0)
+        self._vol_spacing_multiplier: float = 1.0
+        self._vol_ml_override: bool = False  # True when ML has actively set the multiplier
         self._vol_regime: str = "unknown"
+
+        # Event logging
+        self._prev_atr_mult: float = 1.0
+        self._trade_logger = None
 
     def configure(self, config: dict) -> None:
         self.pair = config["pair"]
@@ -132,14 +146,51 @@ class GridStrategy(BaseStrategy):
         # Daily trade cap
         self.max_trades_per_day = int(config.get("max_trades_per_day", 0))
 
+        # ATR spacing config
+        self.atr_period = int(config.get("atr_period", 14))
+        self.atr_spacing_multiplier = float(config.get("atr_spacing_multiplier", 2.0))
+        self._atr_values = deque(maxlen=self.atr_period)
+        self._atr_history = deque(maxlen=max(336, int(self.range_lookback_days * 24) if self.adaptive_range else 336))
+
+    def _update_atr(self, candle: Candle) -> None:
+        """Incrementally update ATR(14). Works from candle 2 onwards."""
+        if self._prev_close_for_atr is not None:
+            tr = max(
+                candle.high - candle.low,
+                abs(candle.high - self._prev_close_for_atr),
+                abs(candle.low - self._prev_close_for_atr),
+            )
+            self._atr_values.append(tr)
+            if len(self._atr_values) >= self.atr_period:
+                self._atr_current = sum(self._atr_values) / len(self._atr_values)
+                self._atr_history.append(self._atr_current)
+                if len(self._atr_history) >= self.atr_period:
+                    self._atr_mean = sum(self._atr_history) / len(self._atr_history)
+        self._prev_close_for_atr = candle.close
+
+    def _compute_atr_spacing_multiplier(self) -> float:
+        """Compute spacing multiplier from ATR ratio: current ATR vs historical mean.
+
+        Returns ~1.0 on average, > 1.0 when vol is above normal (widen grid),
+        < 1.0 when vol is below normal (tighten grid). Clamped to [0.5, 2.0].
+        Dead zone: ratios within 5% of 1.0 snap to 1.0 to avoid noise.
+        """
+        if self._atr_current <= 0 or self._atr_mean <= 0:
+            return 1.0
+        ratio = self._atr_current / self._atr_mean
+        if 0.95 <= ratio <= 1.05:
+            return 1.0
+        return max(0.5, min(2.0, ratio))
+
     def apply_volatility_adjustment(self, spacing_multiplier: float, vol_regime: str,
                                        recommended_grids: int = 0) -> None:
-        """Apply volatility-based spacing adjustment from VolatilityPredictor.
+        """Apply ML-based spacing adjustment from VolatilityPredictor.
 
-        Called externally by sim_runner each polling cycle.
-        Adjusts grid spacing: high vol → wider spacing, low vol → tighter spacing.
+        Called externally by sim_runner when model R² > 0.
+        Overrides the ATR-based default.
         """
         self._vol_spacing_multiplier = max(0.5, min(2.0, spacing_multiplier))
+        self._vol_ml_override = True
         self._vol_regime = vol_regime
 
     def _update_trend_filter(self, close: float) -> None:
@@ -182,11 +233,32 @@ class GridStrategy(BaseStrategy):
         new_lower = min(c.low for c in self._candle_history)
         new_upper = max(c.high for c in self._candle_history)
 
-        # Apply volatility-based spacing adjustment
-        if self._vol_spacing_multiplier != 1.0:
+        # Two-layer volatility spacing adjustment:
+        # Layer 1 (floor): ATR-based, always active from candle ~15
+        # Layer 2 (ceiling): ML vol predictor, overrides ATR when R² > 0
+        if self._vol_ml_override:
+            spacing_mult = self._vol_spacing_multiplier
+        else:
+            spacing_mult = self._compute_atr_spacing_multiplier()
+            self._vol_spacing_multiplier = spacing_mult  # store for get_state()
+
+        if hasattr(self, '_trade_logger') and self._trade_logger:
+            old_mult = getattr(self, '_prev_atr_mult', 1.0)
+            new_mult = self._vol_spacing_multiplier
+            if abs(new_mult - old_mult) > 0.05:
+                direction = "widened" if new_mult > old_mult else "narrowed"
+                self._trade_logger.log_event(
+                    "atr_adjust",
+                    f"{self.pair.replace('-USD', '')} spacing {direction} to {new_mult:.1f}x",
+                    f"ATR moved from ${self._atr_mean:.6f} avg to ${self._atr_current:.6f} current",
+                    pair=self.pair,
+                )
+                self._prev_atr_mult = new_mult
+
+        if spacing_mult != 1.0:
             mid = (new_lower + new_upper) / 2
             half_range = (new_upper - new_lower) / 2
-            adjusted_half = half_range * self._vol_spacing_multiplier
+            adjusted_half = half_range * spacing_mult
             new_lower = mid - adjusted_half
             new_upper = mid + adjusted_half
 
@@ -316,6 +388,9 @@ class GridStrategy(BaseStrategy):
     def on_candle(self, candle: Candle, warmup: bool = False) -> list[Signal]:
         if self.paused:
             return []
+
+        # ATR updates on every candle (warmup and live)
+        self._update_atr(candle)
 
         # During warmup: update indicators but don't generate trade signals
         if warmup:
@@ -454,7 +529,11 @@ class GridStrategy(BaseStrategy):
             state["max_trades_per_day"] = self.max_trades_per_day
             state["trades_in_window"] = len(self._trade_timestamps)
             state["trade_cap_paused"] = self._trade_cap_paused
-        if self._vol_spacing_multiplier != 1.0 or self._vol_regime != "unknown":
-            state["vol_spacing_multiplier"] = self._vol_spacing_multiplier
-            state["vol_regime"] = self._vol_regime
+        # ATR and vol info
+        state["atr_current"] = round(self._atr_current, 8)
+        state["atr_mean"] = round(self._atr_mean, 8)
+        state["atr_spacing_multiplier"] = self.atr_spacing_multiplier
+        state["vol_spacing_multiplier"] = self._vol_spacing_multiplier
+        state["vol_ml_override"] = self._vol_ml_override
+        state["vol_regime"] = self._vol_regime
         return state
