@@ -405,6 +405,13 @@ class SimRunner:
                 f"grids={pred.recommended_num_grids}  "
                 f"[{layer}]"
             )
+            short = engine.pair.replace("-USD", "")
+            self.trade_logger.log_event(
+                "vol_check",
+                f"{short} vol {pred.vol_regime} — spacing {pred.spacing_multiplier:.2f}x",
+                f"Predicted 12h vol: {pred.predicted_vol_12h:.1f}% | {layer}",
+                pair=engine.pair,
+            )
 
     def _train_ml_models(self):
         """Train ML models for all active pairs using cached candles."""
@@ -455,6 +462,14 @@ class SimRunner:
         # Train volatility models (always, independent of --ml flag)
         if self.vol_predictor:
             self._train_vol_models()
+
+        # Log boot event
+        pairs_str = ", ".join(e.pair.replace("-USD", "") for e in self.engines)
+        self.trade_logger.log_event(
+            "boot",
+            f"Bot started — watching {len(self.engines)} pairs",
+            f"Pairs: {pairs_str}",
+        )
 
         print(f"\n  Live polling every {self.poll_seconds}s")
         if self.use_ml:
@@ -692,6 +707,20 @@ class SimRunner:
             for swap in result.swapped_in:
                 print(f"  [SCAN] Swapped IN: {swap['pair']} ({swap['reason']})")
             self._rebuild_engines(result)
+            out_names = ", ".join(s["pair"].replace("-USD", "") for s in result.swapped_out)
+            in_names = ", ".join(s["pair"].replace("-USD", "") for s in result.swapped_in)
+            self.trade_logger.log_event(
+                "scan_complete",
+                f"Quick check — swapped {out_names} → {in_names}",
+                f"Reason: {result.swapped_out[0].get('reason', '')}",
+            )
+        else:
+            active = ", ".join(e.pair.replace("-USD", "") for e in self.engines)
+            self.trade_logger.log_event(
+                "scan_complete",
+                f"Quick check — {len(self.engines)} pairs confirmed, no swaps",
+                f"Active: {active}",
+            )
 
         self.trade_logger.log_pair_scan(self.pair_selector.scan_result_to_dict(result))
 
@@ -711,6 +740,24 @@ class SimRunner:
         if new_pairs != old_pairs:
             print(f"  [SCAN] Pair change: {old_pairs} -> {new_pairs}")
             self._rebuild_engines(result)
+            added = new_pairs - old_pairs
+            removed = old_pairs - new_pairs
+            detail_parts = []
+            if removed:
+                detail_parts.append(f"Dropped: {', '.join(p.replace('-USD', '') for p in removed)}")
+            if added:
+                detail_parts.append(f"Added: {', '.join(p.replace('-USD', '') for p in added)}")
+            self.trade_logger.log_event(
+                "scan_complete",
+                f"Full rescan — {len(new_pairs)} pairs selected",
+                " | ".join(detail_parts),
+            )
+        else:
+            self.trade_logger.log_event(
+                "scan_complete",
+                f"Full rescan — {len(new_pairs)} pairs confirmed, no changes",
+                f"Active: {', '.join(p.replace('-USD', '') for p in new_pairs)}",
+            )
 
         self.trade_logger.log_pair_scan(self.pair_selector.scan_result_to_dict(result))
 

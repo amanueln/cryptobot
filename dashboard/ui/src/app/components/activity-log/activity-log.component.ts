@@ -11,6 +11,7 @@ interface ActionConfig {
 }
 
 const ACTION_MAP: Record<string, ActionConfig> = {
+  boot:         { label: 'Started',        color: '#22d3ee', bg: 'rgba(34,211,238,0.12)' },
   trade_buy:    { label: 'Bought',         color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
   trade_sell:   { label: 'Sold',           color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
   atr_adjust:   { label: 'Spacing changed',color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },

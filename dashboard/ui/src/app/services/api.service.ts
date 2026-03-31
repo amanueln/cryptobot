@@ -174,6 +174,7 @@ export interface SelfCheckData {
   events: { timestamp: string; event_type: string; details: string }[];
   trading_paused: { paused: boolean; reason: string; since: string };
   daily_pnl: number;
+  weekly_pnl: number;
 }
 
 export interface PairScanData {

@@ -1049,12 +1049,27 @@ def api_self_check():
         (today,),
     ).fetchone()
     day_latest = conn.execute(
-        "SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1"
+        "SELECT equity FROM equity_snapshots WHERE timestamp >= ? ORDER BY id DESC LIMIT 1",
+        (today,),
     ).fetchone()
     if day_start and day_latest:
         result["daily_pnl"] = round(day_latest["equity"] - day_start["equity"], 2)
     else:
         result["daily_pnl"] = 0
+
+    # --- Weekly P&L ---
+    week_start = (datetime.now() - timedelta(days=7)).isoformat()
+    wk_start_row = conn.execute(
+        "SELECT equity FROM equity_snapshots WHERE timestamp >= ? ORDER BY id ASC LIMIT 1",
+        (week_start,),
+    ).fetchone()
+    wk_latest = conn.execute(
+        "SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if wk_start_row and wk_latest:
+        result["weekly_pnl"] = round(wk_latest["equity"] - wk_start_row["equity"], 2)
+    else:
+        result["weekly_pnl"] = 0
 
     conn.close()
     return jsonify(result)

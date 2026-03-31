@@ -187,13 +187,15 @@ export class HealthBarComponent implements OnInit, OnDestroy {
     return '#4ade80';
   });
 
-  readonly weeklyPnlPositive = computed(() => (this.status()?.pnl ?? 0) >= 0);
+  readonly weeklyPnl = computed(() => this.selfCheck()?.weekly_pnl ?? null);
+
+  readonly weeklyPnlPositive = computed(() => (this.weeklyPnl() ?? 0) >= 0);
 
   readonly weeklyPnlText = computed(() => {
-    const s = this.status();
-    if (!s) return '—';
-    const sign = s.pnl >= 0 ? '+' : '';
-    return sign + '$' + Math.abs(s.pnl).toFixed(2);
+    const v = this.weeklyPnl();
+    if (v === null) return '—';
+    const sign = v >= 0 ? '+' : '';
+    return sign + '$' + Math.abs(v).toFixed(2);
   });
 
   readonly streakText = computed(() => {
