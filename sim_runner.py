@@ -515,6 +515,11 @@ class SimRunner:
             for event in events:
                 self._print_trade(event)
                 self.trade_logger.log_trade(event["trade"])
+                # Log trade event to activity feed
+                trade = event["trade"]
+                evt_type = "trade_buy" if trade.side == "buy" else "trade_sell"
+                evt_title = f"{'Bought' if trade.side == 'buy' else 'Sold'} {trade.amount:,.0f} {trade.pair.replace('-USD', '')} at ${trade.price:,.4f}"
+                self.trade_logger.log_event(evt_type, evt_title, trade.reason, pair=trade.pair)
                 # Track completed grid cycles (sell = cycle complete)
                 self._track_grid_cycle(engine, event)
 
@@ -979,6 +984,12 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
 
     # Log initial scan
     runner.trade_logger.log_pair_scan(selector.scan_result_to_dict(scan_result))
+    pair_names = [s.pair.replace("-USD", "") for s in scan_result.selected]
+    runner.trade_logger.log_event(
+        "scan_complete",
+        f"Initial scan selected {len(scan_result.selected)} pairs: {', '.join(pair_names)}",
+        f"Scanned {scan_result.total_evaluated} pairs, rejected {scan_result.total_evaluated - len(scan_result.selected)}",
+    )
 
     # --- Build engines ---
     for pair in selected_pairs:
