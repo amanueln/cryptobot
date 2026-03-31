@@ -381,18 +381,29 @@ class SimRunner:
             self._latest_vol_predictions[engine.pair] = pred
             self.trade_logger.log_vol_prediction(pred)
 
-            # Apply to grid strategy
-            if hasattr(engine.strategy, 'apply_volatility_adjustment'):
+            # Apply to grid strategy — only if model R² > 0 (better than mean)
+            # Otherwise ATR-based spacing (computed inside grid_strategy) stays active
+            meta = self.vol_predictor._metadata.get(engine.pair)
+            r2 = meta.validation_r2 if meta else 0.0
+            if r2 > 0 and hasattr(engine.strategy, 'apply_volatility_adjustment'):
                 engine.strategy.apply_volatility_adjustment(
                     pred.spacing_multiplier, pred.vol_regime, pred.recommended_num_grids
                 )
+                layer = "ML override"
+            else:
+                # Reset ML override so ATR layer stays in control
+                if hasattr(engine.strategy, '_vol_ml_override'):
+                    engine.strategy._vol_ml_override = False
+                atr_mult = getattr(engine.strategy, '_vol_spacing_multiplier', 1.0)
+                layer = f"ATR (R²={r2:.3f}, atr_mult={atr_mult:.2f}x)"
 
             print(
                 f"  [VOL] {engine.pair:<12} "
                 f"pred={pred.predicted_vol_12h:.1f}%  "
                 f"regime={pred.vol_regime:<8} "
                 f"spacing={pred.spacing_multiplier:.2f}x  "
-                f"grids={pred.recommended_num_grids}"
+                f"grids={pred.recommended_num_grids}  "
+                f"[{layer}]"
             )
 
     def _train_ml_models(self):
@@ -947,13 +958,19 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
         runner.vol_predictor = VolatilityPredictor(config=vol_cfg)
         print(f"\n  Volatility predictor initialized (GARCH-LightGBM, horizon={vol_cfg.get('forecast_horizon', 12)}h)")
 
-    # --- Load risk limits from bot_master.yaml ---
+    # --- Load risk limits and ATR config from bot_master.yaml ---
     try:
         with open("config/bot_master.yaml") as f:
             master_config = yaml.safe_load(f) or {}
         runner._max_loss_per_day = float(master_config.get("max_loss_per_day_usd", 30))
         runner._max_loss_per_week = float(master_config.get("max_loss_per_week_usd", 75))
+        atr_mult = float(master_config.get("atr_spacing_multiplier", 2.0))
+        # Inject ATR multiplier into all active strategies
+        for engine in runner.engines:
+            if hasattr(engine.strategy, 'atr_spacing_multiplier'):
+                engine.strategy.atr_spacing_multiplier = atr_mult
         print(f"\n  Loss limits: ${runner._max_loss_per_day:.0f}/day, ${runner._max_loss_per_week:.0f}/week")
+        print(f"  ATR spacing multiplier: {atr_mult}x")
     except Exception:
         pass  # use defaults
 

@@ -13,6 +13,10 @@ max_loss_per_day_usd: 30              # stop trading if down $30 in one day
 max_loss_per_week_usd: 75             # stop for the week at $75 loss
 max_single_trade_usd: 150             # no single trade bigger than this
 
+# Volatility adaptation
+atr_spacing_multiplier: 2.0           # grid spacing = ATR(14) * this; higher = wider grids
+                                       # auto-tuner can optimize later (range: 1.0–4.0)
+
 # How many pairs to trade (scales with capital automatically if set to 0)
 max_active_pairs: 0                   # 0 = auto (floor(balance / 1000))
 

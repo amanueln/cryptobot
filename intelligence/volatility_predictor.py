@@ -77,8 +77,12 @@ def _build_vol_features(df: pd.DataFrame, btc_df: pd.DataFrame | None = None) ->
 
     # Realized volatility at multiple horizons (HAR model lags)
     for h in [1, 6, 12, 24, 168]:  # 1h, 6h, 12h, 24h, 7d
-        rv = log_ret.rolling(h).std() * np.sqrt(24)  # annualized
-        feat[f"rv_{h}h"] = rv
+        if h == 1:
+            # rolling(1).std() is always NaN; use absolute return as proxy
+            feat[f"rv_{h}h"] = log_ret.abs() * np.sqrt(24)
+        else:
+            rv = log_ret.rolling(h).std() * np.sqrt(24)  # annualized
+            feat[f"rv_{h}h"] = rv
 
     # Parkinson volatility (uses high-low, more efficient estimator)
     hl_ratio = np.log(df["high"] / df["low"])

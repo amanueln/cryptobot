@@ -722,6 +722,13 @@ class PairSelector:
                         if combos_tested >= self.optimization_combos:
                             break
 
+                        # Scale EMA convergence threshold by pair volatility:
+                        # High-vol altcoins naturally have wider EMA spreads.
+                        # Base 3% for BTC-like vol (~50% ann.), scale up for higher vol.
+                        _log_rets = [math.log(closes[i]/closes[i-1]) for i in range(1, len(closes)) if closes[i-1] > 0]
+                        _ann_vol = statistics.stdev(_log_rets) * math.sqrt(8760) if len(_log_rets) > 1 else 0.5
+                        _ema_conv = max(3.0, min(15.0, _ann_vol * 10))
+
                         config = {
                             "pair": pair,
                             "granularity": "ONE_HOUR",
@@ -737,7 +744,7 @@ class PairSelector:
                             "min_spacing_pct": spacing,
                             "max_trades_per_day": 20,
                             "range_only_filter": True,
-                            "ema_convergence_pct": 3.0,
+                            "ema_convergence_pct": _ema_conv,
                             "ema_fast_period": 50,
                             "ema_slow_period": 200,
                         }
