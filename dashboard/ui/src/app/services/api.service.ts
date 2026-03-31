@@ -31,6 +31,10 @@ export interface TradeData {
   live_pnl_pct: number | null;
   hold_duration_seconds: number | null;
   entry_price: number | null;
+  regime: string;
+  adx: number;
+  rsi: number;
+  atr_multiplier: number;
 }
 
 export interface EquityData {
@@ -257,6 +261,15 @@ export interface UpdateResult {
   update_status?: string;
 }
 
+export interface EventData {
+  id: number;
+  timestamp: string;
+  event_type: string;
+  pair: string;
+  title: string;
+  detail: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly status = signal<StatusData | null>(null);
@@ -387,6 +400,10 @@ export class ApiService {
 
   triggerUpdate() {
     return this.http.post<UpdateResult>(`${API}/update`, {});
+  }
+
+  fetchEvents(limit = 50) {
+    return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }
 
   /** Poll scan progress every 2s while scanning, stop when done. */
