@@ -17,6 +17,7 @@ import { DcaSimulatorComponent } from '../dca-simulator/dca-simulator.component'
 import { RegimeVisualizerComponent } from '../regime-visualizer/regime-visualizer.component';
 import { SelfCheckComponent } from '../self-check/self-check.component';
 import { PairScannerComponent } from '../pair-scanner/pair-scanner.component';
+import { AdaptationsComponent } from '../adaptations/adaptations.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -29,7 +30,8 @@ const STARTING_BALANCE = 3000;
   imports: [
     CommonModule, StatusBannerComponent, ActivityLogComponent,
     PairCardComponent, ExpandedPairChartComponent, HealthBarComponent,
-    TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent, SelfCheckComponent, PairScannerComponent,
+    TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
+    SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
   ],
   template: `
     <div class="cc-root">
@@ -73,6 +75,7 @@ const STARTING_BALANCE = 3000;
         </div>
         <div class="activity-col">
           <app-activity-log />
+          <app-adaptations />
         </div>
       </div>
 

@@ -93,6 +93,7 @@ class GridStrategy(BaseStrategy):
         self._vol_spacing_multiplier: float = 1.0
         self._vol_ml_override: bool = False  # True when ML has actively set the multiplier
         self._vol_regime: str = "unknown"
+        self._learned_spacing_multiplier: float = 1.0  # feedback loop nudge
 
         # Indicator snapshot (injected by orchestrator for trade annotations)
         self._last_adx: float = 0.0
@@ -197,6 +198,14 @@ class GridStrategy(BaseStrategy):
         self._vol_ml_override = True
         self._vol_regime = vol_regime
 
+    def apply_learned_spacing(self, multiplier: float) -> None:
+        """Apply feedback-loop learned spacing preference.
+
+        This is a gentle nudge (0.7-1.3) based on which spacing levels
+        historically produced the best profit per cycle for this pair.
+        """
+        self._learned_spacing_multiplier = max(0.7, min(1.3, multiplier))
+
     def _update_trend_filter(self, close: float) -> None:
         if self.ema_fast is None or self.ema_slow is None:
             return
@@ -259,10 +268,14 @@ class GridStrategy(BaseStrategy):
                 )
                 self._prev_atr_mult = new_mult
 
-        if spacing_mult != 1.0:
+        # Apply feedback-loop learned spacing preference (Loop 1)
+        learned_mult = getattr(self, '_learned_spacing_multiplier', 1.0)
+        combined_mult = spacing_mult * learned_mult
+
+        if combined_mult != 1.0:
             mid = (new_lower + new_upper) / 2
             half_range = (new_upper - new_lower) / 2
-            adjusted_half = half_range * spacing_mult
+            adjusted_half = half_range * combined_mult
             new_lower = mid - adjusted_half
             new_upper = mid + adjusted_half
 

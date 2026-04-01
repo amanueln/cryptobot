@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from exchange.models import Trade
 
@@ -140,6 +140,17 @@ class TradeLogger:
                     title TEXT NOT NULL,
                     detail TEXT,
                     created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS adaptations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    loop_type TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    old_value REAL,
+                    new_value REAL
                 )
             """)
             # Migrate: add new columns for regression predictions
@@ -385,6 +396,105 @@ class TradeLogger:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Feedback loop helpers
+    # ------------------------------------------------------------------
+
+    def log_adaptation(self, pair: str, loop_type: str, description: str,
+                       old_value: float = 0.0, new_value: float = 0.0) -> None:
+        """Log a learning/adaptation event."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO adaptations
+                   (timestamp, pair, loop_type, description, old_value, new_value)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (datetime.now().isoformat(), pair, loop_type, description,
+                 old_value, new_value),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_spacing_stats(self, pair: str, since_days: int = 7) -> list[dict]:
+        """Get avg profit per cycle grouped by spacing bucket."""
+        cutoff = (datetime.now() - timedelta(days=since_days)).isoformat()
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """SELECT ROUND(spacing_pct, 1) as spacing_bucket,
+                          AVG(pnl_usd) as avg_pnl,
+                          COUNT(*) as cycle_count,
+                          SUM(pnl_usd) as total_pnl
+                   FROM grid_cycles
+                   WHERE pair = ? AND timestamp >= ?
+                   GROUP BY ROUND(spacing_pct, 1)
+                   ORDER BY avg_pnl DESC""",
+                (pair, cutoff),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_vol_accuracy_history(self, pair: str, limit: int = 10) -> list[dict]:
+        """Get recent vol accuracy checks for a pair."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """SELECT error_pct, timestamp
+                   FROM vol_accuracy
+                   WHERE pair = ?
+                   ORDER BY id DESC LIMIT ?""",
+                (pair, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_pair_actual_pnl(self, pair: str, since_hours: int = 48) -> float:
+        """Get total P&L from completed grid cycles in the last N hours."""
+        cutoff = (datetime.now() - timedelta(hours=since_hours)).isoformat()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                """SELECT COALESCE(SUM(pnl_usd), 0) as total
+                   FROM grid_cycles
+                   WHERE pair = ? AND timestamp >= ?""",
+                (pair, cutoff),
+            ).fetchone()
+            return row[0] if row else 0.0
+        finally:
+            conn.close()
+
+    def get_pair_first_trade_time(self, pair: str) -> str | None:
+        """Get the timestamp of the first trade for a pair."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT MIN(timestamp) FROM sim_trades WHERE pair = ?",
+                (pair,),
+            ).fetchone()
+            return row[0] if row and row[0] else None
+        finally:
+            conn.close()
+
+    def get_recent_adaptations(self, limit: int = 50) -> list[dict]:
+        """Get recent adaptation/learning events."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT * FROM adaptations ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
         finally:
             conn.close()
 

@@ -1590,6 +1590,24 @@ def api_events():
         conn.close()
 
 
+@app.route("/api/adaptations")
+def api_adaptations():
+    """Return recent learning/adaptation events."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_table(conn, "adaptations")
+        rows = conn.execute(
+            "SELECT * FROM adaptations ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception:
+        return jsonify([])
+    finally:
+        conn.close()
+
+
 @app.route("/api/health")
 def api_health():
     """Health check for Docker / ZimaOS monitoring."""

@@ -276,6 +276,16 @@ export interface EventData {
   detail: string;
 }
 
+export interface AdaptationData {
+  id: number;
+  timestamp: string;
+  pair: string;
+  loop_type: string;
+  description: string;
+  old_value: number | null;
+  new_value: number | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly status = signal<StatusData | null>(null);
@@ -414,6 +424,10 @@ export class ApiService {
 
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
+  }
+
+  fetchAdaptations(limit = 30) {
+    return this.http.get<AdaptationData[]>(`${API}/adaptations`, { params: { limit: limit.toString() } });
   }
 
   /** Poll scan progress every 2s while scanning, stop when done. */

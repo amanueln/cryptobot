@@ -157,6 +157,11 @@ class SimRunner:
         self._last_full_scan: datetime | None = None
         self._last_quick_check: datetime | None = None
 
+        # Feedback loop state
+        self._learned_spacing_prefs: dict[str, float] = {}   # pair -> multiplier
+        self._vol_train_windows: dict[str, int] = {}          # pair -> days
+        self._vol_improvement_streak: dict[str, int] = {}     # pair -> consecutive improvements
+
     def add_pair(
         self,
         name: str,
@@ -251,6 +256,9 @@ class SimRunner:
                 f"error={error_pct:.0f}%"
             )
 
+            # Loop 3: tune vol training window based on accuracy trend
+            self._tune_vol_window(engine.pair, error_pct)
+
             self._vol_eval_errors.append(error_pct)
 
         self._last_vol_eval = now
@@ -341,15 +349,19 @@ class SimRunner:
 
         print("\n  Training volatility models (GARCH-LightGBM)...")
 
-        # Fetch BTC candles for cross-market features
+        # Fetch BTC candles for cross-market features (use max window)
         btc_candles = None
         end = datetime.now()
-        start = end - timedelta(days=30)
-        btc_candles_raw = self.candle_store.get_candles("BTC-USD", "ONE_HOUR", start, end)
+        max_window = max(self._vol_train_windows.values(), default=30)
+        btc_start = end - timedelta(days=max(max_window, 30))
+        btc_candles_raw = self.candle_store.get_candles("BTC-USD", "ONE_HOUR", btc_start, end)
         if btc_candles_raw and len(btc_candles_raw) >= 100:
             btc_candles = btc_candles_raw
 
         for engine in self.engines:
+            # Use per-pair learned training window (Loop 3)
+            train_days = self._vol_train_windows.get(engine.pair, 30)
+            start = end - timedelta(days=train_days)
             candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
             if not candles or len(candles) < 200:
                 print(f"  {engine.pair:<12} vol skipped (only {len(candles) if candles else 0} candles)")
@@ -662,6 +674,162 @@ class SimRunner:
             spacing_multiplier=spacing_mult,
         )
 
+    # ------------------------------------------------------------------
+    # Feedback loops
+    # ------------------------------------------------------------------
+
+    def _learn_spacing_preferences(self):
+        """Loop 1: Learn which grid spacing works best per pair."""
+        for engine in self.engines:
+            pair = engine.pair
+            stats = self.trade_logger.get_spacing_stats(pair, since_days=7)
+            total_cycles = sum(s["cycle_count"] for s in stats)
+            if total_cycles < 5:
+                continue  # not enough data
+
+            # Find the spacing bucket with highest avg profit
+            best = max(stats, key=lambda s: s["avg_pnl"])
+            best_spacing = best["spacing_bucket"]
+            best_avg = best["avg_pnl"]
+
+            # Current spacing from strategy
+            current_spacing = getattr(engine.strategy, 'grid_spacing', 0)
+            current_price = getattr(engine.strategy, '_last_price', 0)
+            current_pct = (current_spacing / current_price * 100) if current_price > 0 else 2.0
+
+            if current_pct <= 0:
+                continue
+
+            # Compute nudge: ratio of best-performing spacing to current
+            nudge = best_spacing / current_pct if current_pct > 0 else 1.0
+            nudge = max(0.7, min(1.3, nudge))
+
+            # Blend with existing preference (exponential smoothing)
+            old_pref = self._learned_spacing_prefs.get(pair, 1.0)
+            new_pref = 0.7 * old_pref + 0.3 * nudge
+
+            if abs(new_pref - old_pref) > 0.02:  # only log meaningful changes
+                name = pair.replace("-USD", "")
+                # Find worst spacing for comparison
+                worst = min(stats, key=lambda s: s["avg_pnl"])
+                desc = (
+                    f"{name} learned that {best_spacing:.1f}% spacing works better "
+                    f"— averaging ${best_avg:.2f}/cycle vs ${worst['avg_pnl']:.2f} at "
+                    f"{worst['spacing_bucket']:.1f}%"
+                )
+                self.trade_logger.log_adaptation(pair, "spacing_learned", desc, old_pref, new_pref)
+                self.trade_logger.log_event(
+                    "adaptation", f"{name}: spacing preference updated",
+                    desc, pair=pair,
+                )
+
+            self._learned_spacing_prefs[pair] = new_pref
+
+            # Apply to strategy
+            if hasattr(engine.strategy, 'apply_learned_spacing'):
+                engine.strategy.apply_learned_spacing(new_pref)
+
+    def _learn_pair_performance(self):
+        """Loop 2: Compare actual P&L to backtest prediction and adjust scores."""
+        if not self.pair_selector:
+            return
+
+        for engine in self.engines:
+            pair = engine.pair
+            # Check if pair has been active long enough (48h)
+            first_trade = self.trade_logger.get_pair_first_trade_time(pair)
+            if not first_trade:
+                continue
+            try:
+                first_dt = datetime.fromisoformat(first_trade)
+            except (ValueError, TypeError):
+                continue
+            hours_active = (datetime.now() - first_dt).total_seconds() / 3600
+            if hours_active < 48:
+                continue
+
+            # Get actual P&L from last 48h of grid cycles
+            actual_pnl = self.trade_logger.get_pair_actual_pnl(pair, since_hours=48)
+
+            # Get backtest prediction from the pair's score
+            scores = self.pair_selector.get_active_scores()
+            pair_score = next((s for s in scores if s.pair == pair), None)
+            if not pair_score or pair_score.backtest_pnl == 0:
+                continue
+
+            predicted_pnl = pair_score.backtest_pnl
+
+            # Compute ratio of actual vs predicted
+            if predicted_pnl > 0:
+                ratio = actual_pnl / predicted_pnl
+            elif actual_pnl > 0:
+                ratio = 1.5  # actual positive but predicted zero/negative = overperformer
+            else:
+                ratio = 1.0  # both zero or negative, no signal
+
+            # Compute adjustment
+            if ratio > 1.2:
+                adj = min(0.3, 0.1 * (ratio - 1))
+            elif ratio < 0.8:
+                adj = max(-0.3, -0.1 * (1 - ratio))
+            else:
+                adj = 0.0
+
+            # Blend with existing
+            old_adj = self.pair_selector._performance_adjustments.get(pair, 0.0)
+            new_adj = 0.6 * old_adj + 0.4 * adj
+
+            if abs(new_adj) > 0.01 and abs(new_adj - old_adj) > 0.005:
+                name = pair.replace("-USD", "")
+                pct = int(abs(ratio - 1) * 100)
+                if new_adj > 0:
+                    desc = f"{name} is outperforming its scan score by {pct}% — boosted for next rescan"
+                else:
+                    desc = f"{name} is underperforming its scan score by {pct}% — penalized for next rescan"
+                self.trade_logger.log_adaptation(pair, "pair_adjustment", desc, old_adj, new_adj)
+                self.trade_logger.log_event(
+                    "adaptation", f"{name}: scan score adjusted ({new_adj:+.2f})",
+                    desc, pair=pair,
+                )
+
+            self.pair_selector._performance_adjustments[pair] = new_adj
+
+    def _tune_vol_window(self, pair: str, current_error: float):
+        """Loop 3: Self-tune vol model training window based on accuracy trend."""
+        history = self.trade_logger.get_vol_accuracy_history(pair, limit=2)
+        if len(history) < 2:
+            return
+
+        previous_error = history[1]["error_pct"]
+        window = self._vol_train_windows.get(pair, 30)
+        old_window = window
+        streak = self._vol_improvement_streak.get(pair, 0)
+
+        if current_error < previous_error:  # improved
+            streak += 1
+            if streak >= 3:  # improved 3x in a row -> expand window
+                window = min(60, int(window * 1.10))
+                streak = 0
+        else:  # worsened -> shrink window
+            window = max(7, int(window * 0.90))
+            streak = 0
+
+        self._vol_improvement_streak[pair] = streak
+        self._vol_train_windows[pair] = window
+
+        if window != old_window:
+            name = pair.replace("-USD", "")
+            direction = "expanded" if window > old_window else "shrunk"
+            desc = (
+                f"Vol model training window {direction} from {old_window}d to {window}d "
+                f"— {'recent data more relevant' if window < old_window else 'model benefits from more history'}"
+            )
+            self.trade_logger.log_adaptation(pair, "vol_window_tuned", desc, old_window, window)
+            self.trade_logger.log_event(
+                "adaptation", f"{name}: vol training window → {window}d",
+                desc, pair=pair,
+            )
+
     def _check_periodic_tasks(self):
         """Run periodic rescans and retrains."""
         now = datetime.now()
@@ -774,6 +942,13 @@ class SimRunner:
             )
 
         self.trade_logger.log_pair_scan(self.pair_selector.scan_result_to_dict(result))
+
+        # Feedback loops: learn from past performance before next scan
+        try:
+            self._learn_spacing_preferences()
+            self._learn_pair_performance()
+        except Exception as e:
+            logger.warning(f"Feedback loop error: {e}")
 
         # Retrain ML for any new pairs
         if self.use_ml and self.ml_predictor:

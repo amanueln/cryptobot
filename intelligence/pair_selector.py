@@ -213,6 +213,7 @@ class PairSelector:
         self._last_full_scan: PairScanResult | None = None
         self._active_pairs: list[PairScore] = []
         self._active_configs: dict[str, dict] = {}  # pair -> optimized grid config
+        self._performance_adjustments: dict[str, float] = {}  # pair -> bonus/penalty
 
         # Thread-safe scan progress tracking
         self._progress_lock = threading.Lock()
@@ -682,7 +683,7 @@ class PairSelector:
         # Regime bonus: already 0-1
         # Backtest P&L norm: already 0-1
 
-        return (
+        base_score = (
             vol_norm * 0.20 +
             rb_norm * 0.25 +
             liq_norm * 0.15 +
@@ -690,6 +691,9 @@ class PairSelector:
             s.regime_bonus * 0.10 +
             s.backtest_pnl_norm * 0.15
         )
+        # Loop 2: Apply performance adjustment from actual vs predicted P&L
+        perf_adj = self._performance_adjustments.get(s.pair, 0.0)
+        return base_score + perf_adj * 0.10
 
     # ------------------------------------------------------------------
     # Config optimization (mini parameter sweep)
