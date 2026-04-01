@@ -1778,10 +1778,21 @@ def api_trigger_update():
 
 @app.route("/api/reset-data", methods=["POST"])
 def api_reset_data():
-    """Clear stale trading data (equity snapshots, trades, events) for a fresh start."""
+    """Clear all trading/ML data for a clean $3,000 restart. Keeps candles."""
     try:
         conn = sqlite3.connect(DB_PATH)
-        tables = ["equity_snapshots", "sim_trades", "bot_events"]
+        tables = [
+            "sim_trades",
+            "equity_snapshots",
+            "bot_events",
+            "ml_predictions",
+            "grid_cycles",
+            "vol_predictions",
+            "vol_accuracy",
+            "pair_scans",
+            "adaptations",
+            "self_checks",
+        ]
         deleted = {}
         for table in tables:
             try:
@@ -1791,7 +1802,7 @@ def api_reset_data():
                 deleted[table] = 0
         conn.commit()
         conn.close()
-        return jsonify({"status": "ok", "deleted": deleted})
+        return jsonify({"status": "ok", "deleted": deleted, "balance": 3000.0})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
