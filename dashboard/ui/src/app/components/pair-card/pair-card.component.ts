@@ -13,12 +13,12 @@ interface RegimeCfg {
 const REGIME_MAP: Record<string, RegimeCfg> = {
   RANGING:        { label: 'RANGING',       bg: '#1e293b', text: '#94a3b8' },
   VOLATILE:       { label: 'VOLATILE',      bg: '#451a03', text: '#fbbf24' },
-  TRENDING_UP:    { label: 'TRENDING ↑',    bg: '#1e3a5f', text: '#60a5fa' },
-  TRENDING_DOWN:  { label: 'TRENDING ↓',    bg: '#450a0a', text: '#f87171' },
+  TRENDING_UP:    { label: 'TRENDING UP',   bg: '#1e3a5f', text: '#60a5fa' },
+  TRENDING_DOWN:  { label: 'TRENDING DOWN', bg: '#450a0a', text: '#f87171' },
   SQUEEZE:        { label: 'SQUEEZE',       bg: '#3b0764', text: '#c084fc' },
 };
 
-const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a3b8' };
+const DEFAULT_REGIME: RegimeCfg = { label: 'STARTING', bg: '#1e2130', text: '#94a3b8' };
 
 @Component({
   selector: 'app-pair-card',
@@ -33,9 +33,8 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
       (click)="cardClicked.emit(pair().pair)"
       role="button"
       [attr.aria-expanded]="isExpanded()"
-      [attr.aria-label]="pair().pair + ' pair card'"
     >
-      <!-- Header row -->
+      <!-- Header: name + regime badge + price -->
       <div class="card-header">
         <div class="pair-name-row">
           <span class="pair-name">{{ shortPair() }}</span>
@@ -45,41 +44,32 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
             [style.color]="regimeCfg().text"
           >{{ regimeCfg().label }}</span>
         </div>
-        <span class="collapse-hint" *ngIf="isExpanded()">Click to collapse ▲</span>
+        <span class="price-tag">{{ priceText() }}</span>
       </div>
 
-      <!-- 2×3 stats grid -->
-      <div class="stats-grid">
-        <div class="stat-cell">
-          <span class="sc-label">Price</span>
-          <span class="sc-value">{{ priceText() }}</span>
-        </div>
-        <div class="stat-cell">
-          <span class="sc-label">P&amp;L</span>
-          <span class="sc-value" [class.positive]="pnlPositive()" [class.negative]="!pnlPositive()">
+      <!-- Summary sentence -->
+      <div class="card-summary">{{ summaryText() }}</div>
+
+      <!-- Key numbers row -->
+      <div class="key-row">
+        <div class="key-item">
+          <span class="key-value" [class.positive]="pnlPositive()" [class.negative]="!pnlPositive()">
             {{ pnlText() }}
           </span>
+          <span class="key-hint">P&amp;L</span>
         </div>
-        <div class="stat-cell">
-          <span class="sc-label">Grid fill</span>
-          <span class="sc-value">{{ gridFillText() }}</span>
+        <div class="key-item">
+          <span class="key-value entry-price">{{ nextBuyText() }}</span>
+          <span class="key-hint">next buy</span>
         </div>
-        <div class="stat-cell">
-          <span class="sc-label">Next buy</span>
-          <span class="sc-value entry-price">{{ nextBuyText() }}</span>
-        </div>
-        <div class="stat-cell">
-          <span class="sc-label">Trades</span>
-          <span class="sc-value">{{ pair().trade_count }}</span>
-        </div>
-        <div class="stat-cell">
-          <span class="sc-label">Range</span>
-          <span class="sc-value range-value">{{ gridRangeText() }}</span>
+        <div class="key-item">
+          <span class="key-value">{{ gridFillText() }}</span>
+          <span class="key-hint">filled</span>
         </div>
       </div>
 
       <!-- Grid fill progress bar -->
-      <div class="grid-bar-track" [title]="gridFillText() + ' grid levels filled'">
+      <div class="grid-bar-track">
         <div
           class="grid-bar-fill"
           [style.width]="gridFillPct() + '%'"
@@ -111,16 +101,14 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
       box-shadow: 0 0 0 1px #fbbf24, 0 4px 20px rgba(251,191,36,0.15);
     }
 
-    .card-root.dimmed {
-      opacity: 0.7;
-    }
+    .card-root.dimmed { opacity: 0.7; }
 
     /* Header */
     .card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     .pair-name-row {
@@ -133,7 +121,6 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
       font-size: 15px;
       font-weight: 700;
       color: #e2e8f0;
-      letter-spacing: 0.02em;
     }
 
     .regime-badge {
@@ -145,45 +132,51 @@ const DEFAULT_REGIME: RegimeCfg = { label: 'UNKNOWN', bg: '#1e2130', text: '#94a
       text-transform: uppercase;
     }
 
-    .collapse-hint {
-      font-size: 10px;
-      color: #fbbf24;
+    .price-tag {
+      font-size: 13px;
       font-weight: 600;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
 
-    /* Stats grid */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px 8px;
+    /* Summary */
+    .card-summary {
+      font-size: 11.5px;
+      color: #94a3b8;
+      line-height: 1.5;
       margin-bottom: 10px;
+      min-height: 34px;
     }
 
-    .stat-cell {
+    /* Key numbers */
+    .key-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .key-item {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      align-items: center;
+      gap: 1px;
     }
 
-    .sc-label {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: #6b7280;
-      text-transform: uppercase;
-    }
-
-    .sc-value {
+    .key-value {
       font-size: 12px;
       font-weight: 600;
       color: #e2e8f0;
-      white-space: nowrap;
     }
 
-    .sc-value.positive { color: #4ade80; }
-    .sc-value.negative { color: #f87171; }
-    .sc-value.entry-price { color: #fbbf24; }
-    .sc-value.range-value { font-size: 10px; color: #9ca3af; }
+    .key-value.positive { color: #4ade80; }
+    .key-value.negative { color: #f87171; }
+    .key-value.entry-price { color: #fbbf24; }
+
+    .key-hint {
+      font-size: 9px;
+      color: #6b7280;
+      text-transform: lowercase;
+    }
 
     /* Progress bar */
     .grid-bar-track {
@@ -207,7 +200,7 @@ export class PairCardComponent {
   readonly positions  = input<PositionData[]>([]);
   readonly volPrediction = input<VolPredictionData | null>(null);
   readonly gridHeld   = input<number>(0);
-  readonly gridTotal  = input<number>(10);
+  readonly gridTotal  = input<number>(20);
   readonly gridLevels = input<GridLevelData | null>(null);
 
   readonly cardClicked = output<string>();
@@ -221,7 +214,7 @@ export class PairCardComponent {
 
   readonly priceText = computed(() => {
     const p = this.pair().price;
-    if (!p) return '—';
+    if (!p) return '';
     if (p >= 1000) return '$' + p.toLocaleString('en-US', { maximumFractionDigits: 2 });
     if (p >= 1)    return '$' + p.toFixed(4);
     return '$' + p.toFixed(6);
@@ -237,7 +230,7 @@ export class PairCardComponent {
 
   readonly pnlText = computed(() => {
     const pos = this.pairPosition();
-    if (!pos) return '—';
+    if (!pos) return '--';
     const sign = pos.unrealized_pnl >= 0 ? '+' : '';
     return sign + '$' + Math.abs(pos.unrealized_pnl).toFixed(2);
   });
@@ -249,7 +242,7 @@ export class PairCardComponent {
   });
 
   readonly gridFillText = computed(() =>
-    `${this.gridHeld()}/${this.gridTotal()}`
+    `${this.gridHeld()} / ${this.gridTotal()}`
   );
 
   readonly gridFillColor = computed(() => {
@@ -266,18 +259,53 @@ export class PairCardComponent {
 
   readonly nextBuyText = computed(() => {
     const gl = this.gridLevels();
-    if (!gl) return '—';
+    if (!gl) return '--';
     const price = this.pair().price;
-    // Find the highest buy level below current price (next trigger)
     const buyLevels = gl.levels.filter(l => l.type === 'buy').map(l => l.price).sort((a, b) => b - a);
     const next = buyLevels.find(p => p <= price) ?? buyLevels[buyLevels.length - 1];
-    if (!next) return '—';
+    if (!next) return '--';
     return this.formatPrice(next);
   });
 
   readonly gridRangeText = computed(() => {
     const gl = this.gridLevels();
-    if (!gl) return '—';
-    return this.formatPrice(gl.lower) + '–' + this.formatPrice(gl.upper);
+    if (!gl) return '--';
+    return this.formatPrice(gl.lower) + ' - ' + this.formatPrice(gl.upper);
+  });
+
+  // Human-readable summary
+  readonly summaryText = computed(() => {
+    const p = this.pair();
+
+    // Use server summary if available
+    if (p.summary) return p.summary;
+
+    // Client-side fallback
+    const name = this.shortPair();
+    const regime = (p.regime ?? '').toLowerCase().replace('_', ' ');
+    const held = this.gridHeld();
+    const total = this.gridTotal();
+    const trades = p.trade_count;
+
+    let regimeText = `${name} is active.`;
+    if (regime === 'ranging') regimeText = `${name} is bouncing in a range -- good for grid trading.`;
+    else if (regime === 'trending up') regimeText = `${name} is trending up.`;
+    else if (regime === 'trending down') regimeText = `${name} is trending down. Being cautious.`;
+    else if (regime === 'volatile') regimeText = `${name} is seeing big swings.`;
+    else if (regime === 'squeeze') regimeText = `${name} is quiet. Waiting for a move.`;
+
+    let gridText = '';
+    if (held === 0 && trades === 0) {
+      gridText = 'No fills yet -- waiting for the right price.';
+    } else if (held === 0) {
+      gridText = 'All sold. Ready for next dip.';
+    } else {
+      gridText = `${held} of ${total} levels filled.`;
+    }
+
+    const nxt = this.nextBuyText();
+    const nextText = nxt && nxt !== '--' ? `Next buy at ${nxt}.` : '';
+
+    return [regimeText, gridText, nextText].filter(Boolean).join(' ');
   });
 }

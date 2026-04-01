@@ -52,6 +52,7 @@ export interface PairInfo {
   regime: string;
   grid_held: number;
   grid_total: number;
+  summary?: string;
 }
 
 export interface StatusData {
@@ -64,6 +65,7 @@ export interface StatusData {
   total_trades: number;
   last_trade_time: string | null;
   pairs: PairInfo[];
+  summary?: string;
 }
 
 export interface IndicatorData {
@@ -175,6 +177,7 @@ export interface SelfCheckData {
   trading_paused: { paused: boolean; reason: string; since: string };
   daily_pnl: number;
   weekly_pnl: number;
+  summary?: string;
 }
 
 export interface PairScanData {

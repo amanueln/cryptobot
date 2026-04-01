@@ -14,10 +14,10 @@ const ACTION_MAP: Record<string, ActionConfig> = {
   boot:         { label: 'Started',        color: '#22d3ee', bg: 'rgba(34,211,238,0.12)' },
   trade_buy:    { label: 'Bought',         color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
   trade_sell:   { label: 'Sold',           color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
-  atr_adjust:   { label: 'Spacing changed',color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
-  vol_check:    { label: 'Vol check',      color: '#c084fc', bg: 'rgba(192,132,252,0.12)' },
-  range_recalc: { label: 'Range recalc',   color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
-  scan_complete:{ label: 'Scan complete',  color: '#9ca3af', bg: 'rgba(156,163,175,0.10)' },
+  atr_adjust:   { label: 'Adjusted',       color: '#60a5fa', bg: 'rgba(96,165,250,0.12)' },
+  vol_check:    { label: 'Checked',        color: '#c084fc', bg: 'rgba(192,132,252,0.12)' },
+  range_recalc: { label: 'Recalculated',   color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
+  scan_complete:{ label: 'Scanned',        color: '#9ca3af', bg: 'rgba(156,163,175,0.10)' },
 };
 
 const DEFAULT_ACTION: ActionConfig = {
@@ -33,17 +33,17 @@ const DEFAULT_ACTION: ActionConfig = {
   template: `
     <div class="log-root">
       <div class="log-header">
-        <span class="log-title">Activity Log</span>
+        <span class="log-title">What's happening</span>
         <span class="log-count" *ngIf="events().length">{{ events().length }} events</span>
       </div>
 
       <div class="log-scroll">
         <div *ngIf="loading() && events().length === 0" class="log-loading">
-          Loading events…
+          Waiting for activity...
         </div>
 
         <div *ngIf="!loading() && events().length === 0" class="log-empty">
-          No recent activity
+          No activity yet. The bot is watching the market.
         </div>
 
         <div
@@ -57,8 +57,8 @@ const DEFAULT_ACTION: ActionConfig = {
             [style.background]="actionConfig(evt.event_type).bg"
           >{{ actionConfig(evt.event_type).label }}</span>
           <div class="log-body">
-            <div class="log-title-text">{{ evt.title }}</div>
-            <div class="log-detail" *ngIf="evt.detail">{{ evt.detail }}</div>
+            <div class="log-title-text">{{ friendlyTitle(evt) }}</div>
+            <div class="log-detail" *ngIf="friendlyDetail(evt)">{{ friendlyDetail(evt) }}</div>
           </div>
         </div>
       </div>
@@ -211,6 +211,48 @@ export class ActivityLogComponent implements OnInit, OnDestroy {
     return ACTION_MAP[eventType] ?? DEFAULT_ACTION;
   }
 
+  friendlyTitle(evt: EventData): string {
+    const title = evt.title || '';
+
+    if (evt.event_type === 'boot') {
+      // "Bot started — watching 3 pairs" is already friendly
+      return title.replace('Bot started', 'Bot started up');
+    }
+
+    if (evt.event_type === 'scan_complete') {
+      // Make scan results friendlier
+      const match = title.match(/selected (\d+) pairs?: (.+)/i);
+      if (match) {
+        return `Found ${match[1]} good pairs: ${match[2]}`;
+      }
+      return title;
+    }
+
+    if (evt.event_type === 'range_recalc') {
+      return 'Grid boundaries adjusted based on recent price action';
+    }
+
+    if (evt.event_type === 'atr_adjust') {
+      return 'Grid spacing adjusted \u2014 volatility changed';
+    }
+
+    // trade_buy / trade_sell titles are already like "Bought NKN at $0.0139"
+    return title;
+  }
+
+  friendlyDetail(evt: EventData): string {
+    const detail = evt.detail || '';
+
+    if (evt.event_type === 'scan_complete') {
+      const match = detail.match(/Scanned (\d+) pairs, rejected (\d+)/i);
+      if (match) {
+        return `Looked at ${match[1]} pairs, ${match[2]} didn't make the cut`;
+      }
+    }
+
+    return detail;
+  }
+
   formatRelTime(timestamp: string): string {
     try {
       const diff = Date.now() - new Date(timestamp).getTime();
@@ -218,7 +260,7 @@ export class ActivityLogComponent implements OnInit, OnDestroy {
       if (mins < 1)  return 'now';
       if (mins < 60) return `${mins}m`;
       const hrs = diff / 3_600_000;
-      if (hrs < 24)  return `${hrs.toFixed(1)}h`;
+      if (hrs < 24)  return `${hrs.toFixed(0)}h`;
       return `${Math.floor(hrs / 24)}d`;
     } catch {
       return '?';

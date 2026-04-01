@@ -29,11 +29,185 @@ CORS(app)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "candles.db")
 
+DEFAULT_NUM_GRIDS = 20
+
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+# ------------------------------------------------------------------
+# Human-readable summary generators
+# ------------------------------------------------------------------
+
+def generate_status_summary(equity, pnl, total_trades, pairs_info, last_trade_time, uptime_seconds=0):
+    """Turn raw status numbers into a friendly sentence."""
+    parts = []
+
+    # P&L sentence
+    if pnl > 0:
+        parts.append(f"You're up ${pnl:.2f}")
+    elif pnl < 0:
+        parts.append(f"You're down ${abs(pnl):.2f}")
+    else:
+        parts.append("Breaking even so far")
+
+    # Trade activity
+    if total_trades == 0:
+        parts.append("No trades yet — the bot is watching and waiting for the right entry.")
+    elif total_trades == 1:
+        parts.append("1 trade completed so far.")
+    else:
+        parts.append(f"{total_trades} trades completed.")
+
+    # Uptime
+    if uptime_seconds > 0:
+        if uptime_seconds < 3600:
+            parts.append(f"Running for {uptime_seconds // 60} minutes.")
+        elif uptime_seconds < 86400:
+            parts.append(f"Running for {uptime_seconds // 3600} hours.")
+        else:
+            parts.append(f"Running for {uptime_seconds // 86400} days.")
+
+    return " ".join(parts)
+
+
+def generate_pair_summary(pair_data, grid_levels=None, position=None):
+    """Turn a pair's raw stats into a friendly description."""
+    name = pair_data["pair"].replace("-USD", "")
+    regime = (pair_data.get("regime") or "").lower().replace("_", " ")
+    held = pair_data.get("grid_held", 0)
+    total = pair_data.get("grid_total", DEFAULT_NUM_GRIDS)
+    trades = pair_data.get("trade_count", 0)
+
+    # Regime description
+    regime_map = {
+        "ranging": f"{name} is bouncing in a range — good for grid trading.",
+        "trending up": f"{name} is trending up. The grid is catching dips on the way.",
+        "trending down": f"{name} is trending down. Being cautious with new buys.",
+        "volatile": f"{name} is seeing big swings. Grid widened to handle the volatility.",
+        "squeeze": f"{name} is very quiet right now. Waiting for a breakout.",
+    }
+    regime_text = regime_map.get(regime, f"{name} is active.")
+
+    # Grid status
+    if held == 0 and trades == 0:
+        grid_text = f"No fills yet — waiting for price to reach the first buy level."
+    elif held == 0:
+        grid_text = f"All positions sold. Ready for the next dip."
+    else:
+        grid_text = f"{held} of {total} buy levels filled."
+
+    # Next buy
+    next_buy_text = ""
+    if grid_levels and grid_levels.get("levels"):
+        price = pair_data.get("price", 0)
+        buy_levels = sorted(
+            [l["price"] for l in grid_levels["levels"] if l["type"] == "buy"],
+            reverse=True,
+        )
+        nxt = next((p for p in buy_levels if p <= price), buy_levels[-1] if buy_levels else None)
+        if nxt:
+            next_buy_text = f"Next buy at ${nxt:.6g}."
+
+    parts = [regime_text, grid_text]
+    if next_buy_text:
+        parts.append(next_buy_text)
+    return " ".join(parts)
+
+
+def generate_health_summary(self_check_data):
+    """Turn health bar stats into a friendly sentence."""
+    if not self_check_data:
+        return "No health data yet — the bot just started."
+
+    parts = []
+    daily = self_check_data.get("daily_pnl")
+    weekly = self_check_data.get("weekly_pnl")
+    streak = self_check_data.get("streak", {})
+
+    # Daily P&L
+    if daily is not None:
+        if daily >= 0:
+            parts.append(f"Good day so far — up ${daily:.2f}, well within the $30 daily limit.")
+        elif daily > -15:
+            parts.append(f"Down ${abs(daily):.2f} today, but within normal range.")
+        else:
+            parts.append(f"Rough day — down ${abs(daily):.2f}. Approaching the $30 safety limit.")
+
+    # Streak
+    s_type = streak.get("type", "none")
+    s_days = streak.get("days", 0)
+    if s_days > 0 and s_type == "winning":
+        parts.append(f"On a {s_days}-day winning streak!")
+    elif s_days > 0 and s_type == "losing":
+        parts.append(f"{s_days}-day losing streak — the bot will adjust if it continues.")
+
+    # Vol accuracy
+    vol_acc = self_check_data.get("vol_accuracy_24h", {})
+    vol_count = vol_acc.get("count", 0)
+    vol_err = vol_acc.get("avg_error_pct", 0)
+    if vol_count == 0:
+        parts.append("Volatility model is still learning — not enough data yet.")
+    elif vol_err <= 10:
+        parts.append("Volatility predictions are accurate.")
+    elif vol_err <= 25:
+        parts.append("Volatility predictions are rough but usable.")
+    else:
+        parts.append("The volatility model isn't accurate yet, so the bot is using simple tracking instead. Normal for the first few weeks.")
+
+    return " ".join(parts) if parts else "Everything is running normally."
+
+
+def generate_trade_summary(trade):
+    """Turn a raw trade event into a friendly sentence."""
+    pair_name = trade["pair"].replace("-USD", "")
+    side = trade.get("side", "")
+    price = trade.get("price", 0)
+    amount = trade.get("amount", 0)
+    reason = trade.get("reason", "")
+    net_profit = trade.get("net_profit")
+    cost_usd = trade.get("cost_usd", 0)
+
+    price_str = f"${price:.6g}"
+
+    if side == "buy":
+        text = f"Bought {amount:,.0f} {pair_name} at {price_str}"
+        if cost_usd:
+            text += f" for ${cost_usd:.2f}"
+        if "grid" in reason.lower():
+            # Extract level info from reason
+            text += f" — {reason}"
+    elif side == "sell":
+        text = f"Sold {amount:,.0f} {pair_name} at {price_str}"
+        if net_profit is not None:
+            if net_profit >= 0:
+                text += f" for ${net_profit:.2f} profit"
+            else:
+                text += f" for ${abs(net_profit):.2f} loss"
+    else:
+        text = f"{pair_name}: {reason}"
+    return text
+
+
+def generate_event_summary(event_type, title, detail):
+    """Make activity log events more conversational."""
+    if event_type == "boot":
+        return title, detail
+    elif event_type == "trade_buy":
+        # Title is already like "Bought 42000 NKN at $0.0139"
+        return title, detail or ""
+    elif event_type == "trade_sell":
+        return title, detail or ""
+    elif event_type == "scan_complete":
+        return title, detail or ""
+    elif event_type == "range_recalc":
+        return "Grid boundaries recalculated based on recent price action.", detail or ""
+    elif event_type == "atr_adjust":
+        return "Grid spacing adjusted — volatility changed.", detail or ""
+    return title, detail or ""
 
 
 def _migrate_db():
@@ -345,7 +519,7 @@ def api_status():
             "trade_count": trade_count,
             "regime": _detect_regime_for_pair(conn, pair),
             "grid_held": max(0, buys - sells),
-            "grid_total": 10,
+            "grid_total": DEFAULT_NUM_GRIDS,
         })
 
     # Last trade
@@ -355,6 +529,17 @@ def api_status():
 
     conn.close()
 
+    total_trades = sum(p["trade_count"] for p in pairs_info)
+
+    # Generate human-readable summaries for each pair
+    for p in pairs_info:
+        p["summary"] = generate_pair_summary(p)
+
+    status_summary = generate_status_summary(
+        equity, pnl, total_trades, pairs_info,
+        last_trade_row["timestamp"] if last_trade_row else None,
+    )
+
     return jsonify({
         "equity": equity,
         "balance_usd": eq_row["balance_usd"] if eq_row else starting_balance,
@@ -362,9 +547,10 @@ def api_status():
         "pnl": pnl,
         "pnl_pct": pnl_pct,
         "starting_balance": starting_balance,
-        "total_trades": sum(p["trade_count"] for p in pairs_info),
+        "total_trades": total_trades,
         "last_trade_time": last_trade_row["timestamp"] if last_trade_row else None,
         "pairs": pairs_info,
+        "summary": status_summary,
     })
 
 
@@ -529,7 +715,7 @@ def _safe(series: pd.Series, idx: int):
 @app.route("/api/grid-levels")
 def api_grid_levels():
     pair = request.args.get("pair", "BTC-USD")
-    num_grids = int(request.args.get("grids", 10))
+    num_grids = int(request.args.get("grids", DEFAULT_NUM_GRIDS))
 
     # Auto-fit from recent candles
     conn = get_db()
@@ -1089,6 +1275,10 @@ def api_self_check():
         result["weekly_pnl"] = 0
 
     conn.close()
+
+    # Add human-readable summary
+    result["summary"] = generate_health_summary(result)
+
     return jsonify(result)
 
 

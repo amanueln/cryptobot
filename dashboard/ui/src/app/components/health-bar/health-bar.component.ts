@@ -4,7 +4,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { ApiService, SelfCheckData } from '../../services/api.service';
 
-const DAILY_LIMIT = 30; // USD — configurable default
+const DAILY_LIMIT = 30;
 
 @Component({
   selector: 'app-health-bar',
@@ -12,58 +12,16 @@ const DAILY_LIMIT = 30; // USD — configurable default
   imports: [CommonModule],
   template: `
     <div class="hbar-root">
-
-      <!-- Daily P&L vs limit -->
-      <div class="hbar-item" [title]="'Daily P&L limit: -$' + dailyLimit">
-        <span class="hbar-label">DAILY P&L</span>
-        <span class="hbar-value" [style.color]="dailyPnlColor()">
-          {{ dailyPnlText() }}
-          <span class="hbar-limit">/ -{{ '$' + dailyLimit }}</span>
-        </span>
+      <div class="hbar-text" [style.color]="sentimentColor()">
+        {{ summaryText() }}
       </div>
-
-      <div class="hbar-divider"></div>
-
-      <!-- Weekly P&L -->
-      <div class="hbar-item">
-        <span class="hbar-label">WEEKLY P&L</span>
-        <span class="hbar-value" [class.positive]="weeklyPnlPositive()" [class.negative]="!weeklyPnlPositive()">
-          {{ weeklyPnlText() }}
-        </span>
-      </div>
-
-      <div class="hbar-divider"></div>
-
-      <!-- Win/loss streak -->
-      <div class="hbar-item">
-        <span class="hbar-label">STREAK</span>
-        <span class="hbar-value" [style.color]="streakColor()">
-          {{ streakText() }}
-        </span>
-      </div>
-
-      <div class="hbar-divider"></div>
-
-      <!-- Vol accuracy -->
-      <div class="hbar-item" [title]="'Avg vol prediction error (24h)'">
-        <span class="hbar-label">VOL ACC</span>
-        <span class="hbar-value" [style.color]="volAccColor()">
-          {{ volAccText() }}
-        </span>
-      </div>
-
-      <div class="hbar-divider"></div>
-
-      <!-- Next refresh countdown -->
-      <div class="hbar-item hbar-refresh" [class.urgent]="refreshCountdown() <= 10">
+      <div class="hbar-refresh" [class.urgent]="refreshCountdown() <= 10">
         <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="23 4 23 10 17 10"></polyline>
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
-        <span class="hbar-label">REFRESH</span>
-        <span class="hbar-value mono">{{ refreshCountdown() }}s</span>
+        <span class="refresh-label">{{ refreshCountdown() }}s</span>
       </div>
-
     </div>
   `,
   styles: [`
@@ -72,9 +30,8 @@ const DAILY_LIMIT = 30; // USD — configurable default
     .hbar-root {
       display: flex;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 0;
-      padding: 0 16px;
+      gap: 12px;
+      padding: 10px 16px;
       background: #1a1d2e;
       border: 1px solid #2d3148;
       border-radius: 8px;
@@ -82,64 +39,35 @@ const DAILY_LIMIT = 30; // USD — configurable default
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
 
-    .hbar-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-    }
-
-    .hbar-divider {
-      width: 1px;
-      height: 24px;
-      background: #2d3148;
-      flex-shrink: 0;
-    }
-
-    .hbar-label {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      color: #6b7280;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .hbar-value {
-      font-size: 13px;
-      font-weight: 600;
-      color: #e2e8f0;
-      white-space: nowrap;
-    }
-
-    .hbar-value.mono {
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 12px;
-    }
-
-    .hbar-value.positive { color: #4ade80; }
-    .hbar-value.negative { color: #f87171; }
-
-    .hbar-limit {
-      font-size: 10px;
-      color: #6b7280;
+    .hbar-text {
+      flex: 1;
+      font-size: 12.5px;
       font-weight: 500;
-      margin-left: 2px;
+      line-height: 1.5;
+      color: #94a3b8;
     }
 
     .hbar-refresh {
-      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 4px;
       color: #6b7280;
+      flex-shrink: 0;
       transition: color 0.3s ease;
     }
 
     .hbar-refresh.urgent { color: #fbbf24; }
-    .hbar-refresh.urgent .hbar-value { color: #fbbf24; }
 
     .refresh-icon {
       width: 12px;
       height: 12px;
       flex-shrink: 0;
+    }
+
+    .refresh-label {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
     }
   `],
 })
@@ -149,8 +77,6 @@ export class HealthBarComponent implements OnInit, OnDestroy {
   readonly dailyLimit = DAILY_LIMIT;
   readonly selfCheck  = signal<SelfCheckData | null>(null);
   readonly refreshCountdown = this.api.refreshCountdown;
-
-  private readonly status = this.api.status;
 
   private _pollInterval: any;
 
@@ -170,63 +96,57 @@ export class HealthBarComponent implements OnInit, OnDestroy {
     });
   }
 
-  readonly dailyPnl = computed(() => this.selfCheck()?.daily_pnl ?? null);
-
-  readonly dailyPnlText = computed(() => {
-    const v = this.dailyPnl();
-    if (v === null) return '—';
-    const sign = v >= 0 ? '+' : '';
-    return sign + '$' + Math.abs(v).toFixed(2);
-  });
-
-  readonly dailyPnlColor = computed(() => {
-    const v = this.dailyPnl();
-    if (v === null) return '#6b7280';
-    if (v <= -DAILY_LIMIT) return '#f87171';                   // breached
-    if (v <= -(DAILY_LIMIT * 0.6)) return '#fbbf24';          // >60% of limit
-    return '#4ade80';
-  });
-
-  readonly weeklyPnl = computed(() => this.selfCheck()?.weekly_pnl ?? null);
-
-  readonly weeklyPnlPositive = computed(() => (this.weeklyPnl() ?? 0) >= 0);
-
-  readonly weeklyPnlText = computed(() => {
-    const v = this.weeklyPnl();
-    if (v === null) return '—';
-    const sign = v >= 0 ? '+' : '';
-    return sign + '$' + Math.abs(v).toFixed(2);
-  });
-
-  readonly streakText = computed(() => {
+  readonly summaryText = computed(() => {
     const sc = this.selfCheck();
-    if (!sc?.streak) return '—';
-    const { type, days } = sc.streak;
-    if (type === 'win')  return `${days}W`;
-    if (type === 'loss') return `${days}L`;
-    return `${days} ${type}`;
+
+    // Use server summary if available
+    if (sc?.summary) return sc.summary;
+
+    // Client-side fallback
+    if (!sc) return 'Loading health data...';
+
+    const parts: string[] = [];
+
+    // Daily P&L
+    const daily = sc.daily_pnl ?? 0;
+    if (daily >= 0) {
+      parts.push(`Good day so far \u2014 up $${daily.toFixed(2)}, well within the $${DAILY_LIMIT} daily limit.`);
+    } else if (daily > -DAILY_LIMIT * 0.6) {
+      parts.push(`Down $${Math.abs(daily).toFixed(2)} today, but within normal range.`);
+    } else {
+      parts.push(`Rough day \u2014 down $${Math.abs(daily).toFixed(2)}. Approaching the $${DAILY_LIMIT} safety limit.`);
+    }
+
+    // Streak
+    const streak = sc.streak;
+    if (streak && streak.days > 0) {
+      if (streak.type === 'winning') {
+        parts.push(`${streak.days}-day winning streak!`);
+      } else if (streak.type === 'losing') {
+        parts.push(`${streak.days}-day losing streak \u2014 the bot will adjust if it continues.`);
+      }
+    }
+
+    // Next scan
+    const vol = sc.vol_accuracy_24h;
+    if (vol && vol.count === 0) {
+      parts.push('Volatility model is still learning.');
+    } else if (vol && vol.avg_error_pct <= 10) {
+      parts.push('Volatility predictions are accurate.');
+    } else if (vol && vol.avg_error_pct > 25) {
+      parts.push('Volatility model is still calibrating \u2014 using simple tracking for now.');
+    }
+
+    return parts.join(' ') || 'Everything is running normally.';
   });
 
-  readonly streakColor = computed(() => {
+  readonly sentimentColor = computed(() => {
     const sc = this.selfCheck();
-    if (!sc?.streak) return '#6b7280';
-    return sc.streak.type === 'win' ? '#4ade80' : '#f87171';
-  });
-
-  readonly volAccText = computed(() => {
-    const sc = this.selfCheck();
-    const acc = sc?.vol_accuracy_24h;
-    if (!acc || acc.count === 0) return '—';
-    return acc.avg_error_pct.toFixed(1) + '%';
-  });
-
-  readonly volAccColor = computed(() => {
-    const sc = this.selfCheck();
-    const acc = sc?.vol_accuracy_24h;
-    if (!acc || acc.count === 0) return '#6b7280';
-    const err = acc.avg_error_pct;
-    if (err <= 10) return '#4ade80';
-    if (err <= 25) return '#fbbf24';
-    return '#f87171';
+    if (!sc) return '#6b7280';
+    const daily = sc.daily_pnl ?? 0;
+    if (daily <= -DAILY_LIMIT) return '#f87171';
+    if (daily <= -(DAILY_LIMIT * 0.6)) return '#fbbf24';
+    if (daily > 0) return '#4ade80';
+    return '#94a3b8';
   });
 }

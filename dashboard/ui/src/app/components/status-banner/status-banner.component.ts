@@ -11,42 +11,16 @@ import { ApiService, HealthData } from '../../services/api.service';
   template: `
     <div class="banner-root">
 
-      <!-- Left: status dot + text -->
+      <!-- Left: status dot + summary text -->
       <div class="banner-left">
         <span
           class="status-dot"
           [class.running]="isRunning()"
           [class.stopped]="!isRunning()"
-          [title]="isRunning() ? 'Bot is running' : 'Bot is stopped'"
         ></span>
         <div class="status-text-block">
           <span class="status-headline">{{ statusHeadline() }}</span>
-          <span class="status-sub">{{ lastActionText() }}</span>
-        </div>
-      </div>
-
-      <!-- Centre: quick stats -->
-      <div class="quick-stats">
-        <div class="qs-item">
-          <span class="qs-label">EQUITY</span>
-          <span class="qs-value">{{ equityText() }}</span>
-        </div>
-        <div class="qs-divider"></div>
-        <div class="qs-item">
-          <span class="qs-label">NET P&amp;L</span>
-          <span class="qs-value" [class.positive]="pnlPositive()" [class.negative]="!pnlPositive()">
-            {{ pnlText() }}
-          </span>
-        </div>
-        <div class="qs-divider"></div>
-        <div class="qs-item">
-          <span class="qs-label">TRADES</span>
-          <span class="qs-value">{{ tradesText() }}</span>
-        </div>
-        <div class="qs-divider"></div>
-        <div class="qs-item">
-          <span class="qs-label">UPTIME</span>
-          <span class="qs-value">{{ uptimeText() }}</span>
+          <span class="status-summary">{{ summaryText() }}</span>
         </div>
       </div>
 
@@ -66,16 +40,16 @@ import { ApiService, HealthData } from '../../services/api.service';
           </button>
           <div class="dropdown-menu" *ngIf="dropdownOpen()">
             <button class="dropdown-item" (click)="selectTool('scanner')">
-              <span class="tool-icon">⊕</span> Pair Scanner
+              <span class="tool-icon">&#8853;</span> Pair Scanner
             </button>
             <button class="dropdown-item" (click)="selectTool('simulator')">
-              <span class="tool-icon">⟳</span> DCA Simulator
+              <span class="tool-icon">&#10227;</span> DCA Simulator
             </button>
             <button class="dropdown-item" (click)="selectTool('regime')">
-              <span class="tool-icon">◈</span> Regime Visualizer
+              <span class="tool-icon">&#9672;</span> Regime Visualizer
             </button>
             <button class="dropdown-item" (click)="selectTool('self-check')">
-              <span class="tool-icon">✓</span> Self-Check
+              <span class="tool-icon">&#10003;</span> Self-Check
             </button>
           </div>
         </div>
@@ -113,12 +87,12 @@ import { ApiService, HealthData } from '../../services/api.service';
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
 
-    /* Status dot + text */
     .banner-left {
       display: flex;
       align-items: center;
       gap: 10px;
-      flex-shrink: 0;
+      flex: 1;
+      min-width: 0;
     }
 
     .status-dot {
@@ -148,7 +122,8 @@ import { ApiService, HealthData } from '../../services/api.service';
     .status-text-block {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
+      min-width: 0;
     }
 
     .status-headline {
@@ -158,56 +133,11 @@ import { ApiService, HealthData } from '../../services/api.service';
       white-space: nowrap;
     }
 
-    .status-sub {
-      font-size: 11px;
-      color: #6b7280;
-      white-space: nowrap;
+    .status-summary {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.4;
     }
-
-    /* Quick stats */
-    .quick-stats {
-      display: flex;
-      align-items: center;
-      gap: 0;
-      flex: 1;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 0;
-    }
-
-    .qs-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      padding: 0 18px;
-    }
-
-    .qs-divider {
-      width: 1px;
-      height: 30px;
-      background: #2d3148;
-      flex-shrink: 0;
-    }
-
-    .qs-label {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      color: #6b7280;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .qs-value {
-      font-size: 15px;
-      font-weight: 600;
-      color: #e2e8f0;
-      white-space: nowrap;
-    }
-
-    .qs-value.positive { color: #4ade80; }
-    .qs-value.negative { color: #f87171; }
 
     /* Action buttons */
     .banner-actions {
@@ -328,59 +258,36 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
   readonly statusHeadline = computed(() => {
     const s = this.status();
     const h = this.health();
-    if (!s && !h) return 'Loading…';
+    if (!s && !h) return 'Connecting...';
     const running = h?.bot_running ?? false;
     const pairCount = s?.pairs?.length ?? h?.active_pairs?.length ?? 0;
-    const verb = running ? 'running' : 'stopped';
-    return `Bot is ${verb} · watching ${pairCount} pair${pairCount !== 1 ? 's' : ''}`;
+    if (!running) return 'Bot is stopped';
+    const names = s?.pairs?.map(p => p.pair.replace('-USD', '')).join(', ') ?? '';
+    return `Watching ${pairCount} pairs${names ? ': ' + names : ''}`;
   });
 
-  readonly lastActionText = computed(() => {
+  readonly summaryText = computed(() => {
     const s = this.status();
-    const ts = s?.last_trade_time ?? this.health()?.last_trade ?? null;
-    if (!ts) return 'No recent trades';
-    try {
-      const diff = Date.now() - new Date(ts).getTime();
-      const mins = Math.floor(diff / 60_000);
-      if (mins < 1)   return 'Last trade: just now';
-      if (mins < 60)  return `Last trade: ${mins}m ago`;
-      const hrs = Math.floor(mins / 60);
-      if (hrs < 24)   return `Last trade: ${hrs}h ago`;
-      return `Last trade: ${Math.floor(hrs / 24)}d ago`;
-    } catch { return 'Last trade: unknown'; }
-  });
+    if (!s) return 'Loading...';
 
-  readonly equityText = computed(() => {
-    const s = this.status();
-    if (!s) return '—';
-    const v = s.equity;
-    if (v >= 1_000_000) return '$' + (v / 1_000_000).toFixed(2) + 'M';
-    if (v >= 1_000)     return '$' + (v / 1_000).toFixed(2) + 'K';
-    return '$' + v.toFixed(2);
-  });
+    // Use server-generated summary if available
+    if (s.summary) return s.summary;
 
-  readonly pnlPositive = computed(() => (this.status()?.pnl ?? 0) >= 0);
-
-  readonly pnlText = computed(() => {
-    const s = this.status();
-    if (!s) return '—';
-    const sign = s.pnl >= 0 ? '+' : '';
-    return sign + '$' + Math.abs(s.pnl).toFixed(2);
-  });
-
-  readonly tradesText = computed(() => {
-    const s = this.status();
-    return s ? String(s.total_trades) : '—';
-  });
-
-  readonly uptimeText = computed(() => {
-    const h = this.health();
-    if (!h) return '—';
-    const secs = h.uptime_seconds;
-    if (secs < 60)     return `${secs}s`;
-    if (secs < 3600)   return `${Math.floor(secs / 60)}m`;
-    if (secs < 86400)  return `${Math.floor(secs / 3600)}h`;
-    return `${Math.floor(secs / 86400)}d`;
+    // Fallback: generate client-side
+    const pnl = s.pnl;
+    const trades = s.total_trades;
+    let text = '';
+    if (pnl >= 0) {
+      text = `Up $${pnl.toFixed(2)}.`;
+    } else {
+      text = `Down $${Math.abs(pnl).toFixed(2)}.`;
+    }
+    if (trades === 0) {
+      text += ' No trades yet — waiting for the right entry.';
+    } else {
+      text += ` ${trades} trade${trades !== 1 ? 's' : ''} completed.`;
+    }
+    return text;
   });
 
   ngOnInit(): void {
