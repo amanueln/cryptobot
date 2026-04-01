@@ -36,6 +36,31 @@ const STARTING_BALANCE = 3000;
   template: `
     <div class="cc-root">
 
+      <!-- 0. Hero Numbers — the answer to "how much money do I have?" -->
+      <div class="hero-bar">
+        <div class="hero-item">
+          <span class="hero-value">{{ formatCurrency(heroEquity()) }}</span>
+          <span class="hero-label">Total</span>
+        </div>
+        <div class="hero-divider"></div>
+        <div class="hero-item">
+          <span class="hero-value cash">{{ formatCurrency(heroCash()) }}</span>
+          <span class="hero-label">Cash</span>
+        </div>
+        <div class="hero-divider"></div>
+        <div class="hero-item">
+          <span class="hero-value positions">{{ formatCurrency(heroPositions()) }}</span>
+          <span class="hero-label">In positions</span>
+        </div>
+        <div class="hero-divider"></div>
+        <div class="hero-item">
+          <span class="hero-value" [class.pos]="heroPnl() >= 0" [class.neg]="heroPnl() < 0">
+            {{ heroPnl() >= 0 ? '+' : '' }}{{ formatCurrency(heroPnl()) }}
+          </span>
+          <span class="hero-label">P&amp;L ({{ heroPnlPct() }})</span>
+        </div>
+      </div>
+
       <!-- 1. Status Banner -->
       <app-status-banner
         (toolSelected)="openTool($event)"
@@ -164,6 +189,39 @@ const STARTING_BALANCE = 3000;
       background: #0f1117; color: #e2e8f0; min-height: 100vh;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
+    .hero-bar {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0; padding: 20px 24px;
+      background: linear-gradient(180deg, #141621 0%, #0f1117 100%);
+      border-bottom: 1px solid #2d3148;
+      flex-wrap: wrap;
+    }
+    .hero-item {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 28px;
+    }
+    .hero-value {
+      font-size: 28px; font-weight: 700; color: #f1f5f9;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      letter-spacing: -0.02em; line-height: 1.2;
+    }
+    .hero-value.cash { color: #94a3b8; }
+    .hero-value.positions { color: #60a5fa; }
+    .hero-value.pos { color: #4ade80; }
+    .hero-value.neg { color: #f87171; }
+    .hero-label {
+      font-size: 11px; font-weight: 500; color: #6b7280;
+      margin-top: 2px; letter-spacing: 0.03em;
+    }
+    .hero-divider {
+      width: 1px; height: 36px; background: #2d3148; flex-shrink: 0;
+    }
+    @media (max-width: 640px) {
+      .hero-bar { gap: 8px; padding: 16px 12px; }
+      .hero-item { padding: 4px 12px; }
+      .hero-value { font-size: 20px; }
+      .hero-divider { display: none; }
+    }
     .section-header {
       font-size: 13px; font-weight: 600; color: #e2e8f0;
       margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -241,6 +299,16 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   maxDrawdown = signal(0);
 
   pairs = computed(() => this.api.status()?.pairs ?? []);
+
+  // Hero numbers — derived from status signal
+  heroEquity = computed(() => this.api.status()?.equity ?? 0);
+  heroCash = computed(() => this.api.status()?.balance_usd ?? 0);
+  heroPositions = computed(() => this.api.status()?.positions_value ?? 0);
+  heroPnl = computed(() => this.api.status()?.pnl ?? 0);
+  heroPnlPct = computed(() => {
+    const pct = this.api.status()?.pnl_pct ?? 0;
+    return (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+  });
 
   @ViewChild('equityCanvas') equityCanvasRef!: ElementRef<HTMLCanvasElement>;
   private equityChart?: Chart;
