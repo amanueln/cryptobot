@@ -642,6 +642,14 @@ class PairSelector:
             "take_profit_pct": 0.10,
             "adaptive_range": False,
             "max_trades_per_day": 20,
+            "grid_mode": "geometric",
+            "auto_grid_mode": False,
+            "trailing_enabled": False,
+            "fee_pct": 0.40,
+            "slippage_pct": 0.10,
+            "min_profit_multiplier": 1.5,
+            "max_position_pct": 0.60,
+            "compound_enabled": False,
         }
 
         strategy = GridStrategy()
@@ -757,6 +765,18 @@ class PairSelector:
                             "ema_convergence_pct": _ema_conv,
                             "ema_fast_period": 50,
                             "ema_slow_period": 200,
+                            # Grid improvements
+                            "grid_mode": "geometric",
+                            "auto_grid_mode": True,
+                            "trailing_enabled": True,
+                            "trailing_buffer_pct": 0.02,
+                            "fee_pct": 0.40,
+                            "slippage_pct": 0.10,
+                            "min_profit_multiplier": 1.5,
+                            "max_position_pct": 0.60,
+                            "compound_enabled": True,
+                            "compound_floor_pct": 0.50,
+                            "compound_cap_pct": 2.0,
                         }
 
                         strategy = GridStrategy()

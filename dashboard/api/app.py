@@ -735,22 +735,34 @@ def api_grid_levels():
     lower = min(lows) * 0.95
     upper = max(highs) * 1.05
 
-    step = (upper - lower) / num_grids
+    mode = request.args.get("mode", "geometric")
 
     levels = []
-    for i in range(num_grids + 1):
-        price = lower + i * step
-        levels.append({
-            "price": round(price, 8),
-            "type": "buy" if i < num_grids // 2 else "sell",
-            "index": i,
-        })
+    if mode == "geometric" and lower > 0:
+        ratio = (upper / lower) ** (1.0 / num_grids)
+        for i in range(num_grids + 1):
+            price = lower * (ratio ** i)
+            levels.append({
+                "price": round(price, 8),
+                "type": "buy" if i < num_grids // 2 else "sell",
+                "index": i,
+            })
+    else:
+        step = (upper - lower) / num_grids
+        for i in range(num_grids + 1):
+            price = lower + i * step
+            levels.append({
+                "price": round(price, 8),
+                "type": "buy" if i < num_grids // 2 else "sell",
+                "index": i,
+            })
 
     return jsonify({
         "pair": pair,
         "lower": round(lower, 8),
         "upper": round(upper, 8),
         "num_grids": num_grids,
+        "mode": mode,
         "levels": levels,
     })
 

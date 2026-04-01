@@ -1,3 +1,4 @@
+import math
 from collections import deque
 from dataclasses import dataclass
 
@@ -11,6 +12,7 @@ class GridLevel:
     holding: bool = False
     crypto_amount: float = 0.0
     entry_price: float = 0.0  # actual fill price when bought
+    active: bool = True       # False if filtered out by profit check
 
 
 class EMACalculator:
@@ -47,13 +49,40 @@ class GridStrategy(BaseStrategy):
         self.lower_price: float = 0
         self.num_grids: int = 0
         self.total_investment_usd: float = 0
+        self.original_investment_usd: float = 0  # for compounding limits
         self.stop_loss_pct: float = 0
         self.take_profit_pct: float = 0
         self.grid_levels: list[GridLevel] = []
         self.grid_spacing: float = 0
+        self.grid_spacing_pct: float = 0  # percentage between levels
         self.investment_per_grid: float = 0
         self.prev_price: float | None = None
+        self._last_price: float = 0.0
         self.paused: bool = False
+
+        # Grid mode: "geometric" or "arithmetic"
+        self.grid_mode: str = "geometric"
+        self.auto_grid_mode: bool = True
+
+        # Trailing grid
+        self.trailing_enabled: bool = True
+        self.trailing_buffer_pct: float = 0.02
+
+        # Profit filter
+        self.fee_pct: float = 0.40           # per-side fee %
+        self.slippage_pct: float = 0.10      # additional slippage %
+        self.min_profit_multiplier: float = 1.5  # min profit = fee * this
+        self.active_grid_count: int = 0      # levels that passed profit filter
+        self.filtered_count: int = 0         # levels skipped
+
+        # Position limit
+        self.max_position_pct: float = 0.60  # max 60% of allocation in open buys
+        self.position_limit_hit: bool = False
+
+        # Compounding
+        self.compound_enabled: bool = True
+        self.compound_floor_pct: float = 0.50
+        self.compound_cap_pct: float = 2.0
 
         # Trend filter (legacy death cross)
         self.use_trend_filter: bool = False
@@ -70,32 +99,32 @@ class GridStrategy(BaseStrategy):
         self.adaptive_range: bool = False
         self.range_lookback_days: int = 14
         self.recalc_interval_hours: int = 24
-        self.min_spacing_pct: float = 0.02  # 2% of price
+        self.min_spacing_pct: float = 0.02
         self._candle_history: deque[Candle] = deque()
         self._candles_since_recalc: int = 0
         self._recalc_interval_candles: int = 0
 
         # Daily trade cap
-        self.max_trades_per_day: int = 0  # 0 = unlimited
-        self._trade_timestamps: deque[float] = deque()  # unix timestamps of recent trades
+        self.max_trades_per_day: int = 0
+        self._trade_timestamps: deque[float] = deque()
         self._trade_cap_paused: bool = False
 
-        # ATR-based volatility adaptation (always active, no training needed)
+        # ATR-based volatility adaptation
         self.atr_period: int = 14
-        self.atr_spacing_multiplier: float = 2.0  # configurable: grid spacing = ATR * this
+        self.atr_spacing_multiplier: float = 2.0
         self._atr_values: deque[float] = deque(maxlen=14)
         self._atr_current: float = 0.0
-        self._atr_mean: float = 0.0  # rolling mean ATR for baseline comparison
-        self._atr_history: deque[float] = deque(maxlen=336)  # 14 days of ATR values
+        self._atr_mean: float = 0.0
+        self._atr_history: deque[float] = deque(maxlen=336)
         self._prev_close_for_atr: float | None = None
 
-        # Volatility-based spacing adjustment (ML layer, overrides ATR when R² > 0)
+        # Volatility-based spacing adjustment (ML layer)
         self._vol_spacing_multiplier: float = 1.0
-        self._vol_ml_override: bool = False  # True when ML has actively set the multiplier
+        self._vol_ml_override: bool = False
         self._vol_regime: str = "unknown"
-        self._learned_spacing_multiplier: float = 1.0  # feedback loop nudge
+        self._learned_spacing_multiplier: float = 1.0
 
-        # Indicator snapshot (injected by orchestrator for trade annotations)
+        # Indicator snapshot
         self._last_adx: float = 0.0
         self._last_rsi: float = 0.0
 
@@ -109,17 +138,37 @@ class GridStrategy(BaseStrategy):
         self.lower_price = float(config["lower_price"])
         self.num_grids = int(config["num_grids"])
         self.total_investment_usd = float(config["total_investment_usd"])
+        self.original_investment_usd = self.total_investment_usd
         self.stop_loss_pct = float(config["stop_loss_pct"])
         self.take_profit_pct = float(config["take_profit_pct"])
 
-        self.grid_spacing = (self.upper_price - self.lower_price) / (self.num_grids - 1) if self.num_grids > 1 else 0
-        self.investment_per_grid = self.total_investment_usd / self.num_grids
-        self.grid_levels = [
-            GridLevel(price=self.lower_price + i * self.grid_spacing)
-            for i in range(self.num_grids)
-        ]
+        # Grid mode (Improvement 1 + 4)
+        self.grid_mode = config.get("grid_mode", "geometric")
+        self.auto_grid_mode = bool(config.get("auto_grid_mode", True))
 
-        # Trend filter config (legacy death cross)
+        # Trailing (Improvement 2)
+        self.trailing_enabled = bool(config.get("trailing_enabled", True))
+        self.trailing_buffer_pct = float(config.get("trailing_buffer_pct", 0.02))
+
+        # Profit filter (Improvement 3)
+        self.fee_pct = float(config.get("fee_pct", 0.40))
+        self.slippage_pct = float(config.get("slippage_pct", 0.10))
+        self.min_profit_multiplier = float(config.get("min_profit_multiplier", 1.5))
+
+        # Position limit (Improvement 5)
+        self.max_position_pct = float(config.get("max_position_pct", 0.60))
+
+        # Compounding (Improvement 6)
+        self.compound_enabled = bool(config.get("compound_enabled", True))
+        self.compound_floor_pct = float(config.get("compound_floor_pct", 0.50))
+        self.compound_cap_pct = float(config.get("compound_cap_pct", 2.0))
+
+        # Calculate grid levels
+        self._calculate_grid_levels()
+        self._filter_unprofitable_levels()
+        self.investment_per_grid = self.total_investment_usd / max(self.active_grid_count, 1)
+
+        # Trend filter config
         self.use_trend_filter = bool(config.get("use_trend_filter", False))
         ema_fast_period = int(config.get("ema_fast_period", 50))
         ema_slow_period = int(config.get("ema_slow_period", 200))
@@ -157,8 +206,217 @@ class GridStrategy(BaseStrategy):
         self._atr_values = deque(maxlen=self.atr_period)
         self._atr_history = deque(maxlen=max(336, int(self.range_lookback_days * 24) if self.adaptive_range else 336))
 
+    # ------------------------------------------------------------------
+    # Grid level calculation (Improvement 1: Geometric)
+    # ------------------------------------------------------------------
+
+    def _calculate_grid_levels(self):
+        """Calculate grid levels using geometric or arithmetic spacing."""
+        if self.lower_price <= 0 or self.upper_price <= self.lower_price or self.num_grids < 2:
+            self.grid_spacing = 0
+            self.grid_spacing_pct = 0
+            self.grid_levels = []
+            return
+
+        if self.grid_mode == "geometric":
+            # Equal percentage steps: each level = lower * ratio^i
+            ratio = (self.upper_price / self.lower_price) ** (1.0 / (self.num_grids - 1))
+            self.grid_spacing_pct = (ratio - 1.0) * 100
+            prices = [self.lower_price * (ratio ** i) for i in range(self.num_grids)]
+            # grid_spacing stored as average dollar spacing for compatibility
+            self.grid_spacing = (self.upper_price - self.lower_price) / (self.num_grids - 1)
+        else:
+            # Equal dollar steps (original behavior)
+            self.grid_spacing = (self.upper_price - self.lower_price) / (self.num_grids - 1)
+            self.grid_spacing_pct = (self.grid_spacing / self.lower_price) * 100 if self.lower_price > 0 else 0
+            prices = [self.lower_price + i * self.grid_spacing for i in range(self.num_grids)]
+
+        self.grid_levels = [GridLevel(price=p) for p in prices]
+        self.active_grid_count = len(self.grid_levels)
+        self.filtered_count = 0
+
+    def _filter_unprofitable_levels(self):
+        """Improvement 3: Remove grid levels where profit < fee threshold."""
+        if not self.grid_levels or len(self.grid_levels) < 2:
+            return
+
+        round_trip_fee_pct = (self.fee_pct + self.slippage_pct) * 2
+        min_spacing_pct = round_trip_fee_pct * self.min_profit_multiplier
+
+        # Mark levels that are too close to the previous active level
+        prev_active_price = self.grid_levels[0].price
+        self.grid_levels[0].active = True
+
+        for level in self.grid_levels[1:]:
+            spacing_pct = (level.price - prev_active_price) / prev_active_price * 100
+            if spacing_pct >= min_spacing_pct:
+                level.active = True
+                prev_active_price = level.price
+            else:
+                level.active = False
+
+        self.active_grid_count = sum(1 for l in self.grid_levels if l.active)
+        self.filtered_count = len(self.grid_levels) - self.active_grid_count
+
+    def _get_sell_price(self, level: GridLevel) -> float:
+        """Get the sell target for a filled level — next active level above."""
+        if self.grid_mode == "geometric":
+            # Geometric: sell at entry * (1 + spacing_pct/100)
+            return level.entry_price * (1 + self.grid_spacing_pct / 100) if level.entry_price > 0 else level.price * (1 + self.grid_spacing_pct / 100)
+        else:
+            return level.price + self.grid_spacing
+
+    # ------------------------------------------------------------------
+    # Trailing grid (Improvement 2)
+    # ------------------------------------------------------------------
+
+    def _check_trailing(self, candle: Candle) -> bool:
+        """Shift grid up/down if price exits the range."""
+        if not self.trailing_enabled:
+            return False
+
+        current_price = candle.close
+        min_overshoot = self.grid_spacing_pct / 100 / 2 if self.grid_spacing_pct > 0 else 0.01
+
+        if current_price > self.upper_price:
+            overshoot_pct = (current_price - self.upper_price) / self.upper_price
+            if overshoot_pct > min_overshoot:
+                return self._trail_grid(candle, direction="up")
+
+        elif current_price < self.lower_price:
+            overshoot_pct = (self.lower_price - current_price) / self.lower_price
+            if overshoot_pct > min_overshoot:
+                return self._trail_grid(candle, direction="down")
+
+        return False
+
+    def _trail_grid(self, candle: Candle, direction: str) -> bool:
+        """Shift the entire grid, preserving open positions."""
+        old_lower = self.lower_price
+        old_upper = self.upper_price
+        current_price = candle.close
+
+        # Maintain same range width in percentage terms
+        if self.grid_mode == "geometric":
+            range_ratio = old_upper / old_lower if old_lower > 0 else 2.0
+        else:
+            range_pct = (old_upper - old_lower) / old_lower if old_lower > 0 else 0.5
+
+        if direction == "up":
+            self.upper_price = current_price * (1 + self.trailing_buffer_pct)
+            if self.grid_mode == "geometric":
+                self.lower_price = self.upper_price / range_ratio
+            else:
+                self.lower_price = self.upper_price / (1 + range_pct)
+        else:
+            self.lower_price = current_price * (1 - self.trailing_buffer_pct)
+            if self.grid_mode == "geometric":
+                self.upper_price = self.lower_price * range_ratio
+            else:
+                self.upper_price = self.lower_price * (1 + range_pct)
+
+        # Snapshot holdings before rebuilding
+        old_holdings: list[tuple[float, float, float]] = []  # (entry_price, amount, old_level_price)
+        for level in self.grid_levels:
+            if level.holding and level.crypto_amount > 0:
+                old_holdings.append((level.entry_price, level.crypto_amount, level.price))
+
+        # Rebuild grid
+        self._calculate_grid_levels()
+        self._filter_unprofitable_levels()
+        self.investment_per_grid = self.total_investment_usd / max(self.active_grid_count, 1)
+
+        # Remap holdings to nearest new levels
+        for entry_price, amount, old_price in old_holdings:
+            # Find nearest active new level
+            best = min(
+                (l for l in self.grid_levels if l.active and not l.holding),
+                key=lambda l: abs(l.price - old_price),
+                default=None,
+            )
+            if best:
+                best.holding = True
+                best.crypto_amount = amount
+                best.entry_price = entry_price
+
+        # Log trail event
+        if hasattr(self, '_trade_logger') and self._trade_logger:
+            name = self.pair.replace("-USD", "")
+            self._trade_logger.log_event(
+                "trail",
+                f"{name} grid trailed {direction} — price {'broke above' if direction == 'up' else 'dropped below'} range",
+                f"Old: ${old_lower:.6g}-${old_upper:.6g} → New: ${self.lower_price:.6g}-${self.upper_price:.6g}",
+                pair=self.pair,
+            )
+
+        return True
+
+    # ------------------------------------------------------------------
+    # Position limit (Improvement 5)
+    # ------------------------------------------------------------------
+
+    def _check_position_limit(self) -> bool:
+        """Returns True if we can still buy (within position limit)."""
+        total_invested = sum(
+            level.entry_price * level.crypto_amount
+            for level in self.grid_levels
+            if level.holding and level.crypto_amount > 0
+        )
+        max_invested = self.total_investment_usd * self.max_position_pct
+        self.position_limit_hit = total_invested >= max_invested
+        return not self.position_limit_hit
+
+    def _get_buy_size(self) -> float:
+        """Calculate buy size, respecting position limit."""
+        total_invested = sum(
+            level.entry_price * level.crypto_amount
+            for level in self.grid_levels
+            if level.holding and level.crypto_amount > 0
+        )
+        max_invested = self.total_investment_usd * self.max_position_pct
+        remaining = max_invested - total_invested
+        if remaining <= 0:
+            return 0
+        return min(self.investment_per_grid, remaining)
+
+    # ------------------------------------------------------------------
+    # Compounding (Improvement 6)
+    # ------------------------------------------------------------------
+
+    def apply_cycle_profit(self, net_profit: float):
+        """Reinvest cycle profit into allocation (or absorb loss)."""
+        if not self.compound_enabled:
+            return
+
+        old_alloc = self.total_investment_usd
+        new_alloc = old_alloc + net_profit
+
+        # Clamp to floor/cap
+        floor = self.original_investment_usd * self.compound_floor_pct
+        cap = self.original_investment_usd * self.compound_cap_pct
+        new_alloc = max(floor, min(cap, new_alloc))
+
+        self.total_investment_usd = new_alloc
+        self.investment_per_grid = new_alloc / max(self.active_grid_count, 1)
+
+    # ------------------------------------------------------------------
+    # Regime-driven mode (Improvement 4)
+    # ------------------------------------------------------------------
+
+    def _select_grid_mode(self, regime: str, atr_ratio: float) -> str:
+        """Auto-select grid mode based on market conditions."""
+        if not self.auto_grid_mode:
+            return self.grid_mode
+
+        if regime.lower() in ("ranging", "squeeze") and atr_ratio < 0.8:
+            return "arithmetic"
+        return "geometric"
+
+    # ------------------------------------------------------------------
+    # ATR and volatility
+    # ------------------------------------------------------------------
+
     def _update_atr(self, candle: Candle) -> None:
-        """Incrementally update ATR(14). Works from candle 2 onwards."""
         if self._prev_close_for_atr is not None:
             tr = max(
                 candle.high - candle.low,
@@ -174,12 +432,6 @@ class GridStrategy(BaseStrategy):
         self._prev_close_for_atr = candle.close
 
     def _compute_atr_spacing_multiplier(self) -> float:
-        """Compute spacing multiplier from ATR ratio: current ATR vs historical mean.
-
-        Returns ~1.0 on average, > 1.0 when vol is above normal (widen grid),
-        < 1.0 when vol is below normal (tighten grid). Clamped to [0.5, 2.0].
-        Dead zone: ratios within 5% of 1.0 snap to 1.0 to avoid noise.
-        """
         if self._atr_current <= 0 or self._atr_mean <= 0:
             return 1.0
         ratio = self._atr_current / self._atr_mean
@@ -189,22 +441,16 @@ class GridStrategy(BaseStrategy):
 
     def apply_volatility_adjustment(self, spacing_multiplier: float, vol_regime: str,
                                        recommended_grids: int = 0) -> None:
-        """Apply ML-based spacing adjustment from VolatilityPredictor.
-
-        Called externally by sim_runner when model R² > 0.
-        Overrides the ATR-based default.
-        """
         self._vol_spacing_multiplier = max(0.5, min(2.0, spacing_multiplier))
         self._vol_ml_override = True
         self._vol_regime = vol_regime
 
     def apply_learned_spacing(self, multiplier: float) -> None:
-        """Apply feedback-loop learned spacing preference.
-
-        This is a gentle nudge (0.7-1.3) based on which spacing levels
-        historically produced the best profit per cycle for this pair.
-        """
         self._learned_spacing_multiplier = max(0.7, min(1.3, multiplier))
+
+    # ------------------------------------------------------------------
+    # Trend / EMA filters
+    # ------------------------------------------------------------------
 
     def _update_trend_filter(self, close: float) -> None:
         if self.ema_fast is None or self.ema_slow is None:
@@ -228,6 +474,10 @@ class GridStrategy(BaseStrategy):
             elif close > ema50:
                 self.buys_blocked = False
 
+    # ------------------------------------------------------------------
+    # Adaptive range recalculation
+    # ------------------------------------------------------------------
+
     def _maybe_recalc_range(self, candle: Candle) -> list[Signal]:
         if not self.adaptive_range:
             return []
@@ -246,14 +496,29 @@ class GridStrategy(BaseStrategy):
         new_lower = min(c.low for c in self._candle_history)
         new_upper = max(c.high for c in self._candle_history)
 
-        # Two-layer volatility spacing adjustment:
-        # Layer 1 (floor): ATR-based, always active from candle ~15
-        # Layer 2 (ceiling): ML vol predictor, overrides ATR when R² > 0
+        # Auto-select grid mode based on regime (Improvement 4)
+        atr_ratio = self._atr_current / self._atr_mean if self._atr_mean > 0 else 1.0
+        regime = getattr(self, '_vol_regime', 'unknown')
+        new_mode = self._select_grid_mode(regime, atr_ratio)
+        mode_changed = new_mode != self.grid_mode
+        if mode_changed:
+            old_mode = self.grid_mode
+            self.grid_mode = new_mode
+            if hasattr(self, '_trade_logger') and self._trade_logger:
+                name = self.pair.replace("-USD", "")
+                self._trade_logger.log_event(
+                    "mode_switch",
+                    f"{name} switched to {new_mode} spacing — market is {regime}",
+                    f"Was {old_mode}, now {new_mode} (ATR ratio: {atr_ratio:.2f})",
+                    pair=self.pair,
+                )
+
+        # Volatility spacing adjustment
         if self._vol_ml_override:
             spacing_mult = self._vol_spacing_multiplier
         else:
             spacing_mult = self._compute_atr_spacing_multiplier()
-            self._vol_spacing_multiplier = spacing_mult  # store for get_state()
+            self._vol_spacing_multiplier = spacing_mult
 
         if hasattr(self, '_trade_logger') and self._trade_logger:
             old_mult = getattr(self, '_prev_atr_mult', 1.0)
@@ -268,7 +533,7 @@ class GridStrategy(BaseStrategy):
                 )
                 self._prev_atr_mult = new_mult
 
-        # Apply feedback-loop learned spacing preference (Loop 1)
+        # Apply feedback-loop learned spacing preference
         learned_mult = getattr(self, '_learned_spacing_multiplier', 1.0)
         combined_mult = spacing_mult * learned_mult
 
@@ -290,14 +555,11 @@ class GridStrategy(BaseStrategy):
                 new_lower -= expand
                 new_upper += expand
 
-        if new_lower == self.lower_price and new_upper == self.upper_price:
+        if not mode_changed and new_lower == self.lower_price and new_upper == self.upper_price:
             return []
 
-        # Handle positions outside new range:
-        # - Force-liquidate only if >10% below entry (stop-loss territory)
-        # - Otherwise hold and set limit sell at breakeven or nearest grid level above entry
+        # Handle positions outside new range
         liquidation_signals: list[Signal] = []
-        new_spacing = (new_upper - new_lower) / (self.num_grids - 1) if self.num_grids > 1 else 0
         for level in self.grid_levels:
             if level.holding and level.crypto_amount > 0:
                 if level.price < new_lower or level.price > new_upper:
@@ -305,7 +567,6 @@ class GridStrategy(BaseStrategy):
                     loss_pct = (candle.close - entry) / entry if entry > 0 else 0
 
                     if loss_pct < -0.10:
-                        # More than 10% below entry — force liquidate
                         liquidation_signals.append(Signal(
                             action="sell",
                             pair=self.pair,
@@ -321,33 +582,10 @@ class GridStrategy(BaseStrategy):
                         level.holding = False
                         level.crypto_amount = 0.0
                     else:
-                        # Hold position — find nearest new grid level above entry for limit sell
-                        sell_target = entry  # breakeven floor
-                        if new_spacing > 0:
-                            for i in range(self.num_grids):
-                                grid_price = new_lower + i * new_spacing
-                                if grid_price >= entry:
-                                    sell_target = grid_price
-                                    break
-                            else:
-                                sell_target = new_upper  # all levels below entry, sell at top
+                        sell_target = entry
+                        # Keep holding — will remap below
 
-                        liquidation_signals.append(Signal(
-                            action="sell",
-                            pair=self.pair,
-                            price=candle.close,
-                            order_type="limit",
-                            amount_crypto=level.crypto_amount,
-                            limit_price=sell_target,
-                            reason=f"adaptive hold: limit sell at {sell_target:.4f} (entry {entry:.4f})",
-                            regime=getattr(self, '_vol_regime', ''),
-                            adx=getattr(self, '_last_adx', 0.0),
-                            rsi=getattr(self, '_last_rsi', 0.0),
-                            atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
-                        ))
-                        # Keep holding — don't clear; position transfers to new grid
-
-        # Snapshot in-range holdings before rebuilding (include entry_price)
+        # Snapshot in-range holdings
         old_holdings: dict[float, tuple[bool, float, float]] = {}
         for level in self.grid_levels:
             if level.holding:
@@ -356,15 +594,12 @@ class GridStrategy(BaseStrategy):
         # Rebuild grid with new boundaries
         self.lower_price = new_lower
         self.upper_price = new_upper
-        self.grid_spacing = (self.upper_price - self.lower_price) / (self.num_grids - 1) if self.num_grids > 1 else 0
-        self.investment_per_grid = self.total_investment_usd / self.num_grids
-        self.grid_levels = [
-            GridLevel(price=self.lower_price + i * self.grid_spacing)
-            for i in range(self.num_grids)
-        ]
+        self._calculate_grid_levels()
+        self._filter_unprofitable_levels()
+        self.investment_per_grid = self.total_investment_usd / max(self.active_grid_count, 1)
 
         # Restore holdings for levels close to old held positions
-        tolerance = max(self.grid_spacing * 0.1, 0.01)
+        tolerance = max(self.grid_spacing * 0.15, 0.001)
         mapped: set[float] = set()
         for new_level in self.grid_levels:
             for old_price, (holding, amount, entry) in old_holdings.items():
@@ -375,7 +610,7 @@ class GridStrategy(BaseStrategy):
                     mapped.add(old_price)
                     break
 
-        # Unmapped positions: hold with limit sell instead of market dumping
+        # Unmapped positions: hold with limit sell or park on nearest level
         for old_price, (holding, amount, entry) in old_holdings.items():
             if old_price not in mapped and amount > 0:
                 entry = entry if entry > 0 else old_price
@@ -395,33 +630,31 @@ class GridStrategy(BaseStrategy):
                         atr_multiplier=getattr(self, '_vol_spacing_multiplier', 1.0),
                     ))
                 else:
-                    # Place limit sell at breakeven or nearest grid above entry
-                    sell_target = entry
-                    if self.grid_spacing > 0:
-                        for gl in self.grid_levels:
-                            if gl.price >= entry:
-                                sell_target = gl.price
-                                break
-                        else:
-                            sell_target = self.upper_price
-
-                    # Park the position on the nearest new grid level
-                    best_level = min(self.grid_levels, key=lambda gl: abs(gl.price - old_price))
-                    if not best_level.holding:
+                    best_level = min(
+                        (l for l in self.grid_levels if not l.holding),
+                        key=lambda gl: abs(gl.price - old_price),
+                        default=None,
+                    )
+                    if best_level:
                         best_level.holding = True
                         best_level.crypto_amount = amount
                         best_level.entry_price = entry
 
         return liquidation_signals
 
+    # ------------------------------------------------------------------
+    # Main candle processing
+    # ------------------------------------------------------------------
+
     def on_candle(self, candle: Candle, warmup: bool = False) -> list[Signal]:
         if self.paused:
             return []
 
-        # ATR updates on every candle (warmup and live)
+        # ATR updates on every candle
         self._update_atr(candle)
+        self._last_price = candle.close
 
-        # During warmup: update indicators but don't generate trade signals
+        # During warmup: update indicators only
         if warmup:
             if self.adaptive_range:
                 self._candle_history.append(candle)
@@ -432,7 +665,10 @@ class GridStrategy(BaseStrategy):
 
         signals: list[Signal] = []
 
-        # Adaptive range recalculation (before grid logic)
+        # Trailing grid check (Improvement 2) — before recalc
+        self._check_trailing(candle)
+
+        # Adaptive range recalculation
         signals.extend(self._maybe_recalc_range(candle))
 
         # Update trend / range-only filter
@@ -440,7 +676,7 @@ class GridStrategy(BaseStrategy):
 
         ref_price = self.prev_price if self.prev_price is not None else candle.open
 
-        # Stop-loss check (always active, bypasses trade cap)
+        # Stop-loss check
         stop_price = self.lower_price * (1 - self.stop_loss_pct)
         if candle.low < stop_price:
             signals.extend(self._liquidate_all(candle, reason="stop-loss"))
@@ -448,7 +684,7 @@ class GridStrategy(BaseStrategy):
             self.prev_price = candle.close
             return signals
 
-        # Take-profit check (always active, bypasses trade cap)
+        # Take-profit check
         tp_price = self.upper_price * (1 + self.take_profit_pct)
         if candle.high > tp_price:
             signals.extend(self._liquidate_all(candle, reason="take-profit"))
@@ -459,22 +695,33 @@ class GridStrategy(BaseStrategy):
         # Daily trade cap check
         ts = candle.timestamp.timestamp()
         if self.max_trades_per_day > 0:
-            cutoff = ts - 86400  # 24 hours
+            cutoff = ts - 86400
             while self._trade_timestamps and self._trade_timestamps[0] < cutoff:
                 self._trade_timestamps.popleft()
             self._trade_cap_paused = len(self._trade_timestamps) >= self.max_trades_per_day
 
         # Buy detection: downward crossings
-        if not self.buys_blocked and not self.grid_paused_divergence and not self._trade_cap_paused:
+        can_buy = (
+            not self.buys_blocked
+            and not self.grid_paused_divergence
+            and not self._trade_cap_paused
+            and self._check_position_limit()  # Improvement 5
+        )
+        if can_buy:
+            buy_size = self._get_buy_size()
             for level in self.grid_levels:
+                if not level.active:
+                    continue  # Improvement 3: skip filtered levels
                 if not level.holding and candle.low <= level.price <= ref_price:
-                    crypto_amount = self.investment_per_grid / level.price if level.price > 0 else 0
+                    if buy_size <= 0:
+                        break  # position limit reached
+                    crypto_amount = buy_size / level.price if level.price > 0 else 0
                     signals.append(Signal(
                         action="buy",
                         pair=self.pair,
                         price=candle.close,
                         order_type="limit",
-                        amount_usd=self.investment_per_grid,
+                        amount_usd=buy_size,
                         limit_price=level.price,
                         reason=f"grid buy at {level.price:.6g}",
                         regime=getattr(self, '_vol_regime', ''),
@@ -485,14 +732,16 @@ class GridStrategy(BaseStrategy):
                     level.holding = True
                     level.crypto_amount = crypto_amount
                     level.entry_price = level.price
+                    # Recalculate remaining buy capacity
+                    buy_size = self._get_buy_size()
 
         # Sell detection: upward crossings
-        # During range-only divergence or trade cap, grid sells are paused
-        # (stop-loss, take-profit, and adaptive liquidations still fire above)
         if not self.grid_paused_divergence and not self._trade_cap_paused:
             for level in self.grid_levels:
-                sell_price = level.price + self.grid_spacing
-                if level.holding and level.crypto_amount > 0 and candle.high >= sell_price and ref_price <= sell_price:
+                if not level.holding or level.crypto_amount <= 0:
+                    continue
+                sell_price = self._get_sell_price(level)
+                if candle.high >= sell_price and ref_price <= sell_price:
                     signals.append(Signal(
                         action="sell",
                         pair=self.pair,
@@ -509,7 +758,7 @@ class GridStrategy(BaseStrategy):
                     level.holding = False
                     level.crypto_amount = 0.0
 
-        # Record trade timestamps for cap tracking and update flag
+        # Record trade timestamps for cap tracking
         if self.max_trades_per_day > 0:
             new_trades = len([s for s in signals if "grid" in s.reason])
             for _ in range(new_trades):
@@ -539,15 +788,28 @@ class GridStrategy(BaseStrategy):
                 level.crypto_amount = 0.0
         return signals
 
+    def has_open_positions(self) -> bool:
+        return any(level.holding for level in self.grid_levels)
+
     def get_state(self) -> dict:
         state = {
             "num_grids": self.num_grids,
+            "grid_mode": self.grid_mode,
+            "grid_spacing_pct": round(self.grid_spacing_pct, 2),
+            "active_grid_count": self.active_grid_count,
+            "filtered_count": self.filtered_count,
             "grid_levels": [
-                {"price": gl.price, "holding": gl.holding, "crypto_amount": gl.crypto_amount}
+                {"price": gl.price, "holding": gl.holding, "crypto_amount": gl.crypto_amount, "active": gl.active}
                 for gl in self.grid_levels
             ],
             "paused": self.paused,
             "prev_price": self.prev_price,
+            "position_limit_hit": self.position_limit_hit,
+            "max_position_pct": self.max_position_pct,
+            "total_investment_usd": round(self.total_investment_usd, 2),
+            "original_investment_usd": round(self.original_investment_usd, 2),
+            "compound_enabled": self.compound_enabled,
+            "trailing_enabled": self.trailing_enabled,
         }
         if self.use_trend_filter or self.range_only_filter:
             state["buys_blocked"] = self.buys_blocked
@@ -570,7 +832,6 @@ class GridStrategy(BaseStrategy):
             state["max_trades_per_day"] = self.max_trades_per_day
             state["trades_in_window"] = len(self._trade_timestamps)
             state["trade_cap_paused"] = self._trade_cap_paused
-        # ATR and vol info
         state["atr_current"] = round(self._atr_current, 8)
         state["atr_mean"] = round(self._atr_mean, 8)
         state["atr_spacing_multiplier"] = self.atr_spacing_multiplier

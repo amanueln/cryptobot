@@ -18,6 +18,8 @@ const ACTION_MAP: Record<string, ActionConfig> = {
   vol_check:    { label: 'Checked',        color: '#c084fc', bg: 'rgba(192,132,252,0.12)' },
   range_recalc: { label: 'Recalculated',   color: '#fbbf24', bg: 'rgba(251,191,36,0.12)' },
   scan_complete:{ label: 'Scanned',        color: '#9ca3af', bg: 'rgba(156,163,175,0.10)' },
+  trail:        { label: 'Trailed',        color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
+  mode_switch:  { label: 'Switched',       color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
 };
 
 const DEFAULT_ACTION: ActionConfig = {
@@ -234,6 +236,14 @@ export class ActivityLogComponent implements OnInit, OnDestroy {
 
     if (evt.event_type === 'atr_adjust') {
       return 'Grid spacing adjusted \u2014 volatility changed';
+    }
+
+    if (evt.event_type === 'trail') {
+      return title.replace(/grid trailed/i, 'Grid shifted') || 'Grid shifted to follow the price';
+    }
+
+    if (evt.event_type === 'mode_switch') {
+      return title || 'Switched grid spacing mode';
     }
 
     // trade_buy / trade_sell titles are already like "Bought NKN at $0.0139"

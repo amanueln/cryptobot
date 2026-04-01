@@ -674,6 +674,10 @@ class SimRunner:
             spacing_multiplier=spacing_mult,
         )
 
+        # Improvement 6: compound cycle profit back into allocation
+        if hasattr(engine.strategy, 'apply_cycle_profit'):
+            engine.strategy.apply_cycle_profit(pnl)
+
     # ------------------------------------------------------------------
     # Feedback loops
     # ------------------------------------------------------------------
@@ -1027,6 +1031,22 @@ class SimRunner:
             "recalc_interval_hours": 12,
             "min_spacing_pct": 0.01,
             "max_trades_per_day": 20,
+            # Improvement 1+4: grid mode
+            "grid_mode": "geometric",
+            "auto_grid_mode": True,
+            # Improvement 2: trailing grid
+            "trailing_enabled": True,
+            "trailing_buffer_pct": 0.02,
+            # Improvement 3: profit filter
+            "fee_pct": 0.40,
+            "slippage_pct": 0.10,
+            "min_profit_multiplier": 1.5,
+            # Improvement 5: position limit
+            "max_position_pct": 0.60,
+            # Improvement 6: compounding
+            "compound_enabled": True,
+            "compound_floor_pct": 0.50,
+            "compound_cap_pct": 2.0,
         }
 
     def _print_header(self):
