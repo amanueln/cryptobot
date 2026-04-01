@@ -197,7 +197,7 @@ class PairSelector:
     def __init__(self, config: dict | None = None, db_path: str = "data/candles.db"):
         config = config or {}
         self.max_active_pairs: int = int(config.get("max_active_pairs", 3))
-        self.min_24h_volume: float = float(config.get("min_24h_volume_usd", 100_000))
+        self.min_24h_volume: float = float(config.get("min_24h_volume_usd", 500_000))
         self.min_daily_vol_pct: float = float(config.get("min_daily_volatility_pct", 3.0))
         self.min_fee_clearance: float = float(config.get("min_fee_clearance_ratio", 1.5))
         self.excluded: set[str] = set(config.get("excluded_pairs", [])) | DEFAULT_EXCLUDED
@@ -680,11 +680,17 @@ class PairSelector:
 
     def _composite_score(self, s: PairScore) -> float:
         """Weighted composite score. Normalize each component to roughly 0-1."""
-        # Volatility: cap at 20% daily → normalize to 0-1
-        vol_norm = min(s.volatility / 20.0, 1.0)
+        # Volatility: bell curve peaking at 5-10% daily.
+        # Too low = no profit. Too high = meme coin / rug risk.
+        # Score: 1.0 at 7%, drops to 0.5 at 3% and 15%, drops to 0.2 at 25%+
+        ideal_vol = 7.0
+        vol_diff = abs(s.volatility - ideal_vol)
+        vol_norm = max(0.0, 1.0 - (vol_diff / 15.0) ** 1.2)
+
         # Range-bound: already 0-100, normalize to 0-1
         rb_norm = s.range_bound / 100.0
         # Liquidity: log10(volume). Typical range 5-10. Normalize 5→0, 10→1
+        # Bumped weight — liquidity matters more to avoid slippage
         liq_norm = min(max((s.liquidity - 5.0) / 5.0, 0), 1.0)
         # Fee clearance: typical 1-10x. Normalize 1→0, 10→1
         fc_norm = min(max((s.fee_clearance - 1.0) / 9.0, 0), 1.0)
@@ -693,11 +699,11 @@ class PairSelector:
 
         base_score = (
             vol_norm * 0.20 +
-            rb_norm * 0.25 +
-            liq_norm * 0.15 +
-            fc_norm * 0.15 +
+            rb_norm * 0.20 +
+            liq_norm * 0.20 +
+            fc_norm * 0.10 +
             s.regime_bonus * 0.10 +
-            s.backtest_pnl_norm * 0.15
+            s.backtest_pnl_norm * 0.20
         )
         # Loop 2: Apply performance adjustment from actual vs predicted P&L
         perf_adj = self._performance_adjustments.get(s.pair, 0.0)
