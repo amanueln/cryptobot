@@ -483,9 +483,69 @@ def api_status():
     ).fetchone()
 
     starting_balance = 3000.0
-    equity = eq_row["equity"] if eq_row else starting_balance
-    pnl = equity - starting_balance
+
+    # Compute live positions value from trade history (FIFO)
+    # This is more accurate than the equity_snapshots which may be stale
+    live_positions_value = 0.0
+    trade_rows = conn.execute(
+        """SELECT pair, side, price, amount FROM sim_trades ORDER BY id ASC"""
+    ).fetchall()
+
+    # Build open lots per pair using FIFO
+    open_lots: dict[str, list[tuple[float, float]]] = {}  # pair -> [(price, amount)]
+    for tr in trade_rows:
+        pair_key = tr["pair"]
+        if tr["side"] == "buy":
+            open_lots.setdefault(pair_key, []).append((tr["price"], tr["amount"]))
+        elif tr["side"] == "sell":
+            remaining = tr["amount"]
+            lots = open_lots.get(pair_key, [])
+            while remaining > 0 and lots:
+                lot_price, lot_amt = lots[0]
+                if lot_amt <= remaining:
+                    remaining -= lot_amt
+                    lots.pop(0)
+                else:
+                    lots[0] = (lot_price, lot_amt - remaining)
+                    remaining = 0
+
+    # Value open lots at current market price
+    for pair_key, lots in open_lots.items():
+        if not lots:
+            continue
+        price_row = conn.execute(
+            "SELECT close FROM candles WHERE pair = ? ORDER BY timestamp DESC LIMIT 1",
+            (pair_key,),
+        ).fetchone()
+        if price_row:
+            current_price = price_row["close"]
+            for _, amt in lots:
+                live_positions_value += current_price * amt
+
+    # Use equity snapshot for total equity, but override balance/positions with live data
+    snapshot_equity = eq_row["equity"] if eq_row else starting_balance
+
+    # Live cash = total equity - positions value (from snapshot)
+    # OR better: recompute equity = starting_balance - total_cost + total_revenue + positions_value
+    total_cost = 0.0
+    total_revenue = 0.0
+    total_fees_paid = 0.0
+    for tr in trade_rows:
+        cost = tr["price"] * tr["amount"]
+        if tr["side"] == "buy":
+            total_cost += cost
+        else:
+            total_revenue += cost
+
+    # Fee is in sim_trades table
+    fee_rows = conn.execute("SELECT COALESCE(SUM(fee), 0) as f FROM sim_trades").fetchone()
+    total_fees_paid = fee_rows["f"] if fee_rows else 0
+
+    live_cash = starting_balance - total_cost + total_revenue - total_fees_paid
+    live_equity = live_cash + live_positions_value
+    pnl = live_equity - starting_balance
     pnl_pct = (pnl / starting_balance) * 100 if starting_balance > 0 else 0.0
+    equity = live_equity
 
     # Per-pair latest prices and trade counts
     active_pairs = _get_active_pairs(conn)
@@ -541,11 +601,11 @@ def api_status():
     )
 
     return jsonify({
-        "equity": equity,
-        "balance_usd": eq_row["balance_usd"] if eq_row else starting_balance,
-        "positions_value": eq_row["positions_value"] if eq_row else 0,
-        "pnl": pnl,
-        "pnl_pct": pnl_pct,
+        "equity": round(equity, 2),
+        "balance_usd": round(live_cash, 2),
+        "positions_value": round(live_positions_value, 2),
+        "pnl": round(pnl, 2),
+        "pnl_pct": round(pnl_pct, 2),
         "starting_balance": starting_balance,
         "total_trades": total_trades,
         "last_trade_time": last_trade_row["timestamp"] if last_trade_row else None,
