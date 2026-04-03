@@ -371,6 +371,52 @@ class MomentumEngine:
         scores.sort(key=lambda s: s.accel, reverse=True)
         return scores
 
+    def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
+        """Check stop-loss using a live ticker price (called every poll cycle).
+
+        Updates peak/stop and triggers sell if price breaches stop level.
+        Returns a Trade if stopped out, else None.
+        """
+        if pair not in self.holdings:
+            return None
+        h = self.holdings[pair]
+
+        # Update peak and trailing stop
+        if price > h.peak_price:
+            h.peak_price = price
+            atr = _atr(
+                self._highs.get(pair, []), self._lows.get(pair, []),
+                self._closes.get(pair, []), ATR_PERIOD
+            )
+            if atr:
+                h.stop_price = max(
+                    h.peak_price - TRAILING_ATR_MULT * atr,
+                    h.entry_price * (1 - HARD_STOP_PCT),
+                )
+
+        # Check stop
+        if h.stop_price > 0 and price <= h.stop_price:
+            pnl_pct = (price / h.entry_price - 1) * 100
+            if price <= h.entry_price * (1 - HARD_STOP_PCT):
+                reason = f"Hard stop hit ({pnl_pct:+.1f}% from entry)"
+            else:
+                reason = f"Trailing stop hit ({pnl_pct:+.1f}% from entry, peak ${h.peak_price:,.4f})"
+
+            # Update closes so _sell uses current price
+            if self._closes.get(pair):
+                self._closes[pair][-1] = price
+
+            now = datetime.now()
+            t = self._sell(pair, now, reason)
+            if t:
+                logger.info("Ticker stop: %s at $%.4f — %s", pair, price, reason)
+                if not self.holdings:
+                    self._was_cash = True
+                    self.status = "cash"
+                    self.status_detail = "Stopped out — watching for new signals"
+            return t
+        return None
+
     def _buy(self, pair: str, amount_usd: float, timestamp: datetime, reason: str) -> Trade | None:
         """Buy a coin with given USD amount."""
         if amount_usd > self.cash or amount_usd < 1:

@@ -371,6 +371,22 @@ class SimRunner:
             logger.info("Momentum scanner: periodic rescan triggered")
             self._run_momentum_scan()
 
+        # Ticker-based stop check for held positions (runs every 60s)
+        for pair in list(self.momentum_engine.holdings.keys()):
+            price = self.client.get_ticker_price(pair)
+            if price is None:
+                continue
+            trade = self.momentum_engine.check_stop_ticker(pair, price)
+            if trade:
+                self.trade_logger.log_momentum_trade(trade)
+                short = trade.pair.replace("-USD", "")
+                title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                self.trade_logger.log_momentum_event(
+                    f"momentum_{trade.side}", title, trade.reason
+                )
+                logger.info(f"[MOMENTUM] STOP {short} @ ${trade.price:,.2f} — {trade.reason}")
+
+        # Feed hourly candles for all pairs (rebalance/entry/history)
         for pair in self.momentum_engine.pairs:
             candles = self.client.get_latest_candles(pair, "ONE_HOUR", count=5)
             if not candles:
@@ -381,7 +397,6 @@ class SimRunner:
                 trades = self.momentum_engine.feed_candle(pair, candle)
                 for trade in trades:
                     self.trade_logger.log_momentum_trade(trade)
-                    # Log to activity feed
                     short = trade.pair.replace("-USD", "")
                     if trade.side == "buy":
                         title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
