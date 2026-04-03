@@ -58,6 +58,7 @@ Chart.register(...registerables);
       <div class="status-banner">
         <span class="status-dot" [class.running]="status()?.enabled"></span>
         <span class="status-text">{{ statusSummary() }}</span>
+        <span class="poll-timer">next check in {{ pollCountdown() }}s</span>
       </div>
 
       <!-- Warmup progress bar -->
@@ -312,6 +313,10 @@ Chart.register(...registerables);
     }
     .status-dot.running { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.5); }
     .status-text { font-size: 12px; color: #9ca3af; }
+    .poll-timer {
+      margin-left: auto; font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; color: #4b5280; letter-spacing: 0.03em;
+    }
 
     /* Warmup progress */
     .warmup-progress {
@@ -513,9 +518,13 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
   private progressInterval: any;
+  private _pollCountdown = signal(60);
+  private _countdownInterval: any;
 
   @ViewChild('momEquityCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   private chart?: Chart;
+
+  pollCountdown(): number { return this._pollCountdown(); }
 
   isHolding() {
     const s = this.status();
@@ -601,6 +610,17 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     // Poll warmup progress every 3s while warming up
     this.pollProgress();
     this.progressInterval = setInterval(() => this.pollProgress(), 3000);
+
+    // Countdown timer — ticks every second, resets to 60 on each API poll
+    this._pollCountdown.set(60);
+    this._countdownInterval = setInterval(() => {
+      const v = this._pollCountdown();
+      if (v <= 1) {
+        this._pollCountdown.set(60);
+      } else {
+        this._pollCountdown.set(v - 1);
+      }
+    }, 1000);
   }
 
   private pollProgress() {
