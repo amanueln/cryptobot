@@ -250,7 +250,7 @@ class SimRunner:
         # Clear stale momentum data from previous runs (engine starts fresh)
         try:
             import sqlite3
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.trade_logger.db_path)
             for table in ["momentum_trades", "momentum_equity", "momentum_events"]:
                 try:
                     conn.execute(f"DELETE FROM {table}")
@@ -258,8 +258,9 @@ class SimRunner:
                     pass
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+            logger.info("Cleared momentum tables for fresh start")
+        except Exception as e:
+            logger.warning("Could not clear momentum tables: %s", e)
 
         # Run scanner first to get the right pairs
         if self.momentum_scanner:
@@ -344,16 +345,19 @@ class SimRunner:
             )
             trades = self.momentum_engine.feed_candle('BTC-USD', trigger_candle)
             for trade in trades:
-                self.trade_logger.log_momentum_trade(trade)
-                short = trade.pair.replace("-USD", "")
-                if trade.side == "buy":
-                    title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
-                else:
-                    title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
-                self.trade_logger.log_momentum_event(
-                    f"momentum_{trade.side}", title, trade.reason
-                )
-                logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+                try:
+                    self.trade_logger.log_momentum_trade(trade)
+                    short = trade.pair.replace("-USD", "")
+                    if trade.side == "buy":
+                        title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                    else:
+                        title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                    self.trade_logger.log_momentum_event(
+                        f"momentum_{trade.side}", title, trade.reason
+                    )
+                    logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+                except Exception as e:
+                    logger.error(f"[MOMENTUM] Failed to log trade: {e}")
             if trades:
                 print(f"  Momentum engine: immediate entry — {len(trades)} trades executed")
 
