@@ -286,6 +286,69 @@ export interface AdaptationData {
   new_value: number | null;
 }
 
+export interface MomentumScannerData {
+  last_scan_time: string | null;
+  pairs_count: number;
+  pairs: string[];
+  top_by_volume: { pair: string; volume_24h: number; price: number }[];
+}
+
+export interface MomentumStatusData {
+  enabled: boolean;
+  status: string;
+  equity: number;
+  cash: number;
+  positions_value: number;
+  pnl: number;
+  pnl_pct: number;
+  starting_balance: number;
+  trade_count: number;
+  holdings: MomentumHoldingData[];
+  scanner?: MomentumScannerData | null;
+  error?: string;
+}
+
+export interface MomentumHoldingData {
+  pair: string;
+  shares: number;
+  entry_price: number;
+  current_price: number;
+  value: number;
+  pnl: number;
+  pnl_pct: number;
+  accel: number;
+  entry_time: string;
+  peak_price: number;
+  stop_price: number;
+  stop_distance_pct: number;
+}
+
+export interface MomentumTradeData {
+  timestamp: string;
+  pair: string;
+  side: string;
+  price: number;
+  amount: number;
+  cost_usd: number;
+  fee: number;
+  reason: string;
+}
+
+export interface MomentumEquityData {
+  time: string;
+  equity: number;
+  cash: number;
+  positions_value: number;
+  status: string;
+}
+
+export interface MomentumEventData {
+  timestamp: string;
+  event_type: string;
+  title: string;
+  detail: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly status = signal<StatusData | null>(null);
@@ -318,6 +381,7 @@ export class ApiService {
 
   refreshAll() {
     this.fetchStatus();
+    this.refreshMomentumStatus();
     this.refreshCountdown.set(60);
   }
 
@@ -422,12 +486,51 @@ export class ApiService {
     return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/reset-data`, {});
   }
 
+  resetMomentumData() {
+    return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/momentum/reset`, {});
+  }
+
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }
 
   fetchAdaptations(limit = 30) {
     return this.http.get<AdaptationData[]>(`${API}/adaptations`, { params: { limit: limit.toString() } });
+  }
+
+  // --- Momentum Rotation Engine ---
+
+  readonly momentumStatus = signal<MomentumStatusData | null>(null);
+
+  fetchMomentumStatus() {
+    return this.http.get<MomentumStatusData>(`${API}/momentum/status`);
+  }
+
+  fetchMomentumEquity(hours = 72) {
+    return this.http.get<MomentumEquityData[]>(`${API}/momentum/equity`, { params: { hours: hours.toString() } });
+  }
+
+  fetchMomentumTrades(limit = 50) {
+    return this.http.get<MomentumTradeData[]>(`${API}/momentum/trades`, { params: { limit: limit.toString() } });
+  }
+
+  fetchMomentumEvents(limit = 50) {
+    return this.http.get<MomentumEventData[]>(`${API}/momentum/events`, { params: { limit: limit.toString() } });
+  }
+
+  fetchMomentumProgress() {
+    return this.http.get<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>(`${API}/momentum/progress`);
+  }
+
+  fetchMomentumAccel() {
+    return this.http.get<{ pair: string; accel: number; price: number }[]>(`${API}/momentum/accel`);
+  }
+
+  refreshMomentumStatus() {
+    this.fetchMomentumStatus().subscribe({
+      next: (data) => this.momentumStatus.set(data),
+      error: () => {},
+    });
   }
 
   /** Poll scan progress every 2s while scanning, stop when done. */

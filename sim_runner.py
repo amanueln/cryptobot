@@ -26,6 +26,8 @@ from intelligence.pair_selector import PairSelector, load_pair_selector_config
 from intelligence.ml_predictor import MLPredictor, load_ml_config
 from intelligence.volatility_predictor import VolatilityPredictor, VolatilityPrediction
 from strategies.base_strategy import BaseStrategy
+from engine.momentum_engine import MomentumEngine, PAIRS as MOMENTUM_PAIRS
+from engine.momentum_scanner import MomentumScanner
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +164,12 @@ class SimRunner:
         self._vol_train_windows: dict[str, int] = {}          # pair -> days
         self._vol_improvement_streak: dict[str, int] = {}     # pair -> consecutive improvements
 
+        # Momentum rotation engine (optional, runs alongside grid)
+        self.momentum_engine: MomentumEngine | None = None
+        self.momentum_scanner: MomentumScanner | None = None
+        self._last_momentum_scan: datetime | None = None
+        self._momentum_scan_interval_hours = 24  # rescan every 24h
+
     def add_pair(
         self,
         name: str,
@@ -217,6 +225,181 @@ class SimRunner:
             else:
                 engine.last_candle_ts = datetime.now()
                 print(f"  {engine.name:<20} WARNING: no warmup data")
+
+    def _run_momentum_scan(self):
+        """Run the momentum scanner to find best coins, excluding grid pairs."""
+        if not self.momentum_scanner or not self.momentum_engine:
+            return
+
+        grid_pairs = {e.pair for e in self.engines}
+        pairs = self.momentum_scanner.scan(exclude_pairs=grid_pairs)
+
+        if pairs:
+            self.momentum_engine.update_pairs(pairs)
+            print(f"  Momentum scanner: {len(pairs)} pairs selected (excluding {len(grid_pairs)} grid pairs)")
+        else:
+            print("  Momentum scanner: no pairs found, keeping current list")
+
+        self._last_momentum_scan = datetime.now()
+
+    def _warmup_momentum(self):
+        """Warmup momentum engine with historical hourly candles."""
+        if not self.momentum_engine:
+            return
+
+        # Clear stale momentum data from previous runs (engine starts fresh)
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            for table in ["momentum_trades", "momentum_equity", "momentum_events"]:
+                try:
+                    conn.execute(f"DELETE FROM {table}")
+                except Exception:
+                    pass
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        # Run scanner first to get the right pairs
+        if self.momentum_scanner:
+            print("\n  Running momentum scanner...")
+            self._run_momentum_scan()
+
+        pairs_to_warm = self.momentum_engine.pairs
+        total = len(pairs_to_warm)
+        print(f"\n  Warming up momentum rotation engine ({total} pairs)...")
+        end = datetime.now()
+        # Need ~750 hours (31 days) for LONG_LB + ~500 for BTC MA = ~750 hours minimum
+        start = end - timedelta(hours=900)
+
+        import json as _json
+        warmup_start = time.time()
+
+        for idx, pair in enumerate(pairs_to_warm):
+            # Save progress for dashboard
+            elapsed = time.time() - warmup_start
+            avg_per_pair = elapsed / max(idx, 1)
+            remaining = avg_per_pair * (total - idx)
+            progress = {
+                "step": "warmup",
+                "pair": pair,
+                "done": idx,
+                "total": total,
+                "pct": round(idx / total * 100),
+                "elapsed_seconds": round(elapsed),
+                "estimated_remaining": round(remaining),
+            }
+            try:
+                with open("data/momentum_progress.json", "w") as f:
+                    _json.dump(progress, f)
+            except Exception:
+                pass
+
+            candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end)
+            if not candles or len(candles) < 100:
+                print(f"  Fetching warmup candles for {pair}...")
+                fetched = self.client.get_candles(pair, "ONE_HOUR", start, end)
+                if fetched:
+                    self.candle_store.save_candles(pair, "ONE_HOUR", fetched)
+                candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end) or fetched
+
+            if candles:
+                for c in candles:
+                    self.momentum_engine.feed_candle(pair, c, warmup=True)
+                print(f"  [{idx+1}/{total}] {pair:<12} warmed with {len(candles)} candles")
+            else:
+                print(f"  [{idx+1}/{total}] {pair:<12} WARNING: no warmup data")
+
+        # Reset counters after warmup so rebalance triggers properly
+        self.momentum_engine._warmup_done = True
+        self.momentum_engine._hours_since_rebal = 0
+        self.momentum_engine._hours_since_regime_check = 0
+        self.momentum_engine._candles_fed = 0
+        self.momentum_engine.trade_count = 0
+        self.momentum_engine.trades = []
+        self.momentum_engine.status = "cash" if not self.momentum_engine.regime_bullish else "ready"
+        self.momentum_engine.status_detail = "Warmup complete — watching for signals"
+
+        # Mark warmup complete
+        try:
+            with open("data/momentum_progress.json", "w") as f:
+                _json.dump({"step": "ready", "done": total, "total": total, "pct": 100}, f)
+        except Exception:
+            pass
+
+        print(f"  Momentum engine ready — BTC MA500: ${self.momentum_engine.btc_ma:,.0f}, "
+              f"regime: {'BULL' if self.momentum_engine.regime_bullish else 'BEAR'}")
+
+        # Trigger immediate evaluation by re-feeding last BTC candle as non-warmup
+        btc_candles = self.candle_store.get_candles('BTC-USD', "ONE_HOUR", end - timedelta(hours=2), end)
+        if btc_candles:
+            last_btc = btc_candles[-1]
+            # Bump timestamp slightly so dedup doesn't skip it
+            trigger_candle = Candle(
+                pair='BTC-USD', granularity='ONE_HOUR',
+                timestamp=last_btc.timestamp + timedelta(seconds=1),
+                open=last_btc.open, high=last_btc.high, low=last_btc.low,
+                close=last_btc.close, volume=last_btc.volume,
+            )
+            trades = self.momentum_engine.feed_candle('BTC-USD', trigger_candle)
+            for trade in trades:
+                self.trade_logger.log_momentum_trade(trade)
+                short = trade.pair.replace("-USD", "")
+                if trade.side == "buy":
+                    title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                else:
+                    title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                self.trade_logger.log_momentum_event(
+                    f"momentum_{trade.side}", title, trade.reason
+                )
+                logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+            if trades:
+                print(f"  Momentum engine: immediate entry — {len(trades)} trades executed")
+
+    def _poll_momentum(self):
+        """Poll candles for all momentum pairs and feed to momentum engine."""
+        if not self.momentum_engine:
+            return
+
+        import json
+
+        # Periodic rescan (every 24h)
+        if (self.momentum_scanner and self._last_momentum_scan and
+                (datetime.now() - self._last_momentum_scan).total_seconds() >
+                self._momentum_scan_interval_hours * 3600):
+            logger.info("Momentum scanner: periodic rescan triggered")
+            self._run_momentum_scan()
+
+        for pair in self.momentum_engine.pairs:
+            candles = self.client.get_latest_candles(pair, "ONE_HOUR", count=5)
+            if not candles:
+                continue
+            self.candle_store.save_candles(pair, "ONE_HOUR", candles)
+
+            for candle in candles:
+                trades = self.momentum_engine.feed_candle(pair, candle)
+                for trade in trades:
+                    self.trade_logger.log_momentum_trade(trade)
+                    # Log to activity feed
+                    short = trade.pair.replace("-USD", "")
+                    if trade.side == "buy":
+                        title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                    else:
+                        title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                    self.trade_logger.log_momentum_event(
+                        f"momentum_{trade.side}", title, trade.reason
+                    )
+                    logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+
+        # Snapshot momentum equity
+        now = datetime.now()
+        mom = self.momentum_engine
+        holdings_json = json.dumps(mom.get_holdings_info())
+        self.trade_logger.log_momentum_equity(
+            now, mom.get_equity(), mom.cash, mom.get_positions_value(),
+            mom.status, holdings_json
+        )
 
     def _evaluate_vol_accuracy(self):
         """Compare predicted volatility vs actual realized volatility.
@@ -477,6 +660,10 @@ class SimRunner:
         self._print_header()
         self.warmup_all()
 
+        # Warmup momentum engine if active
+        if self.momentum_engine:
+            self._warmup_momentum()
+
         if self.use_ml:
             self._train_ml_models()
 
@@ -563,6 +750,9 @@ class SimRunner:
 
         # Check loss limits
         self._check_loss_limits(total_equity)
+
+        # Poll momentum engine (independent from grid)
+        self._poll_momentum()
 
         self._print_dashboard(total_equity)
 
@@ -1091,12 +1281,23 @@ class SimRunner:
                 hours_left = max(0, (self._pause_until - now).total_seconds() / 3600)
             pause_tag = f"  !! PAUSED ({self._pause_reason}, {hours_left:.0f}h left)"
 
+        mom_tag = ""
+        if self.momentum_engine:
+            m = self.momentum_engine
+            m_eq = m.get_equity()
+            m_pnl = m.get_pnl()
+            m_sign = "+" if m_pnl >= 0 else ""
+            held = [h.pair.replace('-USD', '') for h in m.holdings.values()]
+            held_str = ','.join(held) if held else 'CASH'
+            mom_tag = (f"  || MOM: ${m_eq:,.2f}({m_sign}{m_pnl:.2f}) [{held_str}]")
+
         print(
             f"  [{now.strftime('%m-%d %H:%M')}]  "
-            f"Combined: ${total_equity:>10,.2f}  "
+            f"Grid: ${total_equity:>10,.2f}  "
             f"P&L: {sign}${pnl:>8,.2f} ({sign}{pnl_pct:.1f}%)  "
             f"Trades: {sum(e.trade_count for e in self.engines)}  |  "
             + "  ".join(parts)
+            + mom_tag
             + pause_tag
         )
 
@@ -1246,6 +1447,26 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
 
     # Print pair selection explanation
     print(f"\n  {selector.generate_explanation(scan_result)}")
+
+    # --- Momentum Rotation Engine (dual engine) ---
+    try:
+        with open("config/bot_config.yaml") as f:
+            bot_cfg_reload = yaml.safe_load(f)
+        mom_config = bot_cfg_reload.get("momentum_rotation", {})
+        if mom_config.get("enabled", False):
+            mom_alloc = float(mom_config.get("allocation_usd", 1500))
+            # Create scanner first — it will find the best pairs
+            runner.momentum_scanner = MomentumScanner(runner.client, runner.candle_store)
+            runner.momentum_engine = MomentumEngine(
+                allocation_usd=mom_alloc,
+                fee_rate=taker_fee,
+                # pairs will be set by scanner during warmup
+            )
+            print(f"\n  Momentum Rotation Engine: ENABLED (${mom_alloc:,.0f} allocation)")
+            print(f"  Scanner: top ~30 by volume, excluding grid pairs")
+            print(f"  Config: weekly rebalance, BTC 500MA regime, 7% re-entry")
+    except Exception as e:
+        logger.warning(f"Momentum engine init error: {e}")
 
     return runner
 

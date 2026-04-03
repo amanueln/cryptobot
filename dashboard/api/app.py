@@ -1807,6 +1807,258 @@ def api_reset_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/momentum/reset", methods=["POST"])
+def api_momentum_reset():
+    """Clear momentum trading data for a clean restart. Keeps candles."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        tables = ["momentum_trades", "momentum_equity", "momentum_events"]
+        deleted = {}
+        for table in tables:
+            try:
+                cur = conn.execute(f"DELETE FROM {table}")
+                deleted[table] = cur.rowcount
+            except Exception:
+                deleted[table] = 0
+        conn.commit()
+        conn.close()
+
+        # Clear progress file
+        prog_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_progress.json")
+        try:
+            os.remove(prog_path)
+        except Exception:
+            pass
+
+        return jsonify({"status": "ok", "deleted": deleted})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------- Momentum Rotation Engine endpoints ----------
+
+@app.route("/api/momentum/status")
+def api_momentum_status():
+    """Full status of the momentum rotation engine."""
+    conn = get_db()
+
+    # Latest equity snapshot
+    try:
+        eq_row = conn.execute(
+            "SELECT * FROM momentum_equity ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    except Exception:
+        conn.close()
+        return jsonify({"error": "Momentum engine not active", "enabled": False})
+
+    # Starting balance from config
+    starting_balance = 3000.0
+    try:
+        import yaml
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "config", "bot_config.yaml")) as f:
+            cfg = yaml.safe_load(f)
+        starting_balance = float(cfg.get("momentum_rotation", {}).get("allocation_usd", 3000))
+    except Exception:
+        pass
+
+    if not eq_row:
+        conn.close()
+        scanner_info = None
+        try:
+            scan_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_scan.json")
+            if os.path.exists(scan_path):
+                with open(scan_path) as f:
+                    scanner_info = json.load(f)
+        except Exception:
+            pass
+        return jsonify({
+            "enabled": True, "status": "warming_up",
+            "equity": starting_balance, "cash": starting_balance,
+            "positions_value": 0, "pnl": 0, "pnl_pct": 0,
+            "starting_balance": starting_balance,
+            "trade_count": 0, "holdings": [],
+            "scanner": scanner_info,
+        })
+
+    equity = eq_row["equity"]
+    cash = eq_row["cash"]
+    positions_value = eq_row["positions_value"]
+    pnl = equity - starting_balance
+    pnl_pct = (pnl / starting_balance) * 100 if starting_balance > 0 else 0
+
+    # Holdings
+    holdings = []
+    try:
+        holdings = json.loads(eq_row["holdings"] or "[]")
+    except Exception:
+        pass
+
+    # Trade count
+    trade_count = conn.execute(
+        "SELECT COUNT(*) as cnt FROM momentum_trades"
+    ).fetchone()["cnt"]
+
+    conn.close()
+
+    # Scanner info (from persisted file)
+    scanner_info = None
+    try:
+        scan_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_scan.json")
+        if os.path.exists(scan_path):
+            with open(scan_path) as f:
+                scanner_info = json.load(f)
+    except Exception:
+        pass
+
+    return jsonify({
+        "enabled": True,
+        "status": eq_row["status"],
+        "equity": equity,
+        "cash": cash,
+        "positions_value": positions_value,
+        "pnl": pnl,
+        "pnl_pct": pnl_pct,
+        "starting_balance": starting_balance,
+        "trade_count": trade_count,
+        "holdings": holdings,
+        "scanner": scanner_info,
+    })
+
+
+@app.route("/api/momentum/equity")
+def api_momentum_equity():
+    """Equity history for the momentum engine."""
+    hours = int(request.args.get("hours", 72))
+    start = (datetime.now() - timedelta(hours=hours)).isoformat()
+
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT timestamp, equity, cash, positions_value, status
+               FROM momentum_equity WHERE timestamp >= ?
+               ORDER BY timestamp ASC""",
+            (start,),
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify([])
+
+    conn.close()
+    return jsonify([
+        {
+            "time": row["timestamp"],
+            "equity": row["equity"],
+            "cash": row["cash"],
+            "positions_value": row["positions_value"],
+            "status": row["status"],
+        }
+        for row in rows
+    ])
+
+
+@app.route("/api/momentum/trades")
+def api_momentum_trades():
+    """Recent momentum rotation trades."""
+    limit = int(request.args.get("limit", 50))
+
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT timestamp, pair, side, price, amount, cost_usd, fee, reason
+               FROM momentum_trades ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify([])
+
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/momentum/events")
+def api_momentum_events():
+    """Activity log for momentum engine."""
+    limit = int(request.args.get("limit", 50))
+
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT timestamp, event_type, title, detail
+               FROM momentum_events ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify([])
+
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/momentum/progress")
+def api_momentum_progress():
+    """Warmup/scan progress for the momentum engine."""
+    prog_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_progress.json")
+    try:
+        if os.path.exists(prog_path):
+            with open(prog_path) as f:
+                return jsonify(json.load(f))
+    except Exception:
+        pass
+    return jsonify({"step": "unknown", "pct": 0})
+
+
+@app.route("/api/momentum/accel")
+def api_momentum_accel():
+    """Compute current acceleration scores for all scanned momentum pairs."""
+    # Read scanner pairs
+    scan_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_scan.json")
+    try:
+        with open(scan_path) as f:
+            scan_info = json.load(f)
+        pairs = scan_info.get("pairs", [])
+    except Exception:
+        return jsonify([])
+
+    if not pairs:
+        return jsonify([])
+
+    # Compute acceleration from stored candles
+    conn = get_db()
+    SHORT_LB = 336   # 14 days
+    LONG_LB = 720    # 30 days
+    scores = []
+
+    for pair in pairs:
+        try:
+            rows = conn.execute(
+                """SELECT close FROM candles
+                   WHERE pair=? AND granularity='ONE_HOUR'
+                   ORDER BY timestamp DESC LIMIT ?""",
+                (pair, LONG_LB + 1),
+            ).fetchall()
+            if len(rows) < LONG_LB + 1:
+                continue
+            closes = [r["close"] for r in reversed(rows)]
+            cur = closes[-1]
+            short_ago = closes[-SHORT_LB]
+            long_ago = closes[-LONG_LB]
+            if short_ago <= 0 or long_ago <= 0:
+                continue
+            short_mom = cur / short_ago - 1
+            long_mom = cur / long_ago - 1
+            accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
+            if accel > 0:
+                scores.append({"pair": pair, "accel": round(accel, 4), "price": round(cur, 6)})
+        except Exception:
+            continue
+
+    conn.close()
+    scores.sort(key=lambda s: s["accel"], reverse=True)
+    return jsonify(scores[:10])  # top 10
+
+
 # ---------- Static file serving ----------
 
 @app.after_request

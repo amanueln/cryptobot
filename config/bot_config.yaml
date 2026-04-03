@@ -13,3 +13,8 @@ simulation:
 data:
   db_path: "data/candles.db"
   cache_candles: true
+
+# Momentum Rotation Engine (runs alongside grid trading)
+momentum_rotation:
+  enabled: true
+  allocation_usd: 3000

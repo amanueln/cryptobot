@@ -18,6 +18,7 @@ import { RegimeVisualizerComponent } from '../regime-visualizer/regime-visualize
 import { SelfCheckComponent } from '../self-check/self-check.component';
 import { PairScannerComponent } from '../pair-scanner/pair-scanner.component';
 import { AdaptationsComponent } from '../adaptations/adaptations.component';
+import { MomentumPanelComponent } from '../momentum-panel/momentum-panel.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -32,9 +33,26 @@ const STARTING_BALANCE = 3000;
     PairCardComponent, ExpandedPairChartComponent, HealthBarComponent,
     TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
     SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
+    MomentumPanelComponent,
   ],
   template: `
-    <div class="cc-root">
+    <div class="cc-root" [class.dual-mode]="momentumEnabled()">
+
+      <!-- DUAL ENGINE LAYOUT -->
+      <div class="dual-container">
+
+      <!-- LEFT PANEL: Grid Trading -->
+      <div class="grid-panel" [class.full-width]="!momentumEnabled()">
+
+      <!-- Grid engine label (only show in dual mode) -->
+      @if (momentumEnabled()) {
+        <div class="engine-tab grid-tab">
+          <span class="engine-dot-tab active"></span>
+          <span class="tab-name">Grid Trading</span>
+          <span class="tab-tag active">ACTIVE</span>
+          <span class="tab-alloc">{{ activePairsText() }}</span>
+        </div>
+      }
 
       <!-- 0. Hero Numbers — the answer to "how much money do I have?" -->
       <div class="hero-bar">
@@ -182,12 +200,80 @@ const STARTING_BALANCE = 3000;
         </div>
       }
 
+      </div><!-- /grid-panel -->
+
+      <!-- RIGHT PANEL: Momentum Rotation -->
+      @if (momentumEnabled()) {
+        <div class="momentum-panel-col">
+          <app-momentum-panel />
+        </div>
+      }
+
+      </div><!-- /dual-container -->
     </div>
   `,
   styles: [`
     .cc-root {
       background: #0f1117; color: #e2e8f0; min-height: 100vh;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* Dual engine layout */
+    .dual-container {
+      display: flex;
+      min-height: 100vh;
+    }
+    .grid-panel {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+    }
+    .grid-panel.full-width {
+      max-width: 100%;
+    }
+    .dual-mode .grid-panel {
+      border-right: 2px solid #2d3148;
+    }
+    .momentum-panel-col {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+    @media (max-width: 1200px) {
+      .dual-container { flex-direction: column; }
+      .dual-mode .grid-panel { border-right: none; border-bottom: 2px solid #2d3148; }
+      .momentum-panel-col { height: auto; position: static; }
+    }
+
+    /* Grid engine tab */
+    .engine-tab {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 20px; border-bottom: 1px solid rgba(96,165,250,0.3);
+    }
+    .grid-tab {
+      background: linear-gradient(90deg, rgba(96,165,250,0.08) 0%, transparent 100%);
+    }
+    .engine-dot-tab {
+      width: 8px; height: 8px; border-radius: 50%;
+      animation: tabpulse 2s ease-in-out infinite;
+    }
+    .engine-dot-tab.active { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
+    @keyframes tabpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .tab-name {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #60a5fa;
+    }
+    .tab-tag {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+      padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+    }
+    .tab-tag.active { background: rgba(74,222,128,0.12); color: #4ade80; }
+    .tab-alloc {
+      margin-left: auto; font-size: 10px; color: #6b7280;
+      font-family: 'JetBrains Mono', monospace;
     }
     .hero-bar {
       display: flex; align-items: center; justify-content: center;
@@ -285,6 +371,18 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   expandedPair = signal<string | null>(null);
   whyOpen = signal(false);
   activeTool = signal<string | null>(null);
+
+  // Dual engine: momentum rotation
+  momentumEnabled = computed(() => {
+    const ms = this.api.momentumStatus();
+    return ms !== null && ms.enabled === true;
+  });
+
+  activePairsText = computed(() => {
+    const s = this.api.status();
+    const count = s?.pairs?.length ?? 0;
+    return `${count} pair${count !== 1 ? 's' : ''} active`;
+  });
 
   positions = signal<PositionData[]>([]);
   allTrades = signal<TradeData[]>([]);

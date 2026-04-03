@@ -153,6 +153,42 @@ class TradeLogger:
                     new_value REAL
                 )
             """)
+            # --- Momentum rotation engine tables ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS momentum_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    amount REAL NOT NULL,
+                    cost_usd REAL NOT NULL,
+                    fee REAL NOT NULL,
+                    reason TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS momentum_equity (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    equity REAL NOT NULL,
+                    cash REAL NOT NULL,
+                    positions_value REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    holdings TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS momentum_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -394,6 +430,54 @@ class TradeLogger:
                     json.dumps(scan_result_dict.get("swapped_out", [])),
                     json.dumps(scan_result_dict.get("swapped_in", [])),
                 ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Momentum rotation engine helpers
+    # ------------------------------------------------------------------
+
+    def log_momentum_trade(self, trade: Trade) -> None:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO momentum_trades
+                   (timestamp, pair, side, price, amount, cost_usd, fee, reason, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    trade.timestamp.isoformat(), trade.pair, trade.side,
+                    trade.price, trade.amount, trade.cost_usd, trade.fee,
+                    trade.reason, datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_momentum_equity(self, timestamp: datetime, equity: float, cash: float,
+                            positions_value: float, status: str, holdings: str = "[]") -> None:
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO momentum_equity
+                   (timestamp, equity, cash, positions_value, status, holdings)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (timestamp.isoformat(), equity, cash, positions_value, status, holdings),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_momentum_event(self, event_type: str, title: str, detail: str = "") -> None:
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO momentum_events (timestamp, event_type, title, detail, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (now, event_type, title, detail, now),
             )
             conn.commit()
         finally:
