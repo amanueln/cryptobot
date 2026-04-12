@@ -5,7 +5,8 @@ __pycache__/
 data/candles.db
 .venv/
 *.egg-info/
-dist/
+/dist/
+!dashboard/ui/dist/
 build/
 .env
 docs/
