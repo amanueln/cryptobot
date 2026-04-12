@@ -6,8 +6,7 @@ Optimized config (backtested on full ZimaOS data, +107%):
 - 20% re-entry threshold: only enter on very strong signals
 - RSI < 65 filter: blocks overbought entries
 - 15% equity trailing stop: protects profits when portfolio drops from peak
-- 48-hour cooldown after exits: don't rush back in
-- 1-week minimum hold: prevents dumping on first dip
+- 4-hour cooldown after exits: brief pause, then re-enter on next signal
 - No position-level trailing stops (avoids whipsaw losses)
 
 This engine is independent from the grid engine — it has its own cash pool,
@@ -42,8 +41,8 @@ FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
 EQUITY_TRAIL_PCT = 0.15    # exit all if equity drops 15% from peak
-EXIT_COOLDOWN = 48         # hours to wait after exit before re-entering
-MIN_HOLD_HOURS = 168       # minimum hours to hold a position (1 week)
+EXIT_COOLDOWN = 4          # hours to wait after exit before re-entering
+MIN_HOLD_HOURS = 0         # no minimum hold — hysteresis prevents whipsaw
 ATR_PERIOD = 24            # 24-hour ATR (used for dashboard info only)
 HARD_STOP_PCT = 0.15       # kept for dashboard display only
 
