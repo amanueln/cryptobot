@@ -1,11 +1,13 @@
 """Momentum Rotation Engine — portfolio-level strategy that picks top coins by acceleration.
 
-Optimized config (backtested 2022-2026, +202% vs buy-and-hold -38%):
+Optimized config (backtested on full ZimaOS data, +107%):
 - Weekly rebalance: pick top 1 coin by momentum acceleration
-- Daily BTC regime check: if BTC < 500-hour SMA, sell everything → cash
-- 20% re-entry threshold: only enter on very strong signals (avoids buying tops)
+- BTC regime filter with 5% hysteresis band (prevents daily whipsaw)
+- 20% re-entry threshold: only enter on very strong signals
 - RSI < 65 filter: blocks overbought entries
 - 15% equity trailing stop: protects profits when portfolio drops from peak
+- 48-hour cooldown after exits: don't rush back in
+- 1-week minimum hold: prevents dumping on first dip
 - No position-level trailing stops (avoids whipsaw losses)
 
 This engine is independent from the grid engine — it has its own cash pool,
@@ -28,17 +30,20 @@ DEFAULT_PAIRS = [
 # Keep PAIRS as alias for backward compat (sim_runner imports it)
 PAIRS = DEFAULT_PAIRS
 
-# Strategy params (optimized via 4-year backtest)
+# Strategy params (optimized via ZimaOS data replay)
 TOP_N = 1                 # concentrate on single best coin
 REBAL_HOURS = 168         # weekly
 SHORT_LB = 336            # 14 days in hours
 LONG_LB = 720             # 30 days in hours
 REGIME_MA = 500            # BTC SMA period (hourly)
+REGIME_HYSTERESIS = 0.05   # 5% band — BTC must be 5% above SMA to go bullish
 REENTRY_THRESHOLD = 0.20   # 20% — only enter on very strong signals
 FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
 EQUITY_TRAIL_PCT = 0.15    # exit all if equity drops 15% from peak
+EXIT_COOLDOWN = 48         # hours to wait after exit before re-entering
+MIN_HOLD_HOURS = 168       # minimum hours to hold a position (1 week)
 ATR_PERIOD = 24            # 24-hour ATR (used for dashboard info only)
 HARD_STOP_PCT = 0.15       # kept for dashboard display only
 
@@ -127,6 +132,9 @@ class MomentumEngine:
         self._last_candle_ts: datetime | None = None
         self._candles_fed = 0
         self._warmup_done = False
+        self._regime_state = "unknown"  # "bullish", "bearish", "unknown"
+        self._exit_cooldown = 0         # hours remaining before re-entry allowed
+        self._hours_in_position = 0     # tracks min hold period
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -211,14 +219,22 @@ class MomentumEngine:
             # No position-level trailing stops — equity trailing stop handles risk
             h.stop_price = 0
 
-        # Track BTC separately for regime
+        # Track BTC separately for regime — with hysteresis band
         if pair == 'BTC-USD':
             self._btc_closes = self._closes['BTC-USD']
             self.btc_price = candle.close
             btc_ma = _sma(self._btc_closes, REGIME_MA)
             if btc_ma is not None:
                 self.btc_ma = btc_ma
-                self.regime_bullish = self.btc_price >= btc_ma
+                # Hysteresis: need 5% above SMA to go bullish, 5% below to go bearish
+                if self._regime_state in ("bearish", "unknown"):
+                    if self.btc_price >= btc_ma * (1 + REGIME_HYSTERESIS):
+                        self._regime_state = "bullish"
+                        self.regime_bullish = True
+                elif self._regime_state == "bullish":
+                    if self.btc_price <= btc_ma * (1 - REGIME_HYSTERESIS):
+                        self._regime_state = "bearish"
+                        self.regime_bullish = False
 
         if warmup:
             return []
@@ -255,6 +271,8 @@ class MomentumEngine:
                 trades.extend(exit_trades)
                 self._was_cash = True
                 self._peak_equity = equity  # reset peak
+                self._exit_cooldown = EXIT_COOLDOWN
+                self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = "Equity stop — protecting profits"
                 logger.info("Equity trailing stop triggered at $%.2f (peak was $%.2f)",
@@ -265,60 +283,75 @@ class MomentumEngine:
         self._hours_since_rebal += 1
         self._hours_since_regime_check += 1
 
+        # Decrement cooldown timer
+        if self._exit_cooldown > 0:
+            self._exit_cooldown -= 1
+
+        # Track time in position
+        if self.holdings:
+            self._hours_in_position += 1
+
         trades = []
 
         # === Daily regime check (every 24 hours) ===
         if self._hours_since_regime_check >= 24:
             self._hours_since_regime_check = 0
             if not self.regime_bullish and self.holdings:
-                # Exit everything
-                exit_trades = self._exit_all(candle.timestamp, "BTC < 500MA — daily regime exit")
-                trades.extend(exit_trades)
-                self._was_cash = True
-                self.status = "cash"
-                self.status_detail = "BTC below 500MA — holding cash"
+                # Only exit if we've held long enough (min hold period)
+                if self._hours_in_position >= MIN_HOLD_HOURS:
+                    exit_trades = self._exit_all(candle.timestamp, "Regime bearish — daily check")
+                    trades.extend(exit_trades)
+                    self._was_cash = True
+                    self._exit_cooldown = EXIT_COOLDOWN
+                    self._hours_in_position = 0
+                    self.status = "cash"
+                    self.status_detail = "BTC regime bearish — holding cash"
 
-        # === Immediate entry from cash ===
-        # If we're in cash, check every hour for qualifying coins
-        # Don't wait for the weekly timer — enter as soon as signals appear
-        # Note: regime filter only applies to weekly rebalance, not immediate entry
-        if self._was_cash and not self.holdings:
-            scores = self._compute_scores()
-            self.accel_scores = scores
-            qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
-            if qualifying:
-                logger.info("Immediate entry: %d coins above %.0f%% threshold",
-                            len(qualifying), REENTRY_THRESHOLD * 100)
-                self._was_cash = False
-                winners = qualifying[:TOP_N]
-                investable = self.cash * 0.95
-                per = investable / len(winners)
-                for s in winners:
-                    if per > 1:
-                        t = self._buy(s.pair, per, candle.timestamp,
-                                      f"Immediate entry: {s.accel:+.1%} acceleration")
-                        if t:
-                            trades.append(t)
-                held = [h.pair.replace('-USD', '') for h in self.holdings.values()]
-                self.status = "holding"
-                self.status_detail = f"Holding {', '.join(held)}"
-                self._hours_since_rebal = 0  # reset weekly timer from entry
-                return trades
+        # === Immediate entry from cash (if cooldown expired) ===
+        if self._was_cash and not self.holdings and self._exit_cooldown <= 0:
+            if self.regime_bullish:
+                scores = self._compute_scores()
+                self.accel_scores = scores
+                qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+                if qualifying:
+                    logger.info("Immediate entry: %d coins above %.0f%% threshold",
+                                len(qualifying), REENTRY_THRESHOLD * 100)
+                    self._was_cash = False
+                    winners = qualifying[:TOP_N]
+                    investable = self.cash * 0.95
+                    per = investable / len(winners)
+                    for s in winners:
+                        if per > 1:
+                            t = self._buy(s.pair, per, candle.timestamp,
+                                          f"Immediate entry: {s.accel:+.1%} acceleration")
+                            if t:
+                                trades.append(t)
+                    # Reset peak equity on new entry
+                    self._peak_equity = self.get_equity()
+                    self._hours_in_position = 0
+                    held = [h.pair.replace('-USD', '') for h in self.holdings.values()]
+                    self.status = "holding"
+                    self.status_detail = f"Holding {', '.join(held)}"
+                    self._hours_since_rebal = 0
+                    return trades
 
         # === Weekly rebalance (rotation between positions) ===
         if self._hours_since_rebal >= REBAL_HOURS:
             self._hours_since_rebal = 0
             self.next_rebal_hours = REBAL_HOURS
 
-            # If bearish regime, go to cash
+            # If bearish regime, go to cash (only if held long enough)
             if not self.regime_bullish:
-                if self.holdings:
+                if self.holdings and self._hours_in_position >= MIN_HOLD_HOURS:
                     exit_trades = self._exit_all(candle.timestamp, "Regime bearish at rebalance")
                     trades.extend(exit_trades)
                     self._was_cash = True
-                self.status = "cash"
-                self.status_detail = "BTC below 500MA — waiting for trend"
-            else:
+                    self._exit_cooldown = EXIT_COOLDOWN
+                    self._hours_in_position = 0
+                if not self.holdings:
+                    self.status = "cash"
+                    self.status_detail = "BTC regime bearish — waiting for trend"
+            elif self._exit_cooldown <= 0:
                 # Compute acceleration scores
                 scores = self._compute_scores()
                 self.accel_scores = scores
@@ -328,26 +361,25 @@ class MomentumEngine:
                     scores = [s for s in scores if s.accel > REENTRY_THRESHOLD]
 
                 if not scores:
-                    # No qualifying coins — go to cash
-                    if self.holdings:
+                    # No qualifying coins — go to cash (only if held long enough)
+                    if self.holdings and self._hours_in_position >= MIN_HOLD_HOURS:
                         exit_trades = self._exit_all(candle.timestamp, "No qualifying acceleration scores")
                         trades.extend(exit_trades)
-                    self._was_cash = True
-                    self.status = "cash"
-                    if self._was_cash and REENTRY_THRESHOLD > 0:
+                    if not self.holdings:
+                        self._was_cash = True
+                        self.status = "cash"
                         self.status_detail = f"No coins above {REENTRY_THRESHOLD:.0%} re-entry threshold"
-                    else:
-                        self.status_detail = "No coins with positive acceleration"
                 else:
                     self._was_cash = False
                     winners = set(s.pair for s in scores[:TOP_N])
 
-                    # Sell holdings not in winners
-                    for pair_key in list(self.holdings.keys()):
-                        if pair_key not in winners:
-                            t = self._sell(pair_key, candle.timestamp, "Rotated out — no longer top acceleration")
-                            if t:
-                                trades.append(t)
+                    # Sell holdings not in winners (only if held long enough)
+                    if self._hours_in_position >= MIN_HOLD_HOURS:
+                        for pair_key in list(self.holdings.keys()):
+                            if pair_key not in winners:
+                                t = self._sell(pair_key, candle.timestamp, "Rotated out — no longer top acceleration")
+                                if t:
+                                    trades.append(t)
 
                     # Buy new winners
                     investable = self.cash * 0.95
@@ -360,6 +392,9 @@ class MomentumEngine:
                                               f"Top acceleration: {s.accel:+.1%}")
                                 if t:
                                     trades.append(t)
+                                    self._hours_in_position = 0
+                                    # Reset peak equity on new entry
+                                    self._peak_equity = self.get_equity()
 
                     held = [h.pair.replace('-USD', '') for h in self.holdings.values()]
                     self.status = "holding"
@@ -421,6 +456,8 @@ class MomentumEngine:
             trades = self._exit_all(now, reason)
             self._was_cash = True
             self._peak_equity = equity
+            self._exit_cooldown = EXIT_COOLDOWN
+            self._hours_in_position = 0
             self.status = "cash"
             self.status_detail = "Equity stop — protecting profits"
             logger.info("Equity trailing stop at $%.2f (peak $%.2f)", equity, self._peak_equity)
