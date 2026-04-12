@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 services:
   cryptobot:
     image: python:3.13-slim
@@ -23,7 +23,7 @@ services:
         apt-get update && apt-get install -y git cron curl libgomp1 > /dev/null 2>&1 &&
         if [ ! -d /app/src/.git ]; then
           echo 'First run — cloning repo...' &&
-          git clone https://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@github.com/amanueln/cryptobot.git /app/src || exit 1;
+          git clone https://YOUR_GITHUB_TOKEN@github.com/amanueln/cryptobot.git /app/src || exit 1;
         else
           echo 'Repo exists — pulling latest...' &&
           cd /app/src && git pull origin master;

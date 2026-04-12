@@ -170,9 +170,8 @@ Chart.register(...registerables);
                 <span class="hold-accel">Accel: {{ (h.accel * 100).toFixed(1) }}%</span>
               </div>
               <div class="hold-mid">
-                <span class="hold-stop-label">Stop</span>
-                <span class="hold-stop-price">{{ formatPrice(h.stop_price ?? 0) }}</span>
-                <span class="hold-stop-dist">({{ (h.stop_distance_pct ?? 0).toFixed(1) }}% away)</span>
+                <span class="hold-stop-label">Equity Stop</span>
+                <span class="hold-stop-dist">15% from peak</span>
               </div>
               <div class="hold-right">
                 <span class="hold-value">{{ formatCurrency(h.value) }}</span>

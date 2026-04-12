@@ -9,6 +9,7 @@ data/candles.db
 !dashboard/ui/dist/
 build/
 .env
+docker-compose.local.yml
 docs/
 .superpowers/
 models/
