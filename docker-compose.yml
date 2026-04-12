@@ -6,7 +6,7 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - /DATA/AppData/cryptobot/data:/app/data
+      - /DATA/AppData/cryptobot/data:/app/persistent
       - /DATA/AppData/cryptobot/models:/app/models
       - /DATA/AppData/cryptobot/config:/app/config
       - /DATA/AppData/cryptobot/logs:/app/logs
@@ -20,17 +20,17 @@ services:
       - AUTO_UPDATE_INTERVAL=6h
     entrypoint: >
       bash -c "
-        apt-get update && apt-get install -y git cron curl > /dev/null 2>&1 &&
-        if [ ! -f /app/src/start.py ]; then
+        apt-get update && apt-get install -y git cron curl libgomp1 > /dev/null 2>&1 &&
+        if [ ! -d /app/src/.git ]; then
           echo 'First run — cloning repo...' &&
-          git clone $$GITHUB_REPO /app/src;
+          git clone https://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@github.com/amanueln/cryptobot.git /app/src || exit 1;
         else
           echo 'Repo exists — pulling latest...' &&
-          cd /app/src && git pull origin $$GIT_BRANCH;
+          cd /app/src && git pull origin master;
         fi &&
         cd /app/src &&
-        pip install --no-cache-dir -r requirements.txt > /dev/null 2>&1 &&
-        ln -sf /app/data data 2>/dev/null;
+        pip install --no-cache-dir -r requirements.txt &&
+        ln -sf /app/persistent/candles.db data/candles.db 2>/dev/null;
         ln -sf /app/models models 2>/dev/null;
         ln -sf /app/config config 2>/dev/null;
         ln -sf /app/logs logs 2>/dev/null;
