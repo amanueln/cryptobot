@@ -413,10 +413,13 @@ def api_trades():
             else:
                 t["cost_basis"] = round(cost_basis, 4)
 
-            # Revenue is gross (before sell fee); net = revenue - sell_fee - cost_basis
+            # Revenue: cost_usd on sell = net USD received (already minus sell fee)
+            # cost_basis from FIFO = total USD spent on buy (already includes buy fee)
+            # net_profit = what we got back - what we paid
+            net_revenue = row["cost_usd"]  # already net of sell fee
             gross_revenue = sell_qty * row["price"]
             if t["cost_basis"] is not None:
-                net_profit = gross_revenue - sell_fee - cost_basis
+                net_profit = net_revenue - cost_basis
                 t["net_profit"] = round(net_profit, 4)
                 cumulative_pnl += net_profit
                 t["cumulative_pnl"] = round(cumulative_pnl, 4)
@@ -525,23 +528,18 @@ def api_status():
     # Use equity snapshot for total equity, but override balance/positions with live data
     snapshot_equity = eq_row["equity"] if eq_row else starting_balance
 
-    # Live cash = total equity - positions value (from snapshot)
-    # OR better: recompute equity = starting_balance - total_cost + total_revenue + positions_value
-    total_cost = 0.0
-    total_revenue = 0.0
-    total_fees_paid = 0.0
+    # Live cash: use cost_usd which already includes fees
+    # For buys: cost_usd = total USD spent (fee included in deduction)
+    # For sells: cost_usd = net USD received (fee already subtracted)
+    total_spent = 0.0
+    total_received = 0.0
     for tr in trade_rows:
-        cost = tr["price"] * tr["amount"]
         if tr["side"] == "buy":
-            total_cost += cost
+            total_spent += tr["cost_usd"]
         else:
-            total_revenue += cost
+            total_received += tr["cost_usd"]
 
-    # Fee is in sim_trades table
-    fee_rows = conn.execute("SELECT COALESCE(SUM(fee), 0) as f FROM sim_trades").fetchone()
-    total_fees_paid = fee_rows["f"] if fee_rows else 0
-
-    live_cash = starting_balance - total_cost + total_revenue - total_fees_paid
+    live_cash = starting_balance - total_spent + total_received
     live_equity = live_cash + live_positions_value
     pnl = live_equity - starting_balance
     pnl_pct = (pnl / starting_balance) * 100 if starting_balance > 0 else 0.0

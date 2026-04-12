@@ -76,7 +76,7 @@ class GridStrategy(BaseStrategy):
         self.filtered_count: int = 0         # levels skipped
 
         # Position limit
-        self.max_position_pct: float = 0.60  # max 60% of allocation in open buys
+        self.max_position_pct: float = 0.85  # max 85% of allocation in open buys
         self.position_limit_hit: bool = False
 
         # Compounding
