@@ -59,6 +59,17 @@ Chart.register(...registerables);
       <div class="status-banner">
         <span class="status-dot" [class.running]="status()?.enabled"></span>
         <span class="status-text">{{ statusSummary() }}</span>
+        <span class="regime-info">
+          <span class="regime-badge" [class.bullish]="status()?.regime_bullish" [class.bearish]="!status()?.regime_bullish">
+            {{ status()?.regime_bullish ? 'BULL' : 'BEAR' }}
+          </span>
+          @if ((status()?.exit_cooldown_remaining ?? 0) > 0) {
+            <span class="cooldown-badge">Cooldown {{ status()!.exit_cooldown_remaining }}h</span>
+          }
+          @if ((status()?.hours_in_position ?? 0) > 0) {
+            <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
+          }
+        </span>
         <span class="poll-timer">next check in {{ pollCountdown() }}s</span>
       </div>
 
@@ -319,6 +330,22 @@ Chart.register(...registerables);
     }
     .status-dot.running { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.5); }
     .status-text { font-size: 12px; color: #9ca3af; }
+    .regime-info { display: flex; align-items: center; gap: 6px; }
+    .regime-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace; letter-spacing: 0.05em;
+    }
+    .regime-badge.bullish { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .regime-badge.bearish { background: rgba(248,113,113,0.15); color: #f87171; }
+    .cooldown-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 4px;
+      background: rgba(251,191,36,0.15); color: #fbbf24;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .hold-time {
+      font-size: 10px; color: #64748b;
+      font-family: 'JetBrains Mono', monospace;
+    }
     .poll-timer {
       margin-left: auto; font-family: 'JetBrains Mono', monospace;
       font-size: 10px; color: #4b5280; letter-spacing: 0.03em;

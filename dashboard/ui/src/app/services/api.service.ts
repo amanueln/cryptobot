@@ -305,6 +305,10 @@ export interface MomentumStatusData {
   trade_count: number;
   holdings: MomentumHoldingData[];
   scanner?: MomentumScannerData | null;
+  regime_bullish?: boolean;
+  regime_state?: string;
+  exit_cooldown_remaining?: number;
+  hours_in_position?: number;
   error?: string;
 }
 

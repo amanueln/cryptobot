@@ -602,4 +602,8 @@ class MomentumEngine:
             "warmup_done": self._warmup_done,
             "candles_fed": self._candles_fed,
             "pairs_tracked": len(self.pairs),
+            "regime_state": self._regime_state,
+            "regime_hysteresis": REGIME_HYSTERESIS,
+            "exit_cooldown_remaining": self._exit_cooldown,
+            "hours_in_position": self._hours_in_position,
         }
