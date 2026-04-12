@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from ta.trend import ADXIndicator, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
@@ -1805,6 +1805,15 @@ def api_reset_data():
         return jsonify({"status": "ok", "deleted": deleted, "balance": 3000.0})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/download-db")
+def api_download_db():
+    """Download the SQLite database file."""
+    db = os.path.abspath(DB_PATH)
+    if not os.path.isfile(db):
+        return jsonify({"status": "error", "message": "Database not found"}), 404
+    return send_file(db, as_attachment=True, download_name="candles.db")
 
 
 @app.route("/api/momentum/reset", methods=["POST"])

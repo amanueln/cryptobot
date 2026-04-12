@@ -26,6 +26,7 @@ Chart.register(...registerables);
           {{ engineTagText() }}
         </span>
         <span class="engine-alloc">{{ formatCurrency(status()?.starting_balance ?? 0) }} allocated</span>
+        <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
         <button class="reset-btn" (click)="resetData()" title="Reset momentum data">Reset Data</button>
       </div>
 
@@ -276,8 +277,14 @@ Chart.register(...registerables);
       margin-left: auto; font-size: 10px; color: #6b7280;
       font-family: 'JetBrains Mono', monospace;
     }
+    .export-btn {
+      margin-left: auto; padding: 3px 10px; font-size: 10px; font-weight: 600;
+      background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 4px; cursor: pointer; transition: all 0.15s; text-decoration: none;
+    }
+    .export-btn:hover { background: rgba(59,130,246,0.2); border-color: #60a5fa; }
     .reset-btn {
-      margin-left: 10px; padding: 3px 10px; font-size: 10px; font-weight: 600;
+      margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
       background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.3);
       border-radius: 4px; cursor: pointer; transition: all 0.15s;
     }
