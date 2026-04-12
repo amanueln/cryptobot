@@ -149,12 +149,12 @@ Chart.register(...registerables);
           <div class="accel-empty">No acceleration data yet — engine is warming up</div>
         }
         @if (topAccelScores().length > 0 && !hasQualifyingAccel()) {
-          <div class="accel-note">No coins above 7% — staying in cash until an uptrend confirms.</div>
+          <div class="accel-note">No coins above 20% — staying in cash until a strong uptrend confirms.</div>
         }
         @if (hasQualifyingAccel()) {
           <div class="accel-note qualifying-note">
             {{ qualifyingCount() }} coin{{ qualifyingCount() > 1 ? 's' : '' }} ready —
-            engine picks the top 2 and enters at market price immediately.
+            engine picks the top 1 and enters at market price immediately.
           </div>
         }
       </div>
