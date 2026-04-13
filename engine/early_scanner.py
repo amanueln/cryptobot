@@ -567,7 +567,7 @@ class EarlyScanner:
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM early_scanner_alerts ORDER BY timestamp DESC LIMIT ?",
+            "SELECT * FROM early_scanner_alerts ORDER BY score DESC, timestamp DESC LIMIT ?",
             (limit,),
         ).fetchall()
         conn.close()
