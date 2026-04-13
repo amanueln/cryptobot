@@ -284,7 +284,8 @@ class EarlyScanner:
                 continue
             if price < MIN_PRICE or vol_24h < MIN_VOLUME_24H:
                 continue
-            eligible.append({'pair': pair, 'price': price, 'volume_24h': vol_24h})
+            base_name = p.get('base_name', '')
+            eligible.append({'pair': pair, 'price': price, 'volume_24h': vol_24h, 'base_name': base_name})
 
         logger.info("Early scanner: %d eligible pairs to check", len(eligible))
 
@@ -309,6 +310,7 @@ class EarlyScanner:
             try:
                 alert = self._check_pair(candles, pair, item['price'], item['volume_24h'], now)
                 if alert:
+                    alert['base_name'] = item.get('base_name', '')
                     alerts.append(alert)
                     self._last_alert_time[pair] = now
             except Exception as e:
@@ -481,7 +483,13 @@ class EarlyScanner:
             return
         try:
             coin = alert['pair'].replace('-USD', '')
-            coinbase_url = f"https://www.coinbase.com/trade/{alert['pair']}"
+            # Build simple Coinbase URL using full coin name slug
+            base_name = alert.get('base_name', '')
+            if base_name:
+                slug = base_name.lower().replace(' ', '-').replace('.', '-')
+                coinbase_url = f"https://www.coinbase.com/price/{slug}"
+            else:
+                coinbase_url = f"https://www.coinbase.com/trade/{alert['pair']}"
 
             # AI-style analysis based on the numbers
             score = alert['score']
