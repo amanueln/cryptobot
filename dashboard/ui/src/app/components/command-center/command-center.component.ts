@@ -36,23 +36,30 @@ const STARTING_BALANCE = 3000;
     MomentumPanelComponent,
   ],
   template: `
-    <div class="cc-root" [class.dual-mode]="momentumEnabled()">
+    <div class="cc-root">
 
-      <!-- DUAL ENGINE LAYOUT -->
-      <div class="dual-container">
-
-      <!-- LEFT PANEL: Grid Trading -->
-      <div class="grid-panel" [class.full-width]="!momentumEnabled()">
-
-      <!-- Grid engine label (only show in dual mode) -->
+      <!-- ENGINE SWITCHER TABS -->
       @if (momentumEnabled()) {
-        <div class="engine-tab grid-tab">
-          <span class="engine-dot-tab active"></span>
-          <span class="tab-name">Grid Trading</span>
-          <span class="tab-tag active">ACTIVE</span>
-          <span class="tab-alloc">{{ activePairsText() }}</span>
+        <div class="engine-switcher">
+          <button class="engine-switch-btn" [class.active]="activeEngine() === 'momentum'" (click)="activeEngine.set('momentum')">
+            <span class="engine-dot-tab" [class.active]="true"></span>
+            Momentum
+          </button>
+          <button class="engine-switch-btn" [class.active]="activeEngine() === 'grid'" (click)="activeEngine.set('grid')">
+            <span class="engine-dot-tab" [class.active]="true"></span>
+            Grid Trading
+            <span class="engine-switch-count">{{ activePairsText() }}</span>
+          </button>
         </div>
       }
+
+      <!-- MOMENTUM PANEL (shown when selected or no dual mode) -->
+      @if (momentumEnabled() && activeEngine() === 'momentum') {
+        <app-momentum-panel />
+      }
+
+      <!-- GRID PANEL -->
+      <div class="grid-panel" [class.hidden]="momentumEnabled() && activeEngine() !== 'grid'">
 
       <!-- 0. Hero Numbers — the answer to "how much money do I have?" -->
       <div class="hero-bar">
@@ -201,15 +208,6 @@ const STARTING_BALANCE = 3000;
       }
 
       </div><!-- /grid-panel -->
-
-      <!-- RIGHT PANEL: Momentum Rotation -->
-      @if (momentumEnabled()) {
-        <div class="momentum-panel-col">
-          <app-momentum-panel />
-        </div>
-      }
-
-      </div><!-- /dual-container -->
     </div>
   `,
   styles: [`
@@ -218,43 +216,28 @@ const STARTING_BALANCE = 3000;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
 
-    /* Dual engine layout */
-    .dual-container {
-      display: flex;
-      min-height: 100vh;
-    }
-    .grid-panel {
-      flex: 1;
-      min-width: 0;
-      overflow-y: auto;
-    }
-    .grid-panel.full-width {
-      max-width: 100%;
-    }
-    .dual-mode .grid-panel {
-      border-right: 2px solid #2d3148;
-    }
-    .momentum-panel-col {
-      flex: 1;
-      min-width: 0;
-      overflow-y: auto;
-      height: 100vh;
-      position: sticky;
-      top: 0;
-    }
-    @media (max-width: 1200px) {
-      .dual-container { flex-direction: column; }
-      .dual-mode .grid-panel { border-right: none; border-bottom: 2px solid #2d3148; }
-      .momentum-panel-col { height: auto; position: static; }
-    }
+    .grid-panel.hidden { display: none; }
 
-    /* Grid engine tab */
-    .engine-tab {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 20px; border-bottom: 1px solid rgba(96,165,250,0.3);
+    /* Engine switcher tabs */
+    .engine-switcher {
+      display: flex; position: sticky; top: 0; z-index: 50;
+      background: #141621; border-bottom: 2px solid #2d3148;
     }
-    .grid-tab {
-      background: linear-gradient(90deg, rgba(96,165,250,0.08) 0%, transparent 100%);
+    .engine-switch-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 16px; border: none; background: transparent;
+      color: #6b7280; font-size: 13px; font-weight: 600; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      border-bottom: 3px solid transparent; transition: all 0.2s;
+    }
+    .engine-switch-btn:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+    .engine-switch-btn.active {
+      color: #e2e8f0; border-bottom-color: #60a5fa;
+      background: linear-gradient(180deg, rgba(96,165,250,0.08) 0%, transparent 100%);
+    }
+    .engine-switch-count {
+      font-size: 10px; color: #6b7280; font-weight: 400;
+      font-family: 'JetBrains Mono', monospace;
     }
     .engine-dot-tab {
       width: 8px; height: 8px; border-radius: 50%;
@@ -262,19 +245,6 @@ const STARTING_BALANCE = 3000;
     }
     .engine-dot-tab.active { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
     @keyframes tabpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
-    .tab-name {
-      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: #60a5fa;
-    }
-    .tab-tag {
-      font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-      padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
-    }
-    .tab-tag.active { background: rgba(74,222,128,0.12); color: #4ade80; }
-    .tab-alloc {
-      margin-left: auto; font-size: 10px; color: #6b7280;
-      font-family: 'JetBrains Mono', monospace;
-    }
     .hero-bar {
       display: flex; align-items: center; justify-content: center;
       gap: 0; padding: 20px 24px;
@@ -371,6 +341,7 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   expandedPair = signal<string | null>(null);
   whyOpen = signal(false);
   activeTool = signal<string | null>(null);
+  activeEngine = signal<'momentum' | 'grid'>('momentum');
 
   // Dual engine: momentum rotation
   momentumEnabled = computed(() => {
