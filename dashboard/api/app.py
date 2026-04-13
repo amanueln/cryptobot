@@ -2144,6 +2144,9 @@ def api_momentum_accel():
                 continue
             closes = [r["close"] for r in reversed(rows)]
             cur = closes[-1]
+            # Skip sub-penny coins — too noisy for momentum signals
+            if cur < 0.01:
+                continue
             short_ago = closes[-SHORT_LB]
             long_ago = closes[-LONG_LB]
             if short_ago <= 0 or long_ago <= 0:
