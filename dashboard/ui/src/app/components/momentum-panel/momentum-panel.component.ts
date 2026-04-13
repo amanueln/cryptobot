@@ -796,16 +796,28 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     this.pollProgress();
     this.progressInterval = setInterval(() => this.pollProgress(), 3000);
 
-    // Countdown timer — ticks every second, resets to 60 on each API poll
+    // Countdown timer — ticks every second, reloads all data on each cycle
     this._pollCountdown.set(60);
     this._countdownInterval = setInterval(() => {
       const v = this._pollCountdown();
       if (v <= 1) {
         this._pollCountdown.set(60);
+        this._refreshAllData();
       } else {
         this._pollCountdown.set(v - 1);
       }
     }, 1000);
+  }
+
+  /** Reload trades, events, equity, and accel on each poll cycle */
+  private _refreshAllData(): void {
+    this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+    this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
+    this.api.fetchMomentumAccel().subscribe(a => this.accelScores.set(a));
+    this.api.fetchMomentumEquity(72).subscribe(eq => {
+      this.equityData.set(eq);
+      setTimeout(() => this.buildChart(), 300);
+    });
   }
 
   private pollProgress() {
@@ -972,7 +984,10 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   skipCooldown(): void {
     this.api.skipMomentumCooldown().subscribe({
       next: () => {
-        setTimeout(() => this.api.refreshMomentumStatus(), 2000);
+        setTimeout(() => {
+          this.api.refreshMomentumStatus();
+          this._refreshAllData();
+        }, 2000);
       },
       error: (err: unknown) => console.error('Skip cooldown failed', err),
     });
