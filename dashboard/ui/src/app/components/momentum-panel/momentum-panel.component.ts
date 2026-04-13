@@ -71,7 +71,7 @@ Chart.register(...registerables);
           </span>
           @if ((status()?.exit_cooldown_remaining ?? 0) > 0) {
             <span class="cooldown-badge">Cooldown {{ status()!.exit_cooldown_remaining }}h</span>
-            <button class="skip-cooldown-btn" (click)="skipCooldown()" title="Skip cooldown and allow immediate re-entry">Skip</button>
+            <button class="skip-cooldown-btn" (click)="skipCooldown()" [disabled]="skippingCooldown()" title="Skip cooldown and allow immediate re-entry">{{ skippingCooldown() ? 'Skipping...' : 'Skip' }}</button>
           }
           @if ((status()?.hours_in_position ?? 0) > 0) {
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
@@ -708,6 +708,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   equityData = signal<MomentumEquityData[]>([]);
   accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
+  skippingCooldown = signal(false);
   sellingPair = signal<string | null>(null);
   sellNotification = signal<{ type: string; message: string } | null>(null);
   private progressInterval: any;
@@ -998,14 +999,19 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   }
 
   skipCooldown(): void {
+    this.skippingCooldown.set(true);
     this.api.skipMomentumCooldown().subscribe({
       next: () => {
         setTimeout(() => {
+          this.skippingCooldown.set(false);
           this.api.refreshMomentumStatus();
           this._refreshAllData();
         }, 2000);
       },
-      error: (err: unknown) => console.error('Skip cooldown failed', err),
+      error: (err: unknown) => {
+        this.skippingCooldown.set(false);
+        console.error('Skip cooldown failed', err);
+      },
     });
   }
 
