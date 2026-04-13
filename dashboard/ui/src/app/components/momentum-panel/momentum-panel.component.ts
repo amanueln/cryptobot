@@ -264,15 +264,14 @@ Chart.register(...registerables);
               <th class="left">Date</th>
               <th class="left">Pair</th>
               <th class="right">Price</th>
-              <th class="right">Cost</th>
-              <th class="right">Fees</th>
-              <th class="right">P&L</th>
+              <th class="right">Spent / Received</th>
+              <th class="right">Result</th>
               <th class="left hide-sm">Reason</th>
             </tr>
           </thead>
           <tbody>
             @if (trades().length === 0) {
-              <tr><td colspan="7" class="empty-row">No trades yet</td></tr>
+              <tr><td colspan="6" class="empty-row">No trades yet</td></tr>
             }
             @for (t of trades(); track t.timestamp; let odd = $odd) {
               <tr [class.buy-row]="t.side === 'buy'" [class.sell-row]="t.side === 'sell'" [class.odd]="odd">
@@ -292,15 +291,23 @@ Chart.register(...registerables);
                     <span>{{ formatPrice(t.price) }}</span>
                   }
                 </td>
-                <td class="right mono">{{ formatCurrency(t.cost_usd) }}</td>
-                <td class="right mono fee-cell">-{{ formatCurrency(t.fee) }}</td>
-                <td class="right mono" [style.color]="t.side === 'sell' ? ((t.net_pnl ?? 0) >= 0 ? '#4ade80' : '#f87171') : '#6b7280'">
+                <td class="right mono">
+                  @if (t.side === 'buy') {
+                    <span style="color: #f87171">-{{ formatCurrency(t.cost_usd) }}</span>
+                  } @else {
+                    <span style="color: #4ade80">+{{ formatCurrency(t.cost_usd) }}</span>
+                  }
+                </td>
+                <td class="right mono">
                   @if (t.side === 'sell' && t.net_pnl != null) {
-                    {{ t.net_pnl >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl) }}
-                  } @else if (t.side === 'buy' && !t.closed) {
-                    <span class="status-badge holding">Open</span>
+                    <span [style.color]="t.net_pnl >= 0 ? '#4ade80' : '#f87171'" style="font-weight: 600">
+                      {{ t.net_pnl >= 0 ? 'WIN' : 'LOSS' }} {{ t.net_pnl >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl) }}
+                    </span>
+                    <span class="result-breakdown">price {{ t.net_pnl + t.fee >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl + t.fee) }} / fees -{{ formatCurrency(t.fee) }}</span>
                   } @else if (t.side === 'buy' && t.closed) {
                     <span class="status-badge closed">Closed</span>
+                  } @else if (t.side === 'buy') {
+                    <span class="status-badge holding">Open</span>
                   } @else {
                     —
                   }
@@ -641,7 +648,7 @@ Chart.register(...registerables);
     .amount-main { display: block; }
     .amount-fee { display: block; font-size: 10px; color: #6b7280; }
     .trade-arrow { color: #6b7280; margin: 0 2px; }
-    .fee-cell { color: #f59e0b; }
+    .result-breakdown { display: block; font-size: 10px; color: #6b7280; font-weight: 400; }
     .status-badge {
       font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
     }
