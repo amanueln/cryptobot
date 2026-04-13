@@ -47,11 +47,17 @@ Chart.register(...registerables);
           <span class="hero-label">In positions</span>
         </div>
         <div class="hero-divider"></div>
-        <div class="hero-item">
+        <div class="hero-item pnl-group">
           <span class="hero-value" [class.pos]="(status()?.pnl ?? 0) >= 0" [class.neg]="(status()?.pnl ?? 0) < 0">
             {{ (status()?.pnl ?? 0) >= 0 ? '+' : '' }}{{ formatCurrency(status()?.pnl ?? 0) }}
           </span>
           <span class="hero-label">P&L ({{ pnlPctStr() }})</span>
+          <div class="pnl-breakdown">
+            <span class="pnl-detail fee-detail">Fees: -{{ formatCurrency(totalFeesPaid()) }}</span>
+            <span class="pnl-detail" [class.pos]="priceChange() >= 0" [class.neg]="priceChange() < 0">
+              Price: {{ priceChange() >= 0 ? '+' : '' }}{{ formatCurrency(priceChange()) }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -367,6 +373,15 @@ Chart.register(...registerables);
     .hero-value.pos { color: #4ade80; }
     .hero-value.neg { color: #f87171; }
     .hero-label { font-size: 10px; font-weight: 500; color: #6b7280; margin-top: 2px; }
+    .pnl-group { position: relative; }
+    .pnl-breakdown {
+      display: flex; gap: 10px; margin-top: 3px;
+    }
+    .pnl-detail {
+      font-size: 9px; font-weight: 600; color: #6b7280;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .pnl-detail.fee-detail { color: #f59e0b; }
     .hero-divider { width: 1px; height: 32px; background: #2d3148; }
 
     /* Status banner */
@@ -1000,6 +1015,18 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
         setTimeout(() => this.sellNotification.set(null), 5000);
       },
     });
+  }
+
+  // --- P&L breakdown ---
+
+  totalFeesPaid(): number {
+    return this.trades().reduce((sum, t) => sum + (t.fee || 0), 0);
+  }
+
+  priceChange(): number {
+    const pnl = this.status()?.pnl ?? 0;
+    const fees = this.totalFeesPaid();
+    return pnl + fees; // price movement = net P&L + fees paid
   }
 
   // --- Strategy Logic computed methods ---

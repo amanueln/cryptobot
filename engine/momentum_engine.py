@@ -306,8 +306,8 @@ class MomentumEngine:
                     self.status = "cash"
                     self.status_detail = "BTC regime bearish — holding cash"
 
-        # === Immediate entry from cash (if cooldown expired) ===
-        if self._was_cash and not self.holdings and self._exit_cooldown <= 0:
+        # === Immediate entry from cash (if cooldown expired and no positions) ===
+        if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash > self.starting_balance * 0.5:
             if self.regime_bullish:
                 scores = self._compute_scores()
                 self.accel_scores = scores
