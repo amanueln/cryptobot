@@ -382,10 +382,9 @@ class SimRunner:
             self.momentum_engine = MomentumEngine(
                 allocation_usd=alloc, fee_rate=fee, pairs=pairs,
             )
-            self.momentum_engine._warmup_done = True
-            self.momentum_engine.status = "cash"
-            self.momentum_engine.status_detail = "Reset — waiting for signals"
-            logger.info("Momentum engine reinitialized with $%.0f", alloc)
+            # Re-run warmup from DB so the engine has price history immediately
+            self._warmup_momentum()
+            logger.info("Momentum engine reset complete with $%.0f", alloc)
 
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
