@@ -493,7 +493,7 @@ def api_status():
     # This is more accurate than the equity_snapshots which may be stale
     live_positions_value = 0.0
     trade_rows = conn.execute(
-        """SELECT pair, side, price, amount FROM sim_trades ORDER BY id ASC"""
+        """SELECT pair, side, price, amount, cost_usd FROM sim_trades ORDER BY id ASC"""
     ).fetchall()
 
     # Build open lots per pair using FIFO
