@@ -317,7 +317,7 @@ class MomentumEngine:
                                 len(qualifying), REENTRY_THRESHOLD * 100)
                     self._was_cash = False
                     winners = qualifying[:TOP_N]
-                    investable = self.cash * 0.95
+                    investable = self.cash * 0.99
                     per = investable / len(winners)
                     for s in winners:
                         if per > 1:
@@ -381,7 +381,7 @@ class MomentumEngine:
                                     trades.append(t)
 
                     # Buy new winners
-                    investable = self.cash * 0.95
+                    investable = self.cash * 0.99
                     n_buy = len(winners) - len(self.holdings)
                     if n_buy > 0 and investable > 10:
                         per = investable / n_buy

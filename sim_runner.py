@@ -242,25 +242,100 @@ class SimRunner:
 
         self._last_momentum_scan = datetime.now()
 
-    def _warmup_momentum(self):
+    def _restore_momentum_state(self) -> bool:
+        """Restore engine state from DB after a restart (not a reset).
+
+        Reads the last equity snapshot and trade history to reconstruct
+        cash, holdings, and trade count so the engine doesn't re-buy
+        positions it already sold.
+
+        Returns True if state was restored, False if no prior state exists.
+        """
+        import sqlite3, json as _json
+        try:
+            conn = sqlite3.connect(self.trade_logger.db_path)
+            conn.row_factory = sqlite3.Row
+
+            # Get last equity snapshot
+            eq_row = conn.execute(
+                "SELECT * FROM momentum_equity ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if not eq_row:
+                conn.close()
+                return False
+
+            # Restore cash and status
+            self.momentum_engine.cash = eq_row["cash"]
+            self.momentum_engine.status = eq_row["status"] or "cash"
+
+            # Restore holdings from the snapshot JSON
+            holdings_json = eq_row.get("holdings") or "[]"
+            holdings_data = _json.loads(holdings_json)
+
+            # Rebuild MomentumHolding objects
+            from engine.momentum_engine import MomentumHolding
+            self.momentum_engine.holdings = {}
+            for h in holdings_data:
+                pair = h["pair"]
+                holding = MomentumHolding(
+                    pair=pair,
+                    shares=h["shares"],
+                    entry_price=h["entry_price"],
+                    entry_time=datetime.fromisoformat(h["entry_time"]) if h.get("entry_time") else datetime.now(),
+                    peak_price=h.get("peak_price", h["current_price"]),
+                )
+                self.momentum_engine.holdings[pair] = holding
+
+            # Restore trade count
+            trade_count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM momentum_trades"
+            ).fetchone()["cnt"]
+            self.momentum_engine.trade_count = trade_count
+
+            # Set state flags based on whether we're holding
+            if self.momentum_engine.holdings:
+                self.momentum_engine._was_cash = False
+                self.momentum_engine.status = "holding"
+                held = [p.replace('-USD', '') for p in self.momentum_engine.holdings]
+                self.momentum_engine.status_detail = f"Restored — holding {', '.join(held)}"
+                # Set peak equity for stop-loss tracking
+                self.momentum_engine._peak_equity = max(
+                    eq_row["equity"], self.momentum_engine.get_equity()
+                )
+            else:
+                self.momentum_engine._was_cash = True
+                self.momentum_engine.status = "cash"
+                self.momentum_engine.status_detail = "Restored — watching for signals"
+
+            conn.close()
+            logger.info("Restored momentum state: cash=$%.2f, %d holdings, %d trades",
+                        self.momentum_engine.cash, len(self.momentum_engine.holdings), trade_count)
+            return True
+
+        except Exception as e:
+            logger.warning("Could not restore momentum state: %s", e)
+            return False
+
+    def _warmup_momentum(self, clear_tables: bool = False):
         """Warmup momentum engine with historical hourly candles."""
         if not self.momentum_engine:
             return
 
-        # Clear stale momentum data from previous runs (engine starts fresh)
-        try:
-            import sqlite3
-            conn = sqlite3.connect(self.trade_logger.db_path)
-            for table in ["momentum_trades", "momentum_equity", "momentum_events"]:
-                try:
-                    conn.execute(f"DELETE FROM {table}")
-                except Exception:
-                    pass
-            conn.commit()
-            conn.close()
-            logger.info("Cleared momentum tables for fresh start")
-        except Exception as e:
-            logger.warning("Could not clear momentum tables: %s", e)
+        # Only clear tables on explicit reset, NOT on normal restart
+        if clear_tables:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(self.trade_logger.db_path)
+                for table in ["momentum_trades", "momentum_equity", "momentum_events"]:
+                    try:
+                        conn.execute(f"DELETE FROM {table}")
+                    except Exception:
+                        pass
+                conn.commit()
+                conn.close()
+                logger.info("Cleared momentum tables for fresh start")
+            except Exception as e:
+                logger.warning("Could not clear momentum tables: %s", e)
 
         # Run scanner first to get the right pairs
         if self.momentum_scanner:
@@ -317,10 +392,17 @@ class SimRunner:
         self.momentum_engine._hours_since_rebal = 0
         self.momentum_engine._hours_since_regime_check = 0
         self.momentum_engine._candles_fed = 0
-        self.momentum_engine.trade_count = 0
-        self.momentum_engine.trades = []
-        self.momentum_engine.status = "cash" if not self.momentum_engine.regime_bullish else "ready"
-        self.momentum_engine.status_detail = "Warmup complete — watching for signals"
+
+        # Restore state from DB if we have prior trading history (not a fresh reset)
+        restored = False
+        if not clear_tables:
+            restored = self._restore_momentum_state()
+
+        if not restored:
+            self.momentum_engine.trade_count = 0
+            self.momentum_engine.trades = []
+            self.momentum_engine.status = "cash" if not self.momentum_engine.regime_bullish else "ready"
+            self.momentum_engine.status_detail = "Warmup complete — watching for signals"
 
         # Mark warmup complete
         try:
@@ -332,34 +414,34 @@ class SimRunner:
         print(f"  Momentum engine ready — BTC MA500: ${self.momentum_engine.btc_ma:,.0f}, "
               f"regime: {'BULL' if self.momentum_engine.regime_bullish else 'BEAR'}")
 
-        # Trigger immediate evaluation by re-feeding last BTC candle as non-warmup
-        btc_candles = self.candle_store.get_candles('BTC-USD', "ONE_HOUR", end - timedelta(hours=2), end)
-        if btc_candles:
-            last_btc = btc_candles[-1]
-            # Bump timestamp slightly so dedup doesn't skip it
-            trigger_candle = Candle(
-                pair='BTC-USD', granularity='ONE_HOUR',
-                timestamp=last_btc.timestamp + timedelta(seconds=1),
-                open=last_btc.open, high=last_btc.high, low=last_btc.low,
-                close=last_btc.close, volume=last_btc.volume,
-            )
-            trades = self.momentum_engine.feed_candle('BTC-USD', trigger_candle)
-            for trade in trades:
-                try:
-                    self.trade_logger.log_momentum_trade(trade)
-                    short = trade.pair.replace("-USD", "")
-                    if trade.side == "buy":
-                        title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
-                    else:
-                        title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
-                    self.trade_logger.log_momentum_event(
-                        f"momentum_{trade.side}", title, trade.reason
-                    )
-                    logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
-                except Exception as e:
-                    logger.error(f"[MOMENTUM] Failed to log trade: {e}")
-            if trades:
-                print(f"  Momentum engine: immediate entry — {len(trades)} trades executed")
+        # Only trigger immediate entry if we didn't restore an existing position
+        if not restored:
+            btc_candles = self.candle_store.get_candles('BTC-USD', "ONE_HOUR", end - timedelta(hours=2), end)
+            if btc_candles:
+                last_btc = btc_candles[-1]
+                trigger_candle = Candle(
+                    pair='BTC-USD', granularity='ONE_HOUR',
+                    timestamp=last_btc.timestamp + timedelta(seconds=1),
+                    open=last_btc.open, high=last_btc.high, low=last_btc.low,
+                    close=last_btc.close, volume=last_btc.volume,
+                )
+                trades = self.momentum_engine.feed_candle('BTC-USD', trigger_candle)
+                for trade in trades:
+                    try:
+                        self.trade_logger.log_momentum_trade(trade)
+                        short = trade.pair.replace("-USD", "")
+                        if trade.side == "buy":
+                            title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                        else:
+                            title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                        self.trade_logger.log_momentum_event(
+                            f"momentum_{trade.side}", title, trade.reason
+                        )
+                        logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+                    except Exception as e:
+                        logger.error(f"[MOMENTUM] Failed to log trade: {e}")
+                if trades:
+                    print(f"  Momentum engine: immediate entry — {len(trades)} trades executed")
 
     def _poll_momentum(self):
         """Poll candles for all momentum pairs and feed to momentum engine."""
@@ -383,7 +465,7 @@ class SimRunner:
                 allocation_usd=alloc, fee_rate=fee, pairs=pairs,
             )
             # Re-run warmup from DB so the engine has price history immediately
-            self._warmup_momentum()
+            self._warmup_momentum(clear_tables=True)
             logger.info("Momentum engine reset complete with $%.0f", alloc)
 
         # Check for manual sell flag
