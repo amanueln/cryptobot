@@ -375,7 +375,23 @@ export interface EarlyScannerAlert {
   change_1h_pct: number;
   change_3h_pct: number;
   notified: boolean;
+  outcome_1h_pct: number | null;
+  outcome_4h_pct: number | null;
   outcome_12h_pct: number | null;
+  outcome_24h_pct: number | null;
+  outcome_peak_pct: number | null;
+  score_adj: number;
+  effective_score: number;
+}
+
+export interface SignalComboStats {
+  combo: string;
+  combo_display: string;
+  total: number;
+  wins: number;
+  win_rate: number;
+  avg_peak_pct: number;
+  score_adj: number;
 }
 
 export interface EarlyScannerStats {
@@ -384,8 +400,10 @@ export interface EarlyScannerStats {
   evaluated: number;
   wins: number;
   win_rate: number;
+  hit_rate: number;
   running: boolean;
   last_run: string | null;
+  combo_stats: SignalComboStats[];
 }
 
 @Injectable({ providedIn: 'root' })

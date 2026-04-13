@@ -156,6 +156,33 @@ def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
     return verdict, ai_take
 
 
+def _combo_key(signals: list[str]) -> str:
+    """Generate a canonical combo key from signal strings (sorted, tag-only)."""
+    tags = sorted(s.split(' ')[0] for s in signals)
+    return '+'.join(tags)
+
+
+def _combo_display(combo_key: str) -> str:
+    """Human-readable combo name from key."""
+    labels = {
+        'accumulation': 'Accumulation',
+        'bottom_bounce': 'Bottom Bounce',
+        'squeeze': 'Squeeze',
+        'vol_spike': 'Volume Spike',
+        '72h_breakout': '72h Breakout',
+        'mom_reversal': 'Reversal',
+        'strong_move': 'Strong Move',
+    }
+    return ' + '.join(labels.get(t, t) for t in combo_key.split('+'))
+
+
+# Combo learning thresholds
+COMBO_MIN_SAMPLES = 10     # need 10+ evaluated alerts before adjusting score
+COMBO_WIN_BOOST = 60       # win rate >= 60% → +1 score
+COMBO_WIN_PENALIZE = 35    # win rate < 35% → -1 score
+COMBO_PEAK_WIN_PCT = 3.0   # "win" = peaked 3%+ within 12h
+
+
 def _init_table(db_path: str):
     """Create the early_scanner_alerts table if it doesn't exist."""
     conn = sqlite3.connect(db_path, timeout=30)
@@ -180,6 +207,35 @@ def _init_table(db_path: str):
         CREATE INDEX IF NOT EXISTS idx_esa_pair_ts
         ON early_scanner_alerts (pair, timestamp)
     """)
+
+    # Migration: add multi-checkpoint outcome columns
+    for col, typ in [
+        ('outcome_1h_pct', 'REAL'),
+        ('outcome_4h_pct', 'REAL'),
+        ('outcome_24h_pct', 'REAL'),
+        ('outcome_peak_pct', 'REAL'),
+        ('outcome_peak_time', 'TEXT'),
+        ('combo_key', 'TEXT'),
+        ('score_adj', 'INTEGER DEFAULT 0'),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE early_scanner_alerts ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    # Signal combo stats table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS signal_combo_stats (
+            combo_key TEXT PRIMARY KEY,
+            total_alerts INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            avg_peak_pct REAL DEFAULT 0,
+            win_rate REAL DEFAULT 0,
+            score_adj INTEGER DEFAULT 0,
+            last_updated TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -325,7 +381,8 @@ class EarlyScanner:
         if alerts:
             self._save_alerts(alerts)
             for a in alerts:
-                if a['score'] >= DISCORD_MIN_SCORE:
+                effective = a.get('effective_score', a['score'])
+                if effective >= DISCORD_MIN_SCORE:
                     self._notify_discord(a)
 
         return alerts
@@ -462,17 +519,31 @@ class EarlyScanner:
         }
 
     def _save_alerts(self, alerts: list[dict]):
-        """Persist alerts to the database."""
+        """Persist alerts to the database with combo key and score adjustment."""
         conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
         now = datetime.now(timezone.utc).isoformat()
         for a in alerts:
+            ck = _combo_key(a['signals'])
+            a['combo_key'] = ck
+
+            # Look up combo score adjustment
+            row = conn.execute(
+                "SELECT score_adj FROM signal_combo_stats WHERE combo_key = ?", (ck,)
+            ).fetchone()
+            adj = row['score_adj'] if row else 0
+            a['score_adj'] = adj
+            a['effective_score'] = max(1, min(4, a['score'] + adj))
+
             conn.execute(
                 "INSERT INTO early_scanner_alerts "
-                "(timestamp, pair, price, score, signals, volume_24h, change_1h_pct, change_3h_pct, notified, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,0,?)",
+                "(timestamp, pair, price, score, signals, volume_24h, change_1h_pct, change_3h_pct, "
+                "notified, combo_key, score_adj, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,0,?,?,?)",
                 (a['timestamp'], a['pair'], a['price'], a['score'],
                  json.dumps(a['signals']), a['volume_24h'],
-                 a['change_1h_pct'], a['change_3h_pct'], now),
+                 a['change_1h_pct'], a['change_3h_pct'],
+                 ck, adj, now),
             )
         conn.commit()
         conn.close()
@@ -577,7 +648,7 @@ class EarlyScanner:
             logger.warning("Discord notification failed: %s", e)
 
     def get_recent_alerts(self, limit: int = 50) -> list[dict]:
-        """Get recent alerts from DB."""
+        """Get recent alerts from DB with outcome checkpoints and score adjustments."""
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
@@ -585,71 +656,231 @@ class EarlyScanner:
             (limit,),
         ).fetchall()
         conn.close()
-        return [
-            {
+
+        results = []
+        for r in rows:
+            score = r['score']
+            adj = r['score_adj'] if r['score_adj'] is not None else 0
+            effective = max(1, min(4, score + adj))
+            results.append({
                 'id': r['id'],
                 'timestamp': r['timestamp'],
                 'pair': r['pair'],
                 'price': r['price'],
-                'score': r['score'],
+                'score': score,
                 'signals': json.loads(r['signals']),
                 'volume_24h': r['volume_24h'],
                 'change_1h_pct': r['change_1h_pct'],
                 'change_3h_pct': r['change_3h_pct'],
                 'notified': bool(r['notified']),
+                'outcome_1h_pct': r['outcome_1h_pct'],
+                'outcome_4h_pct': r['outcome_4h_pct'],
                 'outcome_12h_pct': r['outcome_12h_pct'],
-            }
-            for r in rows
-        ]
+                'outcome_24h_pct': r['outcome_24h_pct'],
+                'outcome_peak_pct': r['outcome_peak_pct'],
+                'score_adj': adj,
+                'effective_score': effective,
+            })
+        return results
 
     def get_stats(self) -> dict:
-        """Get scanner statistics."""
+        """Get scanner statistics with peak-based hit rate."""
         conn = sqlite3.connect(self.db_path, timeout=10)
         total = conn.execute("SELECT COUNT(*) FROM early_scanner_alerts").fetchone()[0]
         last_24h = conn.execute(
             "SELECT COUNT(*) FROM early_scanner_alerts WHERE timestamp > ?",
             ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),),
         ).fetchone()[0]
+        # Evaluated = has peak data (12h window complete)
         evaluated = conn.execute(
-            "SELECT COUNT(*) FROM early_scanner_alerts WHERE outcome_12h_pct IS NOT NULL"
+            "SELECT COUNT(*) FROM early_scanner_alerts WHERE outcome_peak_pct IS NOT NULL"
         ).fetchone()[0]
+        # Win = peaked 3%+ within window
         wins = conn.execute(
-            "SELECT COUNT(*) FROM early_scanner_alerts WHERE outcome_12h_pct > 0"
+            "SELECT COUNT(*) FROM early_scanner_alerts WHERE outcome_peak_pct >= ?",
+            (COMBO_PEAK_WIN_PCT,),
         ).fetchone()[0]
         conn.close()
+
+        hit_rate = round(wins / evaluated * 100, 1) if evaluated > 0 else 0
+
         return {
             'total_alerts': total,
             'alerts_24h': last_24h,
             'evaluated': evaluated,
             'wins': wins,
-            'win_rate': round(wins / evaluated * 100, 1) if evaluated > 0 else 0,
+            'win_rate': hit_rate,
+            'hit_rate': hit_rate,
+            'combo_stats': self.get_combo_stats(),
         }
 
     def evaluate_outcomes(self):
-        """Check 12h outcomes for alerts old enough. Fetches live candle to compare."""
+        """Progressive multi-checkpoint outcome evaluation.
+
+        Checks price at 1h, 4h, 12h, 24h after alert and tracks peak.
+        Each checkpoint fills as soon as enough time has passed.
+        After 12h checkpoint, updates signal combo stats for learning.
+        """
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()
+        now = datetime.now(timezone.utc)
+
+        # Find alerts that still have unfilled checkpoints
         unevaluated = conn.execute(
-            "SELECT id, pair, price, timestamp FROM early_scanner_alerts "
-            "WHERE outcome_12h_pct IS NULL AND timestamp < ?",
-            (cutoff,),
+            "SELECT id, pair, price, timestamp, signals, combo_key, "
+            "outcome_1h_pct, outcome_4h_pct, outcome_12h_pct, outcome_24h_pct, "
+            "outcome_peak_pct FROM early_scanner_alerts "
+            "WHERE outcome_24h_pct IS NULL"
         ).fetchall()
 
         for row in unevaluated:
             try:
-                # Fetch current price from Coinbase
-                candles = _fetch_candles_live(row['pair'], hours=2)
-                if candles:
-                    current = candles[-1]['close']
-                    outcome = (current - row['price']) / row['price'] * 100
+                alert_time = datetime.fromisoformat(row['timestamp'])
+                if alert_time.tzinfo is None:
+                    alert_time = alert_time.replace(tzinfo=timezone.utc)
+                hours_since = (now - alert_time).total_seconds() / 3600
+
+                # Determine which checkpoints need filling
+                needs_1h = row['outcome_1h_pct'] is None and hours_since >= 1
+                needs_4h = row['outcome_4h_pct'] is None and hours_since >= 4
+                needs_12h = row['outcome_12h_pct'] is None and hours_since >= 12
+                needs_24h = row['outcome_24h_pct'] is None and hours_since >= 24
+
+                if not (needs_1h or needs_4h or needs_12h or needs_24h):
+                    continue
+
+                # Fetch candles covering the full window since alert
+                fetch_hours = min(int(hours_since) + 2, 26)
+                candles = _fetch_candles_live(row['pair'], hours=fetch_hours)
+                if not candles:
+                    continue
+
+                alert_price = row['price']
+                if alert_price <= 0:
+                    continue
+
+                # Build hourly price series from candles
+                # Find the peak high across all candles
+                peak_price = max(c['high'] for c in candles)
+                peak_pct = round((peak_price - alert_price) / alert_price * 100, 2)
+
+                # Find approximate peak time (which candle had the highest high)
+                # Candles are oldest-first; we estimate timestamp from position
+                peak_idx = max(range(len(candles)), key=lambda i: candles[i]['high'])
+
+                updates = {}
+                update_combo = False
+
+                # Fill checkpoints using candle closes at approximate offsets
+                # Candles are hourly, oldest first. The alert fired during the scan,
+                # so candle[0] is ~fetch_hours ago. We want candle at alert_time + Xh.
+                # Since we fetched `fetch_hours` hours back, the alert candle is near index 0
+                # if it's an old alert, or near the end if it's recent.
+
+                # Simpler approach: use the latest close for each checkpoint
+                # For checkpoints already past, the candle at that offset is what matters
+                # But we don't have exact timestamps per candle from this API.
+                # Use the current/latest close for any checkpoint that's ready.
+
+                current_close = candles[-1]['close']
+
+                if needs_1h and row['outcome_1h_pct'] is None:
+                    # Use a candle roughly 1h after alert; approximate with current if < 4h
+                    idx_1h = max(0, len(candles) - int(hours_since) + 1)
+                    close_1h = candles[min(idx_1h, len(candles) - 1)]['close']
+                    updates['outcome_1h_pct'] = round((close_1h - alert_price) / alert_price * 100, 2)
+
+                if needs_4h and row['outcome_4h_pct'] is None:
+                    idx_4h = max(0, len(candles) - int(hours_since) + 4)
+                    close_4h = candles[min(idx_4h, len(candles) - 1)]['close']
+                    updates['outcome_4h_pct'] = round((close_4h - alert_price) / alert_price * 100, 2)
+
+                if needs_12h and row['outcome_12h_pct'] is None:
+                    idx_12h = max(0, len(candles) - int(hours_since) + 12)
+                    close_12h = candles[min(idx_12h, len(candles) - 1)]['close']
+                    updates['outcome_12h_pct'] = round((close_12h - alert_price) / alert_price * 100, 2)
+                    update_combo = True  # trigger combo stats update after 12h
+
+                if needs_24h and row['outcome_24h_pct'] is None:
+                    idx_24h = max(0, len(candles) - int(hours_since) + 24)
+                    close_24h = candles[min(idx_24h, len(candles) - 1)]['close']
+                    updates['outcome_24h_pct'] = round((close_24h - alert_price) / alert_price * 100, 2)
+
+                # Always update peak if we have a better one
+                if row['outcome_peak_pct'] is None or peak_pct > (row['outcome_peak_pct'] or 0):
+                    updates['outcome_peak_pct'] = peak_pct
+
+                if updates:
+                    set_clause = ', '.join(f"{k} = ?" for k in updates)
+                    values = list(updates.values()) + [row['id']]
                     conn.execute(
-                        "UPDATE early_scanner_alerts SET outcome_12h_pct = ? WHERE id = ?",
-                        (round(outcome, 2), row['id']),
+                        f"UPDATE early_scanner_alerts SET {set_clause} WHERE id = ?",
+                        values,
                     )
+
+                # Update combo stats after 12h checkpoint
+                if update_combo:
+                    ck = row['combo_key'] or _combo_key(json.loads(row['signals']))
+                    self._update_combo_stats(conn, ck)
+
                 time.sleep(0.1)
-            except Exception:
+            except Exception as e:
+                logger.debug("Outcome eval error for alert %s: %s", row['id'], e)
                 continue
 
         conn.commit()
         conn.close()
+
+    def _update_combo_stats(self, conn, combo_key: str):
+        """Recalculate stats for a signal combo from all evaluated alerts."""
+        rows = conn.execute(
+            "SELECT outcome_peak_pct FROM early_scanner_alerts "
+            "WHERE combo_key = ? AND outcome_peak_pct IS NOT NULL",
+            (combo_key,),
+        ).fetchall()
+
+        if not rows:
+            return
+
+        total = len(rows)
+        wins = sum(1 for r in rows if (r['outcome_peak_pct'] or 0) >= COMBO_PEAK_WIN_PCT)
+        avg_peak = sum(r['outcome_peak_pct'] or 0 for r in rows) / total
+        win_rate = wins / total * 100
+
+        # Score adjustment: only after enough samples
+        score_adj = 0
+        if total >= COMBO_MIN_SAMPLES:
+            if win_rate >= COMBO_WIN_BOOST:
+                score_adj = 1
+            elif win_rate < COMBO_WIN_PENALIZE:
+                score_adj = -1
+
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute("""
+            INSERT INTO signal_combo_stats (combo_key, total_alerts, wins, avg_peak_pct, win_rate, score_adj, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(combo_key) DO UPDATE SET
+                total_alerts = ?, wins = ?, avg_peak_pct = ?, win_rate = ?, score_adj = ?, last_updated = ?
+        """, (combo_key, total, wins, round(avg_peak, 2), round(win_rate, 1), score_adj, now,
+              total, wins, round(avg_peak, 2), round(win_rate, 1), score_adj, now))
+
+    def get_combo_stats(self) -> list[dict]:
+        """Get signal combo performance stats for dashboard."""
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM signal_combo_stats ORDER BY win_rate DESC"
+        ).fetchall()
+        conn.close()
+        return [
+            {
+                'combo': r['combo_key'],
+                'combo_display': _combo_display(r['combo_key']),
+                'total': r['total_alerts'],
+                'wins': r['wins'],
+                'win_rate': r['win_rate'],
+                'avg_peak_pct': r['avg_peak_pct'],
+                'score_adj': r['score_adj'],
+            }
+            for r in rows
+        ]
