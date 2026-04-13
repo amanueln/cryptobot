@@ -317,12 +317,32 @@ class SimRunner:
                 except Exception:
                     pass
 
+                # Restore or recalculate stop prices
+                entry_price = h["entry_price"]
+                saved_stop = h.get("atr_stop_price") or h.get("stop_price") or 0
+                if saved_stop <= 0 and entry_price > 0:
+                    # Recalculate: try ATR, fallback to 8%
+                    from engine.momentum_engine import _atr, ATR_STOP_LOOKBACK, ATR_STOP_MULT
+                    atr = _atr(
+                        self.momentum_engine._highs.get(pair, []),
+                        self.momentum_engine._lows.get(pair, []),
+                        self.momentum_engine._closes.get(pair, []),
+                        ATR_STOP_LOOKBACK,
+                    )
+                    if atr and entry_price > 0:
+                        saved_stop = entry_price * (1 - (atr / entry_price) * ATR_STOP_MULT)
+                    else:
+                        saved_stop = entry_price * 0.92
+                    logger.info("Recalculated stop for %s: $%.4f", pair, saved_stop)
+
                 holding = MomentumHolding(
                     pair=pair,
                     shares=h["shares"],
-                    entry_price=h["entry_price"],
+                    entry_price=entry_price,
                     entry_time=datetime.fromisoformat(h["entry_time"]) if h.get("entry_time") else datetime.now(),
                     peak_price=h.get("peak_price", h.get("current_price", 0)),
+                    atr_stop_price=saved_stop,
+                    trail_stop_price=h.get("trail_stop_price", 0.0),
                 )
                 self.momentum_engine.holdings[pair] = holding
 

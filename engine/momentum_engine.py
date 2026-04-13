@@ -62,6 +62,14 @@ ACCEL_EXIT_THRESH = 0.05   # exit when momentum acceleration fades below 5%
 ACCEL_EXIT_MIN_HOLD = 4    # don't check accel exit until held for 4 hours
 MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed
 
+# Tightening trailing stop — hourly only, tiers tighten as profit grows
+TRAIL_ACTIVATE_PCT = 3.0   # trail activates when PnL reaches +3% from entry
+TRAIL_TIERS = [            # (min_pnl_pct, trail_pct_from_peak)
+    (20.0, 0.05),          # +20%+ profit: 5% trail from peak
+    (10.0, 0.06),          # +10-20%: 6% trail
+    (3.0,  0.08),          # +3-10%: 8% trail
+]
+
 # New entry filters (Round 1 winner: only strategy profitable in choppy markets)
 ADX_FILTER_THRESH = 25     # only enter when ADX > 25 (confirmed trend strength)
 RSI_TREND_THRESH = 50      # only enter when RSI > 50 (uptrend confirmed)
@@ -149,8 +157,9 @@ class MomentumHolding:
     shares: float
     entry_price: float
     entry_time: datetime
-    peak_price: float = 0.0     # highest price since entry
-    stop_price: float = 0.0     # current trailing stop level
+    peak_price: float = 0.0          # highest price since entry
+    atr_stop_price: float = 0.0      # ATR stop set at entry — floor, never moves
+    trail_stop_price: float = 0.0    # tightening trail — ratchets up hourly
 
 
 @dataclass
@@ -347,11 +356,19 @@ class MomentumEngine:
                 should_exit = False
                 reason = ""
 
-                # 1. Smart ATR-calibrated stop (set at entry, adapts to each coin)
-                if h.stop_price > 0 and price <= h.stop_price:
-                    stop_dist = (h.entry_price - h.stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                # 0. Update trailing stop (hourly ratchet)
+                self._update_trail_stop(h)
+
+                # 1. Check effective stop (max of ATR floor and trailing stop)
+                effective_stop = max(h.atr_stop_price, h.trail_stop_price)
+                if effective_stop > 0 and price <= effective_stop:
                     should_exit = True
-                    reason = f"ATR stop hit: ${price:,.4f} <= ${h.stop_price:,.4f} ({stop_dist:.1f}% from entry)"
+                    if h.trail_stop_price > h.atr_stop_price and h.trail_stop_price > 0:
+                        pnl_pct = (price - h.entry_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                        reason = f"Trail stop hit: ${price:,.4f} <= ${h.trail_stop_price:,.4f} (locked +{pnl_pct:.1f}%)"
+                    else:
+                        stop_dist = (h.entry_price - h.atr_stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                        reason = f"ATR stop hit: ${price:,.4f} <= ${h.atr_stop_price:,.4f} ({stop_dist:.1f}% from entry)"
 
                 # 2. Accel faded exit (momentum died — take profit before it gives back)
                 if not should_exit and self._hours_in_position >= ACCEL_EXIT_MIN_HOLD:
@@ -598,6 +615,40 @@ class MomentumEngine:
         long_mom = (closes[-1] / closes[-LONG_LB]) - 1
         return short_mom - long_mom
 
+    def _update_trail_stop(self, holding: MomentumHolding) -> None:
+        """Update the tightening trailing stop for a position (called hourly).
+
+        Trail activates when PnL from entry hits TRAIL_ACTIVATE_PCT.
+        Trail tightens as profit grows (wider at small gains, tighter at big gains).
+        Trail only ratchets up, never down. ATR stop is the floor.
+        """
+        if holding.peak_price <= 0 or holding.entry_price <= 0:
+            return
+
+        pnl_pct = (holding.peak_price - holding.entry_price) / holding.entry_price * 100
+
+        if pnl_pct < TRAIL_ACTIVATE_PCT:
+            return
+
+        # Find the tightest tier that applies
+        trail_pct = TRAIL_TIERS[-1][1]  # default: widest tier
+        for min_pnl, t_pct in TRAIL_TIERS:
+            if pnl_pct >= min_pnl:
+                trail_pct = t_pct
+                break
+
+        new_stop = holding.peak_price * (1 - trail_pct)
+
+        # Never go below ATR stop floor
+        if holding.atr_stop_price > 0:
+            new_stop = max(new_stop, holding.atr_stop_price)
+
+        # Ratchet: only move up
+        if new_stop > holding.trail_stop_price:
+            holding.trail_stop_price = new_stop
+            logger.debug("Trail stop updated for %s: $%.4f (peak $%.4f, pnl +%.1f%%, trail %.0f%%)",
+                         holding.pair, new_stop, holding.peak_price, pnl_pct, trail_pct * 100)
+
     def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
         """Check ATR stop and equity stop using live ticker prices.
 
@@ -618,10 +669,15 @@ class MomentumEngine:
 
         now = datetime.now()
 
-        # 1. Check ATR stop (per-position, set at entry)
-        if h.stop_price > 0 and price <= h.stop_price:
-            stop_dist = (h.entry_price - h.stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
-            reason = f"ATR stop hit: ${price:,.4f} <= ${h.stop_price:,.4f} ({stop_dist:.1f}% from entry)"
+        # 1. Check effective stop (max of ATR floor and trailing stop)
+        effective_stop = max(h.atr_stop_price, h.trail_stop_price)
+        if effective_stop > 0 and price <= effective_stop:
+            if h.trail_stop_price > h.atr_stop_price and h.trail_stop_price > 0:
+                pnl_pct = (price - h.entry_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                reason = f"Trail stop hit: ${price:,.4f} <= ${h.trail_stop_price:,.4f} (locked +{pnl_pct:.1f}%)"
+            else:
+                stop_dist = (h.entry_price - h.atr_stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                reason = f"ATR stop hit: ${price:,.4f} <= ${h.atr_stop_price:,.4f} ({stop_dist:.1f}% from entry)"
             t = self._sell(pair, now, reason)
             if t:
                 self._was_cash = True
@@ -629,7 +685,7 @@ class MomentumEngine:
                 self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = reason
-                logger.info("ATR stop triggered for %s at $%.4f (stop was $%.4f)", pair, price, h.stop_price)
+                logger.info("Stop triggered for %s at $%.4f (effective stop $%.4f)", pair, price, effective_stop)
                 return t
 
         # 2. Check equity trailing stop (emergency backstop)
@@ -676,7 +732,7 @@ class MomentumEngine:
 
         self.holdings[pair] = MomentumHolding(
             pair=pair, shares=crypto_amount, entry_price=price, entry_time=timestamp,
-            peak_price=price, stop_price=stop_price,
+            peak_price=price, atr_stop_price=stop_price, trail_stop_price=0.0,
         )
 
         trade = Trade(
@@ -768,9 +824,10 @@ class MomentumEngine:
                     accel = s.accel
                     break
 
-            # ATR stop: show actual stop price and distance
-            stop_price = h.stop_price
-            stop_distance_pct = ((current_price - stop_price) / current_price * 100) if current_price > 0 and stop_price > 0 else 0
+            # Effective stop: max of ATR floor and trailing stop
+            effective_stop = max(h.atr_stop_price, h.trail_stop_price)
+            stop_price = effective_stop
+            stop_distance_pct = ((current_price - effective_stop) / current_price * 100) if current_price > 0 and effective_stop > 0 else 0
 
             # Time remaining before max hold exit
             hold_hours = self._hours_in_position
@@ -788,6 +845,8 @@ class MomentumEngine:
                 "entry_time": h.entry_time.isoformat(),
                 "peak_price": h.peak_price,
                 "stop_price": stop_price,
+                "atr_stop_price": h.atr_stop_price,
+                "trail_stop_price": h.trail_stop_price,
                 "stop_distance_pct": stop_distance_pct,
                 "max_hold_remaining_hours": max_hold_remaining,
             })
