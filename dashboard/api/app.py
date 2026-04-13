@@ -1867,6 +1867,18 @@ def api_momentum_sell():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/momentum/skip-cooldown", methods=["POST"])
+def api_momentum_skip_cooldown():
+    """Skip exit cooldown: write a flag file that the engine picks up on next poll."""
+    flag_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_skip_cooldown.flag")
+    try:
+        with open(flag_path, "w") as f:
+            f.write("skip")
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ---------- Momentum Rotation Engine endpoints ----------
 
 @app.route("/api/momentum/status")

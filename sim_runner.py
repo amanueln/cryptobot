@@ -536,6 +536,16 @@ class SimRunner:
                         _json.dumps(self.momentum_engine.get_holdings_info()),
                     )
 
+        # Check for skip cooldown flag
+        skip_flag = os.path.join(os.path.dirname(__file__), "data", "momentum_skip_cooldown.flag")
+        if os.path.exists(skip_flag):
+            try:
+                os.remove(skip_flag)
+            except Exception:
+                pass
+            self.momentum_engine._exit_cooldown = 0
+            logger.info("Momentum cooldown skipped by user — ready to re-enter")
+
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
                 (datetime.now() - self._last_momentum_scan).total_seconds() >

@@ -71,6 +71,7 @@ Chart.register(...registerables);
           </span>
           @if ((status()?.exit_cooldown_remaining ?? 0) > 0) {
             <span class="cooldown-badge">Cooldown {{ status()!.exit_cooldown_remaining }}h</span>
+            <button class="skip-cooldown-btn" (click)="skipCooldown()" title="Skip cooldown and allow immediate re-entry">Skip</button>
           }
           @if ((status()?.hours_in_position ?? 0) > 0) {
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
@@ -411,6 +412,12 @@ Chart.register(...registerables);
       font-size: 10px; color: #64748b;
       font-family: 'JetBrains Mono', monospace;
     }
+    .skip-cooldown-btn {
+      font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+      background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3);
+      cursor: pointer; transition: all 0.15s; letter-spacing: 0.03em;
+    }
+    .skip-cooldown-btn:hover { background: rgba(251,191,36,0.3); border-color: #fbbf24; }
     .poll-timer {
       margin-left: auto; font-family: 'JetBrains Mono', monospace;
       font-size: 10px; color: #4b5280; letter-spacing: 0.03em;
@@ -956,6 +963,15 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     try {
       return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } catch { return ts; }
+  }
+
+  skipCooldown(): void {
+    this.api.skipMomentumCooldown().subscribe({
+      next: () => {
+        setTimeout(() => this.api.refreshMomentumStatus(), 2000);
+      },
+      error: (err: unknown) => console.error('Skip cooldown failed', err),
+    });
   }
 
   resetData(): void {

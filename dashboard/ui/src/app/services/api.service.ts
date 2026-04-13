@@ -504,6 +504,10 @@ export class ApiService {
     return this.http.post<{ status: string }>(`${API}/momentum/sell`, { pair });
   }
 
+  skipMomentumCooldown() {
+    return this.http.post<{ status: string }>(`${API}/momentum/skip-cooldown`, {});
+  }
+
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }
