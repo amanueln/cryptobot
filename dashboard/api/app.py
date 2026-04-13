@@ -1942,7 +1942,17 @@ def api_momentum_status():
     except Exception:
         pass
 
-    return jsonify({
+    # Read live engine state (regime, cooldown, warmup, etc.)
+    engine_state = {}
+    try:
+        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_status.json")
+        if os.path.exists(state_path):
+            with open(state_path) as f:
+                engine_state = json.load(f)
+    except Exception:
+        pass
+
+    result = {
         "enabled": True,
         "status": eq_row["status"],
         "equity": equity,
@@ -1954,7 +1964,17 @@ def api_momentum_status():
         "trade_count": trade_count,
         "holdings": holdings,
         "scanner": scanner_info,
-    })
+    }
+
+    # Merge engine state fields the dashboard needs
+    for key in ("regime_bullish", "regime_state", "regime_hysteresis",
+                "exit_cooldown_remaining", "hours_in_position",
+                "warmup_done", "was_cash", "next_rebal_hours",
+                "btc_price", "btc_ma"):
+        if key in engine_state:
+            result[key] = engine_state[key]
+
+    return jsonify(result)
 
 
 @app.route("/api/momentum/equity")

@@ -480,6 +480,14 @@ class SimRunner:
             mom.status, holdings_json
         )
 
+        # Persist engine status for dashboard API
+        try:
+            status_path = os.path.join(os.path.dirname(__file__), "data", "momentum_status.json")
+            with open(status_path, "w") as f:
+                json.dump(mom.get_status_dict(), f, default=str)
+        except Exception:
+            pass
+
     def _evaluate_vol_accuracy(self):
         """Compare predicted volatility vs actual realized volatility.
 
