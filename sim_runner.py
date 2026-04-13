@@ -386,6 +386,30 @@ class SimRunner:
             self._warmup_momentum()
             logger.info("Momentum engine reset complete with $%.0f", alloc)
 
+        # Check for manual sell flag
+        sell_flag = os.path.join(os.path.dirname(__file__), "data", "momentum_sell.flag")
+        if os.path.exists(sell_flag):
+            try:
+                with open(sell_flag, "r") as f:
+                    sell_pair = f.read().strip()
+                os.remove(sell_flag)
+            except Exception:
+                sell_pair = ""
+            if sell_pair and sell_pair in self.momentum_engine.holdings:
+                trade = self.momentum_engine._sell(
+                    sell_pair, datetime.now(), "Manual sell from dashboard"
+                )
+                if trade:
+                    self.momentum_engine._was_cash = not self.momentum_engine.holdings
+                    self.trade_logger.log_momentum_trade(trade)
+                    short = trade.pair.replace("-USD", "")
+                    self.trade_logger.log_momentum_event(
+                        "momentum_sell",
+                        f"[MOM] Manual sold {short} at ${trade.price:,.2f}",
+                        trade.reason,
+                    )
+                    logger.info("[MOMENTUM] MANUAL SELL %s @ $%.2f", short, trade.price)
+
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
                 (datetime.now() - self._last_momentum_scan).total_seconds() >

@@ -189,6 +189,7 @@ Chart.register(...registerables);
                 <span class="hold-pnl" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
                   {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
                 </span>
+                <button class="manual-sell-btn" (click)="manualSell(h.pair)" title="Sell this position now">Sell</button>
               </div>
             </div>
           }
@@ -485,6 +486,12 @@ Chart.register(...registerables);
     .hold-right { text-align: right; }
     .hold-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; display: block; }
     .hold-pnl { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; }
+    .manual-sell-btn {
+      margin-top: 6px; padding: 4px 16px; border: 1px solid #f87171; border-radius: 4px;
+      background: rgba(248,113,113,0.1); color: #f87171; font-size: 11px; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.05em; transition: all 0.15s;
+    }
+    .manual-sell-btn:hover { background: #f87171; color: #0f1117; }
 
     /* Cash state */
     .cash-state {
@@ -829,6 +836,22 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
         setTimeout(() => this.buildChart(), 300);
       },
       error: (err: unknown) => console.error('Reset failed', err),
+    });
+  }
+
+  manualSell(pair: string): void {
+    const short = pair.replace('-USD', '');
+    if (!confirm(`Sell all ${short} now at market price?`)) return;
+    this.api.manualSellMomentum(pair).subscribe({
+      next: () => {
+        // Refresh after a brief delay so the engine has time to process the flag
+        setTimeout(() => {
+          this.api.refreshMomentumStatus();
+          this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+          this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
+        }, 2000);
+      },
+      error: (err: unknown) => console.error('Manual sell failed', err),
     });
   }
 }

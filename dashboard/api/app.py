@@ -1850,6 +1850,23 @@ def api_momentum_reset():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/momentum/sell", methods=["POST"])
+def api_momentum_sell():
+    """Manual sell: write a flag file that the engine picks up on next poll."""
+    data = request.get_json(silent=True) or {}
+    pair = data.get("pair", "")
+    if not pair:
+        return jsonify({"status": "error", "message": "Missing pair"}), 400
+
+    sell_flag = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_sell.flag")
+    try:
+        with open(sell_flag, "w") as f:
+            f.write(pair)
+        return jsonify({"status": "ok", "pair": pair})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ---------- Momentum Rotation Engine endpoints ----------
 
 @app.route("/api/momentum/status")

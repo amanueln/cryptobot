@@ -494,6 +494,10 @@ export class ApiService {
     return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/momentum/reset`, {});
   }
 
+  manualSellMomentum(pair: string) {
+    return this.http.post<{ status: string }>(`${API}/momentum/sell`, { pair });
+  }
+
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }
