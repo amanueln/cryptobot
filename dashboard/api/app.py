@@ -1837,6 +1837,14 @@ def api_momentum_reset():
         except Exception:
             pass
 
+        # Write reset flag so the engine process reinitializes in-memory state
+        reset_flag = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_reset.flag")
+        try:
+            with open(reset_flag, "w") as f:
+                f.write("reset")
+        except Exception:
+            pass
+
         return jsonify({"status": "ok", "deleted": deleted})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

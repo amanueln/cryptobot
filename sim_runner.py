@@ -368,6 +368,25 @@ class SimRunner:
 
         import json
 
+        # Check for reset flag (written by API /momentum/reset endpoint)
+        reset_flag = os.path.join(os.path.dirname(__file__), "data", "momentum_reset.flag")
+        if os.path.exists(reset_flag):
+            try:
+                os.remove(reset_flag)
+            except Exception:
+                pass
+            logger.info("Momentum engine reset requested — reinitializing")
+            alloc = self.momentum_engine.starting_balance
+            fee = self.momentum_engine.fee_rate
+            pairs = self.momentum_engine.pairs
+            self.momentum_engine = MomentumEngine(
+                allocation_usd=alloc, fee_rate=fee, pairs=pairs,
+            )
+            self.momentum_engine._warmup_done = True
+            self.momentum_engine.status = "cash"
+            self.momentum_engine.status_detail = "Reset — waiting for signals"
+            logger.info("Momentum engine reinitialized with $%.0f", alloc)
+
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
                 (datetime.now() - self._last_momentum_scan).total_seconds() >
