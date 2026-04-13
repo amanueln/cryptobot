@@ -777,7 +777,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (!s || !s.enabled) return 'Momentum engine not active';
     if (s.status === 'warming_up') return 'Warming up — building price history...';
     if (s.status === 'scanning') return `Scanner ready — ${s.scanner?.pairs_count ?? 0} coins found. Bot will trade automatically when started.`;
-    if (s.status === 'cash') return `In cash — watching for >20% acceleration signals (${s.trade_count} trades total)`;
+    if (s.status === 'cash') return `In cash — watching for >10% acceleration signals (${s.trade_count} trades total)`;
     if (s.holdings?.length) {
       const held = s.holdings.map(h => h.pair.replace('-USD', '')).join(', ');
       return `Holding ${held} — ${s.trade_count} trades total`;

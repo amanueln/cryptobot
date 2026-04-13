@@ -5,7 +5,7 @@ from __future__ import annotations
 Optimized config (3-round backtest: +51.8% avg, profitable in all 3 market conditions):
 
 ENTRY:
-- Weekly rebalance: pick top 1 coin by momentum acceleration (>20% threshold)
+- Weekly rebalance: pick top 1 coin by momentum acceleration (>10% threshold)
 - BTC regime filter with 5% hysteresis band (prevents daily whipsaw)
 - ADX > 25 entry filter: only enter when trend is confirmed strong
 - RSI > 50 entry filter: confirm uptrend direction
@@ -46,7 +46,7 @@ SHORT_LB = 336            # 14 days in hours
 LONG_LB = 720             # 30 days in hours
 REGIME_MA = 500            # BTC SMA period (hourly)
 REGIME_HYSTERESIS = 0.05   # 5% band — BTC must be 5% above SMA to go bullish
-REENTRY_THRESHOLD = 0.20   # 20% — only enter on very strong signals
+REENTRY_THRESHOLD = 0.10   # 10% — enter on strong signals (20% was too restrictive for normal markets)
 FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
@@ -66,6 +66,8 @@ MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed
 ADX_FILTER_THRESH = 25     # only enter when ADX > 25 (confirmed trend strength)
 RSI_TREND_THRESH = 50      # only enter when RSI > 50 (uptrend confirmed)
 LOCKOUT_HOURS = 24         # after selling a coin, don't re-buy it for 24h
+LOSS_LOCKOUT_HOURS = 72    # after losing on a coin, don't re-buy for 72h
+MIN_PRICE = 0.01           # skip sub-penny coins — price data too noisy for momentum signals
 
 
 def _sma(values: list[float], period: int) -> float | None:
@@ -191,6 +193,7 @@ class MomentumEngine:
         self._hours_in_position = 0     # tracks min hold period
         self._last_sold_pair: str | None = None   # same-coin lockout
         self._last_sold_time: datetime | None = None
+        self._loss_lockouts: dict[str, datetime] = {}  # pair -> lockout expiry after a loss
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -516,10 +519,20 @@ class MomentumEngine:
     def _compute_scores(self) -> list[AccelScore]:
         """Compute momentum acceleration scores for all pairs."""
         scores = []
+        now = self._last_candle_ts or datetime.now()
         for pair in self.pairs:
             closes = self._closes[pair]
             if len(closes) < LONG_LB + 1:
                 continue
+            # Skip sub-penny coins — price data too noisy for reliable momentum
+            if closes[-1] < MIN_PRICE:
+                continue
+            # Skip coins in loss lockout (lost money recently, don't re-enter)
+            if pair in self._loss_lockouts:
+                if now < self._loss_lockouts[pair]:
+                    continue
+                else:
+                    del self._loss_lockouts[pair]
             short_mom = closes[-1] / closes[-SHORT_LB] - 1
             long_mom = closes[-1] / closes[-LONG_LB] - 1
             accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
@@ -675,6 +688,14 @@ class MomentumEngine:
         # Track for same-coin lockout
         self._last_sold_pair = pair
         self._last_sold_time = timestamp
+
+        # If this was a loss, apply extended lockout so we don't re-buy the same loser
+        buy_cost = holding.shares * holding.entry_price
+        if net_usd < buy_cost:
+            self._loss_lockouts[pair] = timestamp + timedelta(hours=LOSS_LOCKOUT_HOURS)
+            logger.info("Loss lockout: %s blocked for %dh (bought %.2f, sold %.2f)",
+                        pair, LOSS_LOCKOUT_HOURS, buy_cost, net_usd)
+
         self.cash += net_usd
 
         del self.holdings[pair]
@@ -793,4 +814,6 @@ class MomentumEngine:
             "accel_exit_thresh": ACCEL_EXIT_THRESH,
             "lockout_pair": self._last_sold_pair,
             "lockout_until": self._last_sold_time.isoformat() if self._last_sold_time else None,
+            "loss_lockouts": {p: t.isoformat() for p, t in self._loss_lockouts.items()},
+            "min_price_filter": MIN_PRICE,
         }
