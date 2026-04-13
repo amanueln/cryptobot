@@ -48,6 +48,108 @@ STABLECOINS = {'USDT-USD', 'USDC-USD', 'DAI-USD', 'PYUSD-USD', 'GUSD-USD',
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "candles.db")
 
 
+def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
+                      change_3h: float, vol_24h: float, alert_type: str,
+                      signals: list) -> tuple[str, str]:
+    """Generate an AI-style analysis for a Discord alert.
+
+    Returns (verdict_line, ai_take) where verdict_line is the bold header
+    and ai_take is a 2-3 sentence opinion.
+    """
+    signal_tags = [s.split(' ')[0] for s in signals]
+    has_accumulation = 'accumulation' in signal_tags
+    has_squeeze = 'squeeze' in signal_tags
+    has_bounce = 'bottom_bounce' in signal_tags
+    has_vol_spike = 'vol_spike' in signal_tags
+    has_breakout = '72h_breakout' in signal_tags
+    has_reversal = 'mom_reversal' in signal_tags
+
+    vol_strong = vol_24h >= 1_000_000
+    vol_decent = vol_24h >= 500_000
+    price_moving = abs(change_1h) >= 1.0 or abs(change_3h) >= 2.0
+    price_flat = abs(change_1h) < 0.5 and abs(change_3h) < 1.0
+
+    parts = []
+
+    # --- Setup-type alerts ---
+    if alert_type == 'setup':
+        if has_accumulation and has_squeeze and range_pct <= 15:
+            verdict = f"Strong setup -- {coin} coiling near the bottom with volume building"
+            parts.append(f"Price is at just {range_pct:.0f}% of its 72h range with volume picking up while price stays flat -- that's typically smart money loading before a move.")
+            if vol_strong:
+                parts.append("Liquidity is solid so entries and exits should be clean.")
+            elif vol_decent:
+                parts.append("Decent volume to work with.")
+            else:
+                parts.append(f"Volume is on the thin side (${vol_24h:,.0f}) so use small size and wide stops.")
+            parts.append("Watch for the first green 1h candle with above-average volume -- that's your confirmation to enter.")
+
+        elif has_accumulation and price_flat:
+            verdict = f"Accumulation detected -- {coin} volume building near bottom"
+            if range_pct <= 10:
+                parts.append(f"Sitting at {range_pct:.0f}% of 72h range with volume picking up. This is the kind of early setup that can lead to a strong move.")
+            else:
+                parts.append(f"At {range_pct:.0f}% of 72h range with volume increasing. Could be accumulation before a breakout.")
+            if price_flat:
+                parts.append("Price hasn't moved yet though -- need to see an actual uptick before committing money.")
+            parts.append("Eyes on, not hands on yet.")
+
+        elif has_bounce:
+            verdict = f"Bottom bounce -- {coin} showing first signs of life"
+            parts.append(f"First green candle after sitting near the 72h low ({range_pct:.0f}% of range).")
+            if has_squeeze:
+                parts.append("Range has been compressing too, so when it moves it could move fast.")
+            parts.append("Wait for a second green candle to confirm it's not just noise.")
+
+        elif has_squeeze:
+            verdict = f"Compression squeeze -- {coin} range tightening near bottom"
+            parts.append(f"Price range is narrowing at {range_pct:.0f}% of 72h range. Historically this leads to a sharp move in one direction.")
+            parts.append("No directional confirmation yet -- this is a watchlist add, not a buy signal.")
+
+        else:
+            verdict = f"Setup forming -- {coin} showing early signs near bottom"
+            parts.append(f"At {range_pct:.0f}% of 72h range with {score}/4 signals firing.")
+            parts.append("Watch for follow-through before entering.")
+
+    # --- Breakout-type alerts ---
+    else:
+        if has_vol_spike and has_breakout:
+            verdict = f"Breakout with volume -- {coin} breaking out on heavy buying"
+            parts.append(f"New 72h high with a volume spike -- this is the real deal when it happens at {range_pct:.0f}% of range.")
+            if change_3h > 10:
+                parts.append(f"Already +{change_3h:.1f}% in 3h though. Don't chase -- set a limit order below current price and let it come to you.")
+            else:
+                parts.append(f"Only +{change_3h:.1f}% in 3h so you're still early if you act now.")
+
+        elif has_vol_spike:
+            verdict = f"Volume spike -- {coin} unusual buying detected"
+            parts.append(f"Volume just spiked hard with price rising. At {range_pct:.0f}% of 72h range there's room to run.")
+            if price_moving:
+                parts.append(f"Already moving (+{change_1h:.1f}% 1h) -- act quick or wait for a pullback.")
+            else:
+                parts.append("Price is just starting to react. Good window if it holds.")
+
+        elif has_breakout:
+            verdict = f"72h breakout -- {coin} hitting new highs"
+            parts.append(f"Just broke above the 72h high with +{change_3h:.1f}% momentum over 3h.")
+            if has_reversal:
+                parts.append("This is a reversal breakout -- was flat/down, now pushing up. These can be powerful.")
+            parts.append("Confirmation is the next 1h candle closing above this level.")
+
+        elif has_reversal:
+            verdict = f"Momentum reversal -- {coin} flipping from down to up"
+            parts.append(f"Was flat or falling, now +{change_3h:.1f}% in 3h. At {range_pct:.0f}% of range there's room if this continues.")
+            parts.append("These can be fakeouts. Wait for a volume confirmation candle before sizing in.")
+
+        else:
+            verdict = f"Move detected -- {coin} showing momentum"
+            parts.append(f"Multiple signals firing at {range_pct:.0f}% of 72h range.")
+            parts.append("Watch the next 1-2 hours for confirmation before entering.")
+
+    ai_take = " ".join(parts)
+    return verdict, ai_take
+
+
 def _init_table(db_path: str):
     """Create the early_scanner_alerts table if it doesn't exist."""
     conn = sqlite3.connect(db_path, timeout=30)
@@ -376,34 +478,26 @@ class EarlyScanner:
             pair_slug = alert['pair'].replace('-', '-')  # BTC-USD stays BTC-USD
             coinbase_url = f"https://www.coinbase.com/advanced-trade/spot/{pair_slug}"
 
-            # Determine urgency / recommendation
+            # AI-style analysis based on the numbers
             score = alert['score']
             range_pct = alert.get('range_pct', 50)
+            change_1h = alert['change_1h_pct']
             change_3h = alert['change_3h_pct']
+            vol_24h = alert['volume_24h']
             alert_type = alert.get('alert_type', 'move')
 
-            if alert_type == 'setup':
-                if range_pct <= 15:
-                    verdict = "EARLY SETUP -- price near 72h low with buying pressure building. Watch closely for entry."
-                    color = 0x00ff88  # green
-                else:
-                    verdict = "Setup forming -- volume/price pattern suggests a move is brewing. Add to watchlist."
-                    color = 0x38bdf8  # blue
-            elif score >= 3 and range_pct < 50:
-                verdict = "BREAKOUT -- strong move starting from low in range. Good entry if you're quick."
+            verdict, ai_take = _generate_ai_take(
+                coin, score, range_pct, change_1h, change_3h, vol_24h, alert_type,
+                alert.get('signals', []),
+            )
+
+            # Color based on conviction
+            if 'watch closely' in verdict.lower() or 'strong setup' in verdict.lower():
                 color = 0x00ff88  # green
-            elif score >= 3 and range_pct < 70:
-                verdict = "Breakout in progress -- still has room but don't chase. Limit order below current price."
+            elif 'wait' in verdict.lower() or 'need to see' in verdict.lower():
                 color = 0xffaa00  # amber
-            elif score >= 3:
-                verdict = "Already pumped -- near top of range. Too late for a safe entry."
-                color = 0xff4444  # red
-            elif change_3h < 10:
-                verdict = "Early move detected -- watch for follow-through before buying."
-                color = 0x38bdf8  # blue
             else:
-                verdict = "Move already happening -- might be chasing. Set tight stop if entering."
-                color = 0xffaa00  # amber
+                color = 0x38bdf8  # blue
 
             # Human-readable signal names
             signal_names = []
@@ -440,8 +534,9 @@ class EarlyScanner:
                     f"**24h volume:** ${alert['volume_24h']:,.0f}\n\n"
                     f"**72h range:** ${low:.4f} - ${high:.4f} "
                     f"(price at **{range_pct:.0f}%** of range)\n\n"
-                    f"**Why:** {' + '.join(signal_names)} "
+                    f"**Signals:** {' + '.join(signal_names)} "
                     f"({score}/4 confidence)\n\n"
+                    f"**AI Take:** {ai_take}\n\n"
                     f"[Open on Coinbase]({coinbase_url})"
                 ),
                 "color": color,
