@@ -475,8 +475,7 @@ class EarlyScanner:
             return
         try:
             coin = alert['pair'].replace('-USD', '')
-            pair_slug = alert['pair'].replace('-', '-')  # BTC-USD stays BTC-USD
-            coinbase_url = f"https://www.coinbase.com/advanced-trade/spot/{pair_slug}"
+            coinbase_url = f"https://www.coinbase.com/price/{coin.lower()}"
 
             # AI-style analysis based on the numbers
             score = alert['score']
