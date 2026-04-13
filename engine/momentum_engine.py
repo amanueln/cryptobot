@@ -215,7 +215,7 @@ class MomentumEngine:
             h = self.holdings[pair]
             if candle.close > h.peak_price:
                 h.peak_price = candle.close
-            # No position-level trailing stops — equity trailing stop handles risk
+            # stop_price computed dynamically in get_holdings_info() from equity stop
             h.stop_price = 0
 
         # Track BTC separately for regime — with hysteresis band
@@ -556,8 +556,10 @@ class MomentumEngine:
                     accel = s.accel
                     break
 
-            # Distance to stop
-            stop_distance_pct = ((current_price - h.stop_price) / current_price * 100) if current_price > 0 and h.stop_price > 0 else 0
+            # Equity-level stop: show how far current equity is from the stop trigger
+            equity = self.get_equity()
+            equity_stop = self._peak_equity * (1 - EQUITY_TRAIL_PCT)
+            stop_distance_pct = ((equity - equity_stop) / equity * 100) if equity > 0 and equity_stop > 0 else 0
 
             info.append({
                 "pair": pair,
@@ -570,7 +572,7 @@ class MomentumEngine:
                 "accel": accel,
                 "entry_time": h.entry_time.isoformat(),
                 "peak_price": h.peak_price,
-                "stop_price": h.stop_price,
+                "stop_price": equity_stop,
                 "stop_distance_pct": stop_distance_pct,
             })
         return info

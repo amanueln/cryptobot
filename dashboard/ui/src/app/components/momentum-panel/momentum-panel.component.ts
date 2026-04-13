@@ -182,7 +182,8 @@ Chart.register(...registerables);
               </div>
               <div class="hold-mid">
                 <span class="hold-stop-label">Equity Stop</span>
-                <span class="hold-stop-dist">15% from peak</span>
+                <span class="hold-stop-price">{{ h.stop_price > 0 ? formatCurrency(h.stop_price) : '—' }}</span>
+                <span class="hold-stop-dist">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '% cushion' : '15% from peak' }}</span>
               </div>
               <div class="hold-right">
                 <span class="hold-value">{{ formatCurrency(h.value) }}</span>
@@ -971,7 +972,10 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (s.holdings?.length) {
       const h = s.holdings[0];
       const pnlStr = h.pnl >= 0 ? `+${h.pnl_pct.toFixed(1)}%` : `${h.pnl_pct.toFixed(1)}%`;
-      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). Stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away).`;
+      const stopStr = h.stop_price > 0
+        ? `Equity stop at ${this.formatCurrency(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% cushion).`
+        : 'Equity stop: 15% drawdown from peak.';
+      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}`;
     }
     if (s.was_cash) {
       return 'Waiting for a coin with >20% acceleration in a bullish regime.';
