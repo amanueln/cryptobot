@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Automatic pair discovery and selection.
 
 Scans all Coinbase USD spot pairs, scores them on volatility, range-bound

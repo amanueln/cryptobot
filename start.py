@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Single entry point for Docker deployment.
 
 Runs both the bot (sim_runner) and Flask dashboard in separate processes.

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Multi-pair simultaneous simulation runner.
 
 Dynamically discovers the best pairs via PairSelector, optionally uses

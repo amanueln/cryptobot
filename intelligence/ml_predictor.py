@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """ML prediction layer — LightGBM regression (FreqAI-inspired).
 
 Complete overhaul from binary classification to regression with:

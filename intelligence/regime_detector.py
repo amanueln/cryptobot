@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Market Regime Detector — the brain layer above all strategies.
 
 Reads ADX, Bollinger Band width, volume, OBV, RSI, and EMA relationship

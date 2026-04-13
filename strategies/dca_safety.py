@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """DCA with Safety Orders (Martingale-style) strategy.
 
 All order sizes and levels are calculated dynamically from account balance,

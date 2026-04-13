@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Momentum Scanner — finds the best coins for momentum rotation.
 
 Scans Coinbase for coins that meet momentum-specific criteria:

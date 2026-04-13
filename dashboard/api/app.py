@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Flask REST API for CryptoBot trading dashboard.
 
 Reads from data/candles.db (read-only) and serves candle, trade,

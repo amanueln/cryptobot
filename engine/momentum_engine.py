@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Momentum Rotation Engine — portfolio-level strategy that picks top coins by acceleration.
 
 Optimized config (3-round backtest: +51.8% avg, profitable in all 3 market conditions):

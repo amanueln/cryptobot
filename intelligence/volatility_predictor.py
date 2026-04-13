@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """GARCH-LightGBM hybrid volatility forecaster.
 
 Academic basis: Crypto volatility clusters (Bollerslev 1986, Hansen & Lunde 2005).

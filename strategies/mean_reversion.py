@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.volatility import BollingerBands, AverageTrueRange

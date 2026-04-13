@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Bot engine for simulation mode — polls live Coinbase candles, runs strategy, executes against virtual balance."""
 
 import os

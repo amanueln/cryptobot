@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Strategy Orchestrator — routes candles to the right strategy based on market regime.
 
 Regime -> Strategy mapping:
