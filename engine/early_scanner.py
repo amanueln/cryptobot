@@ -97,7 +97,9 @@ def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
         elif has_bounce:
             verdict = f"Bottom bounce -- {coin} showing first signs of life"
             parts.append(f"First green candle after sitting near the 72h low ({range_pct:.0f}% of range).")
-            if has_squeeze:
+            if change_3h <= -5:
+                parts.append(f"Careful though -- 3h trend is still {change_3h:+.1f}% which means this was dumping hard and just ticked up. Could be a dead cat bounce. Don't catch the knife.")
+            elif has_squeeze:
                 parts.append("Range has been compressing too, so when it moves it could move fast.")
             parts.append("Wait for a second green candle to confirm it's not just noise.")
 
@@ -145,6 +147,10 @@ def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
             verdict = f"Move detected -- {coin} showing momentum"
             parts.append(f"Multiple signals firing at {range_pct:.0f}% of 72h range.")
             parts.append("Watch the next 1-2 hours for confirmation before entering.")
+
+    # Global warning: if 3h trend is heavily negative on any alert type, flag it
+    if change_3h <= -5 and 'knife' not in ' '.join(parts):
+        parts.append(f"Note: 3h trend is {change_3h:+.1f}% so this is still falling. Be extra cautious -- a single green candle doesn't reverse a dump.")
 
     ai_take = " ".join(parts)
     return verdict, ai_take
@@ -475,7 +481,7 @@ class EarlyScanner:
             return
         try:
             coin = alert['pair'].replace('-USD', '')
-            coinbase_url = f"https://www.coinbase.com/price/{coin.lower()}"
+            coinbase_url = f"https://www.coinbase.com/trade/{alert['pair']}"
 
             # AI-style analysis based on the numbers
             score = alert['score']
