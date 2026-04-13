@@ -277,12 +277,37 @@ class SimRunner:
             self.momentum_engine.holdings = {}
             for h in holdings_data:
                 pair = h["pair"]
+
+                # Ensure the held pair is in the engine's tracked pairs
+                if pair not in self.momentum_engine.pairs:
+                    self.momentum_engine.pairs.append(pair)
+                if pair not in self.momentum_engine._closes:
+                    self.momentum_engine._closes[pair] = []
+                    self.momentum_engine._highs[pair] = []
+                    self.momentum_engine._lows[pair] = []
+                    self.momentum_engine._timestamps[pair] = []
+
+                # Seed current price into _closes if empty (so get_equity works)
+                if not self.momentum_engine._closes[pair] and h.get("current_price"):
+                    self.momentum_engine._closes[pair].append(h["current_price"])
+
+                # Fetch latest price from exchange to get accurate equity
+                try:
+                    live_price = self.client.get_ticker_price(pair)
+                    if live_price:
+                        if self.momentum_engine._closes[pair]:
+                            self.momentum_engine._closes[pair][-1] = live_price
+                        else:
+                            self.momentum_engine._closes[pair].append(live_price)
+                except Exception:
+                    pass
+
                 holding = MomentumHolding(
                     pair=pair,
                     shares=h["shares"],
                     entry_price=h["entry_price"],
                     entry_time=datetime.fromisoformat(h["entry_time"]) if h.get("entry_time") else datetime.now(),
-                    peak_price=h.get("peak_price", h["current_price"]),
+                    peak_price=h.get("peak_price", h.get("current_price", 0)),
                 )
                 self.momentum_engine.holdings[pair] = holding
 
@@ -298,7 +323,7 @@ class SimRunner:
                 self.momentum_engine.status = "holding"
                 held = [p.replace('-USD', '') for p in self.momentum_engine.holdings]
                 self.momentum_engine.status_detail = f"Restored — holding {', '.join(held)}"
-                # Set peak equity for stop-loss tracking
+                # Set peak equity from DB snapshot (more reliable than computing now)
                 self.momentum_engine._peak_equity = max(
                     eq_row["equity"], self.momentum_engine.get_equity()
                 )
@@ -308,8 +333,9 @@ class SimRunner:
                 self.momentum_engine.status_detail = "Restored — watching for signals"
 
             conn.close()
-            logger.info("Restored momentum state: cash=$%.2f, %d holdings, %d trades",
-                        self.momentum_engine.cash, len(self.momentum_engine.holdings), trade_count)
+            logger.info("Restored momentum state: cash=$%.2f, %d holdings, %d trades, equity=$%.2f",
+                        self.momentum_engine.cash, len(self.momentum_engine.holdings),
+                        trade_count, self.momentum_engine.get_equity())
             return True
 
         except Exception as e:
