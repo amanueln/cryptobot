@@ -364,6 +364,30 @@ export interface MomentumEventData {
   detail: string;
 }
 
+export interface EarlyScannerAlert {
+  id: number;
+  timestamp: string;
+  pair: string;
+  price: number;
+  score: number;
+  signals: string[];
+  volume_24h: number;
+  change_1h_pct: number;
+  change_3h_pct: number;
+  notified: boolean;
+  outcome_12h_pct: number | null;
+}
+
+export interface EarlyScannerStats {
+  total_alerts: number;
+  alerts_24h: number;
+  evaluated: number;
+  wins: number;
+  win_rate: number;
+  running: boolean;
+  last_run: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly status = signal<StatusData | null>(null);
@@ -572,5 +596,19 @@ export class ApiService {
       });
     };
     poll();
+  }
+
+  // --- Early Momentum Scanner ---
+
+  fetchEarlyScannerAlerts(limit = 50) {
+    return this.http.get<EarlyScannerAlert[]>(`${API}/early-scanner/alerts`, { params: { limit: limit.toString() } });
+  }
+
+  fetchEarlyScannerStats() {
+    return this.http.get<EarlyScannerStats>(`${API}/early-scanner/stats`);
+  }
+
+  triggerEarlyScan() {
+    return this.http.post<{ status: string }>(`${API}/early-scanner/scan`, {});
   }
 }

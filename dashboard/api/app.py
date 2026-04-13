@@ -2164,6 +2164,108 @@ def api_momentum_accel():
     return jsonify(scores[:10])  # top 10
 
 
+# ---------- Early Momentum Scanner ----------
+
+import threading
+
+_early_scanner = None
+_early_scanner_lock = threading.Lock()
+_early_scanner_running = False
+_early_scanner_last_run = None
+
+def _get_early_scanner():
+    global _early_scanner
+    if _early_scanner is None:
+        try:
+            import sys
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            from engine.early_scanner import EarlyScanner
+            # Try config file first, then env var
+            webhook = os.environ.get("DISCORD_WEBHOOK", "")
+            try:
+                import yaml
+                cfg_path = os.path.join(project_root, "config", "bot_config.yaml")
+                with open(cfg_path) as f:
+                    cfg = yaml.safe_load(f)
+                webhook = cfg.get("early_scanner", {}).get("discord_webhook", "") or webhook
+            except Exception:
+                pass
+            _early_scanner = EarlyScanner(db_path=DB_PATH, discord_webhook=webhook or None)
+        except Exception as e:
+            import traceback
+            print(f"Early scanner init error: {e}")
+            traceback.print_exc()
+    return _early_scanner
+
+def _run_early_scan():
+    global _early_scanner_running, _early_scanner_last_run
+    with _early_scanner_lock:
+        if _early_scanner_running:
+            return
+        _early_scanner_running = True
+    try:
+        scanner = _get_early_scanner()
+        if scanner:
+            scanner.scan()
+            scanner.evaluate_outcomes()
+            _early_scanner_last_run = datetime.now().isoformat()
+    except Exception as e:
+        print(f"Early scanner error: {e}")
+    finally:
+        _early_scanner_running = False
+
+
+@app.route("/api/early-scanner/alerts")
+def early_scanner_alerts():
+    limit = int(request.args.get("limit", 50))
+    scanner = _get_early_scanner()
+    if not scanner:
+        return jsonify([])
+    return jsonify(scanner.get_recent_alerts(limit))
+
+
+@app.route("/api/early-scanner/stats")
+def early_scanner_stats():
+    scanner = _get_early_scanner()
+    if not scanner:
+        return jsonify({"total_alerts": 0, "alerts_24h": 0, "evaluated": 0, "wins": 0, "win_rate": 0})
+    stats = scanner.get_stats()
+    stats["running"] = _early_scanner_running
+    stats["last_run"] = _early_scanner_last_run
+    return jsonify(stats)
+
+
+@app.route("/api/early-scanner/scan", methods=["POST"])
+def early_scanner_trigger():
+    """Trigger a manual scan."""
+    if _early_scanner_running:
+        return jsonify({"status": "already_running"})
+    thread = threading.Thread(target=_run_early_scan, daemon=True)
+    thread.start()
+    return jsonify({"status": "started"})
+
+
+def _start_auto_scan_loop(interval_minutes=10):
+    """Background loop that runs the early scanner every N minutes."""
+    import time as _t
+    def loop():
+        _t.sleep(30)  # initial delay to let the server start
+        while True:
+            try:
+                _run_early_scan()
+            except Exception as e:
+                print(f"Auto-scan error: {e}")
+            _t.sleep(interval_minutes * 60)
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+
+# Start auto-scan on server boot (only in the reloader child process to avoid double-start)
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    _start_auto_scan_loop(10)
+
+
 # ---------- Static file serving ----------
 
 @app.after_request

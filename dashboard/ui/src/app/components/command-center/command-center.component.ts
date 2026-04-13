@@ -19,6 +19,7 @@ import { SelfCheckComponent } from '../self-check/self-check.component';
 import { PairScannerComponent } from '../pair-scanner/pair-scanner.component';
 import { AdaptationsComponent } from '../adaptations/adaptations.component';
 import { MomentumPanelComponent } from '../momentum-panel/momentum-panel.component';
+import { EarlyScannerComponent } from '../early-scanner/early-scanner.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -33,7 +34,7 @@ const STARTING_BALANCE = 3000;
     PairCardComponent, ExpandedPairChartComponent, HealthBarComponent,
     TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
     SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
-    MomentumPanelComponent,
+    MomentumPanelComponent, EarlyScannerComponent,
   ],
   template: `
     <div class="cc-root">
@@ -50,12 +51,21 @@ const STARTING_BALANCE = 3000;
             Grid Trading
             <span class="engine-switch-count">{{ activePairsText() }}</span>
           </button>
+          <button class="engine-switch-btn scanner-tab" [class.active]="activeEngine() === 'scanner'" (click)="activeEngine.set('scanner')">
+            <span class="engine-dot-tab scanner-dot" [class.active]="true"></span>
+            Scanner
+          </button>
         </div>
       }
 
       <!-- MOMENTUM PANEL (shown when selected or no dual mode) -->
       @if (momentumEnabled() && activeEngine() === 'momentum') {
         <app-momentum-panel />
+      }
+
+      <!-- EARLY SCANNER PANEL -->
+      @if (activeEngine() === 'scanner') {
+        <app-early-scanner />
       }
 
       <!-- GRID PANEL -->
@@ -244,6 +254,8 @@ const STARTING_BALANCE = 3000;
       animation: tabpulse 2s ease-in-out infinite;
     }
     .engine-dot-tab.active { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
+    .scanner-tab .engine-dot-tab.active, .scanner-dot.active { background: #38bdf8; box-shadow: 0 0 6px rgba(56,189,248,0.4); }
+    .scanner-tab.active { color: #38bdf8 !important; border-bottom-color: #38bdf8 !important; }
     @keyframes tabpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     .hero-bar {
       display: flex; align-items: center; justify-content: center;
@@ -341,7 +353,7 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   expandedPair = signal<string | null>(null);
   whyOpen = signal(false);
   activeTool = signal<string | null>(null);
-  activeEngine = signal<'momentum' | 'grid'>('momentum');
+  activeEngine = signal<'momentum' | 'grid' | 'scanner'>('momentum');
 
   // Dual engine: momentum rotation
   momentumEnabled = computed(() => {

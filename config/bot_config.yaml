@@ -18,3 +18,9 @@ data:
 momentum_rotation:
   enabled: true
   allocation_usd: 3000
+
+# Early Momentum Scanner (alerts for manual trading)
+early_scanner:
+  enabled: true
+  scan_interval_minutes: 10
+  discord_webhook: "https://discord.com/api/webhooks/1493262458461225051/_sN7ixCsX8xRQl4quKQ4DFrGVsasV4Ehngex6yKfqLsXJOoTxX8SM0jAO9Z4r4uoW_Vz"
