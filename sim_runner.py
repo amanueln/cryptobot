@@ -281,7 +281,10 @@ class SimRunner:
             self.momentum_engine.status = eq_row["status"] or "cash"
 
             # Restore holdings from the snapshot JSON
-            holdings_json = eq_row.get("holdings") or "[]"
+            try:
+                holdings_json = eq_row["holdings"] or "[]"
+            except (IndexError, KeyError):
+                holdings_json = "[]"
             holdings_data = _json.loads(holdings_json)
 
             # Rebuild MomentumHolding objects
