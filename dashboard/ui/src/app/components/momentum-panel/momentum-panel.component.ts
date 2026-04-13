@@ -283,17 +283,28 @@ Chart.register(...registerables);
                     {{ t.side === 'buy' ? 'BUY' : 'SELL' }}
                   </span>
                 </td>
-                <td class="right mono">{{ formatPrice(t.price) }}</td>
+                <td class="right mono">
+                  <span>{{ formatPrice(t.price) }}</span>
+                  @if (t.side === 'sell' && t.entry_price) {
+                    <span class="amount-fee">entry {{ formatPrice(t.entry_price) }}</span>
+                  }
+                </td>
                 <td class="right mono">
                   <span class="amount-main">{{ formatCurrency(t.cost_usd) }}</span>
                   <span class="amount-fee">fee {{ formatCurrency(t.fee) }}</span>
                 </td>
-                <td class="right mono" [style.color]="t.side === 'sell' ? (t.cost_usd > 0 ? '#4ade80' : '#f87171') : '#6b7280'">
-                  {{ t.side === 'sell' ? (t.cost_usd > 0 ? '+' : '') + formatCurrency(t.cost_usd) : '—' }}
+                <td class="right mono" [style.color]="t.side === 'sell' ? ((t.net_pnl ?? 0) >= 0 ? '#4ade80' : '#f87171') : '#6b7280'">
+                  @if (t.side === 'sell' && t.net_pnl != null) {
+                    {{ t.net_pnl >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl) }}
+                  } @else {
+                    —
+                  }
                 </td>
                 <td class="left">
-                  @if (t.side === 'buy') {
+                  @if (t.side === 'buy' && !t.closed) {
                     <span class="status-badge holding">Holding</span>
+                  } @else if (t.side === 'buy' && t.closed) {
+                    <span class="status-badge closed">Closed</span>
                   } @else {
                     <span class="status-badge closed">Closed</span>
                   }

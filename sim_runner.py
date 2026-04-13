@@ -34,6 +34,16 @@ from engine.momentum_scanner import MomentumScanner
 logger = logging.getLogger(__name__)
 
 
+def _fmt_price(price: float) -> str:
+    """Format price smartly: $1,234.56 for large, $0.004180 for sub-penny."""
+    if price >= 1:
+        return f"${price:,.2f}"
+    elif price >= 0.01:
+        return f"${price:.4f}"
+    else:
+        return f"${price:.6f}"
+
+
 # --- Per-pair engine (lightweight, no polling loop) ---
 
 class PairEngine:
@@ -459,13 +469,13 @@ class SimRunner:
                         self.trade_logger.log_momentum_trade(trade)
                         short = trade.pair.replace("-USD", "")
                         if trade.side == "buy":
-                            title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                            title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
                         else:
-                            title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                            title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
                         self.trade_logger.log_momentum_event(
                             f"momentum_{trade.side}", title, trade.reason
                         )
-                        logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+                        logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ {_fmt_price(trade.price)} — {trade.reason}")
                     except Exception as e:
                         logger.error(f"[MOMENTUM] Failed to log trade: {e}")
                 if trades:
@@ -523,10 +533,10 @@ class SimRunner:
                     short = trade.pair.replace("-USD", "")
                     self.trade_logger.log_momentum_event(
                         "momentum_sell",
-                        f"[MOM] Manual sold {short} at ${trade.price:,.2f}",
+                        f"[MOM] Manual sold {short} at {_fmt_price(trade.price)}",
                         trade.reason,
                     )
-                    logger.info("[MOMENTUM] MANUAL SELL %s @ $%.2f", short, trade.price)
+                    logger.info("[MOMENTUM] MANUAL SELL %s @ %s", short, _fmt_price(trade.price))
                     # Snapshot equity immediately so dashboard updates
                     import json as _json
                     eq = self.momentum_engine.get_equity()
@@ -564,11 +574,11 @@ class SimRunner:
             if trade:
                 self.trade_logger.log_momentum_trade(trade)
                 short = trade.pair.replace("-USD", "")
-                title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
                 self.trade_logger.log_momentum_event(
                     f"momentum_{trade.side}", title, trade.reason
                 )
-                logger.info(f"[MOMENTUM] STOP {short} @ ${trade.price:,.2f} — {trade.reason}")
+                logger.info(f"[MOMENTUM] STOP {short} @ {_fmt_price(trade.price)} — {trade.reason}")
 
         # Feed hourly candles for all pairs (rebalance/entry/history)
         for pair in self.momentum_engine.pairs:
@@ -583,13 +593,13 @@ class SimRunner:
                     self.trade_logger.log_momentum_trade(trade)
                     short = trade.pair.replace("-USD", "")
                     if trade.side == "buy":
-                        title = f"[MOM] Bought {short} at ${trade.price:,.2f}"
+                        title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
                     else:
-                        title = f"[MOM] Sold {short} at ${trade.price:,.2f}"
+                        title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
                     self.trade_logger.log_momentum_event(
                         f"momentum_{trade.side}", title, trade.reason
                     )
-                    logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ ${trade.price:,.2f} — {trade.reason}")
+                    logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ {_fmt_price(trade.price)} — {trade.reason}")
 
         # Snapshot momentum equity
         now = datetime.now()

@@ -343,6 +343,9 @@ export interface MomentumTradeData {
   cost_usd: number;
   fee: number;
   reason: string;
+  net_pnl: number | null;
+  entry_price: number | null;
+  closed: boolean;
 }
 
 export interface MomentumEquityData {

@@ -2024,22 +2024,58 @@ def api_momentum_equity():
 
 @app.route("/api/momentum/trades")
 def api_momentum_trades():
-    """Recent momentum rotation trades."""
+    """Recent momentum rotation trades with P&L computed for sells."""
     limit = int(request.args.get("limit", 50))
 
     conn = get_db()
     try:
-        rows = conn.execute(
-            """SELECT timestamp, pair, side, price, amount, cost_usd, fee, reason
-               FROM momentum_trades ORDER BY id DESC LIMIT ?""",
-            (limit,),
+        # Get all trades to compute P&L (need full history for matching)
+        all_rows = conn.execute(
+            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, reason
+               FROM momentum_trades ORDER BY id ASC"""
         ).fetchall()
     except Exception:
         conn.close()
         return jsonify([])
-
     conn.close()
-    return jsonify([dict(row) for row in rows])
+
+    # Match buys to sells for P&L and status
+    # Track open buy cost basis per pair (FIFO)
+    buy_costs: dict[str, list[dict]] = {}  # pair -> [{id, cost_usd, amount}]
+    sold_buy_ids: set[int] = set()  # buy trade IDs that have been closed
+    results = []
+
+    for row in all_rows:
+        r = dict(row)
+        if r["side"] == "buy":
+            buy_costs.setdefault(r["pair"], []).append({
+                "id": r["id"], "cost_usd": r["cost_usd"], "amount": r["amount"],
+            })
+            r["net_pnl"] = None
+            r["entry_price"] = None
+        elif r["side"] == "sell":
+            # Find matching buy(s) for this pair
+            buys = buy_costs.get(r["pair"], [])
+            total_buy_cost = 0.0
+            entry_price = None
+            if buys:
+                # Simple: pop the most recent buy (momentum only holds 1 at a time)
+                matched = buys.pop(0)
+                total_buy_cost = matched["cost_usd"]
+                sold_buy_ids.add(matched["id"])
+                entry_price = total_buy_cost / matched["amount"] if matched["amount"] else None
+            r["net_pnl"] = r["cost_usd"] - total_buy_cost if total_buy_cost else None
+            r["entry_price"] = entry_price
+        results.append(r)
+
+    # Mark buys that have been sold
+    for r in results:
+        if r["side"] == "buy":
+            r["closed"] = r["id"] in sold_buy_ids
+
+    # Return most recent first, limited
+    results.reverse()
+    return jsonify(results[:limit])
 
 
 @app.route("/api/momentum/events")
