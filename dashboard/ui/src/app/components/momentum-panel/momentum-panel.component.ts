@@ -190,12 +190,25 @@ Chart.register(...registerables);
                 <span class="hold-pnl" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
                   {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
                 </span>
-                <button class="manual-sell-btn" (click)="manualSell(h.pair)" title="Sell this position now">Sell</button>
+                <button class="manual-sell-btn"
+                        [class.selling]="sellingPair() === h.pair"
+                        [disabled]="sellingPair() !== null"
+                        (click)="manualSell(h.pair)"
+                        title="Sell this position now">
+                  {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
+                </button>
               </div>
             </div>
           }
         }
       </div>
+
+      <!-- Sell notification banner -->
+      @if (sellNotification()) {
+        <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
+          {{ sellNotification()!.message }}
+        </div>
+      }
 
       <!-- Strategy Logic panel -->
       @if (status()?.warmup_done) {
@@ -527,7 +540,35 @@ Chart.register(...registerables);
       background: rgba(248,113,113,0.1); color: #f87171; font-size: 11px; font-weight: 700;
       cursor: pointer; letter-spacing: 0.05em; transition: all 0.15s;
     }
-    .manual-sell-btn:hover { background: #f87171; color: #0f1117; }
+    .manual-sell-btn:hover:not(:disabled) { background: #f87171; color: #0f1117; }
+    .manual-sell-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .manual-sell-btn.selling {
+      background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fbbf24;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    /* Sell notification banner */
+    .sell-notification {
+      padding: 10px 20px; font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+      animation: slideDown 0.2s ease-out;
+    }
+    .sell-notification.pending {
+      background: rgba(251,191,36,0.1); color: #fbbf24;
+      border-bottom: 1px solid rgba(251,191,36,0.2);
+    }
+    .sell-notification.success {
+      background: rgba(74,222,128,0.1); color: #4ade80;
+      border-bottom: 1px solid rgba(74,222,128,0.2);
+    }
+    .sell-notification.error {
+      background: rgba(248,113,113,0.1); color: #f87171;
+      border-bottom: 1px solid rgba(248,113,113,0.2);
+    }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
     /* Cash state */
     .cash-state {
@@ -625,6 +666,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   equityData = signal<MomentumEquityData[]>([]);
   accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
+  sellingPair = signal<string | null>(null);
+  sellNotification = signal<{ type: string; message: string } | null>(null);
   private progressInterval: any;
   private _pollCountdown = signal(60);
   private _countdownInterval: any;
@@ -910,16 +953,52 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   manualSell(pair: string): void {
     const short = pair.replace('-USD', '');
     if (!confirm(`Sell all ${short} now at market price?`)) return;
+
+    this.sellingPair.set(pair);
+    this.sellNotification.set({ type: 'pending', message: `Selling ${short}... waiting for engine to execute` });
+
     this.api.manualSellMomentum(pair).subscribe({
       next: () => {
-        // Refresh after a brief delay so the engine has time to process the flag
-        setTimeout(() => {
-          this.api.refreshMomentumStatus();
-          this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
-          this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
-        }, 2000);
+        this.sellNotification.set({ type: 'success', message: `${short} sell order sent — engine will execute on next cycle (~60s)` });
+
+        // Poll for the sell to actually complete (holdings disappear)
+        let attempts = 0;
+        const pollSell = () => {
+          attempts++;
+          this.api.fetchMomentumStatus().subscribe({
+            next: (status) => {
+              this.api.momentumStatus.set(status);
+              const stillHeld = status.holdings?.some(h => h.pair === pair);
+              if (!stillHeld) {
+                this.sellingPair.set(null);
+                this.sellNotification.set({ type: 'success', message: `${short} sold successfully` });
+                this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+                this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
+                this.api.fetchMomentumEquity(72).subscribe(eq => {
+                  this.equityData.set(eq);
+                  setTimeout(() => this.buildChart(), 300);
+                });
+                setTimeout(() => this.sellNotification.set(null), 5000);
+              } else if (attempts < 30) {
+                setTimeout(pollSell, 3000);
+              } else {
+                this.sellingPair.set(null);
+                this.sellNotification.set({ type: 'error', message: `${short} sell is taking longer than expected — check back shortly` });
+                setTimeout(() => this.sellNotification.set(null), 8000);
+              }
+            },
+            error: () => {
+              if (attempts < 30) setTimeout(pollSell, 3000);
+            },
+          });
+        };
+        setTimeout(pollSell, 3000);
       },
-      error: (err: unknown) => console.error('Manual sell failed', err),
+      error: () => {
+        this.sellingPair.set(null);
+        this.sellNotification.set({ type: 'error', message: `Failed to send sell order for ${short}` });
+        setTimeout(() => this.sellNotification.set(null), 5000);
+      },
     });
   }
 
