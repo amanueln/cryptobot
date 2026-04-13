@@ -401,6 +401,14 @@ class SimRunner:
                 )
                 if trade:
                     self.momentum_engine._was_cash = not self.momentum_engine.holdings
+                    # Apply cooldown just like an automatic exit
+                    from engine.momentum_engine import EXIT_COOLDOWN
+                    self.momentum_engine._exit_cooldown = EXIT_COOLDOWN
+                    self.momentum_engine._hours_in_position = 0
+                    self.momentum_engine._peak_equity = self.momentum_engine.get_equity()
+                    if not self.momentum_engine.holdings:
+                        self.momentum_engine.status = "cash"
+                        self.momentum_engine.status_detail = "Manual sell — cooldown active"
                     self.trade_logger.log_momentum_trade(trade)
                     short = trade.pair.replace("-USD", "")
                     self.trade_logger.log_momentum_event(
@@ -409,6 +417,16 @@ class SimRunner:
                         trade.reason,
                     )
                     logger.info("[MOMENTUM] MANUAL SELL %s @ $%.2f", short, trade.price)
+                    # Snapshot equity immediately so dashboard updates
+                    import json as _json
+                    eq = self.momentum_engine.get_equity()
+                    self.trade_logger.log_momentum_equity(
+                        datetime.now(), eq,
+                        self.momentum_engine.cash,
+                        self.momentum_engine.get_positions_value(),
+                        self.momentum_engine.status,
+                        _json.dumps(self.momentum_engine.get_holdings_info()),
+                    )
 
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
