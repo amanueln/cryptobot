@@ -132,25 +132,25 @@ Chart.register(...registerables);
         </div>
         <div class="accel-cards">
           @for (s of topAccelScores(); track s.pair) {
-            <div class="accel-card" [class.qualifying-card]="s.accel > 0.07">
+            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20">
               <div class="ac-top">
                 <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
-                <span class="ac-badge" [class.qual]="s.accel > 0.07" [class.below]="s.accel <= 0.07">
-                  {{ s.accel > 0.07 ? 'READY' : 'BELOW 7%' }}
+                <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
+                  {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
                 </span>
                 <span class="ac-price">{{ formatPrice(s.price) }}</span>
               </div>
               <div class="ac-desc">
-                {{ s.accel > 0.07
+                {{ s.accel > 0.20
                   ? 'Uptrend accelerating — qualifies for entry.'
-                  : 'Momentum building but below the 7% re-entry threshold.' }}
+                  : 'Momentum building but below the 20% re-entry threshold.' }}
               </div>
               <div class="ac-bar-track">
-                <div class="ac-bar-fill" [class.qualifying]="s.accel > 0.07"
+                <div class="ac-bar-fill" [class.qualifying]="s.accel > 0.20"
                      [style.width.%]="accelBarWidth(s.accel)"></div>
               </div>
               <div class="ac-stats">
-                <span class="ac-accel" [class.pos]="s.accel > 0.07">+{{ (s.accel * 100).toFixed(1) }}%</span>
+                <span class="ac-accel" [class.pos]="s.accel > 0.20">+{{ (s.accel * 100).toFixed(1) }}%</span>
                 <span class="ac-stat-label">acceleration</span>
               </div>
             </div>
@@ -195,6 +195,41 @@ Chart.register(...registerables);
           }
         }
       </div>
+
+      <!-- Strategy Logic panel -->
+      @if (status()?.warmup_done) {
+        <div class="strategy-panel">
+          <div class="section-header">Strategy Logic</div>
+          <div class="strategy-grid">
+            <div class="strat-item">
+              <span class="strat-label">BTC Regime</span>
+              <span class="strat-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
+                {{ status()?.regime_bullish ? 'Bullish' : 'Bearish' }}
+                — BTC {{ btcVsSma() }}
+              </span>
+              <span class="strat-explain">{{ regimeExplain() }}</span>
+            </div>
+            <div class="strat-item">
+              <span class="strat-label">Next Rebalance</span>
+              <span class="strat-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
+              <span class="strat-explain">Weekly rotation — engine compares your holding to top acceleration coin</span>
+            </div>
+            <div class="strat-item">
+              <span class="strat-label">Position</span>
+              <span class="strat-value">{{ positionExplain() }}</span>
+              <span class="strat-explain">{{ positionDetail() }}</span>
+            </div>
+            <div class="strat-item">
+              <span class="strat-label">Would Sell If</span>
+              <span class="strat-value sell-conditions">{{ sellConditions() }}</span>
+            </div>
+            <div class="strat-item">
+              <span class="strat-label">Would Buy If</span>
+              <span class="strat-value buy-conditions">{{ buyConditions() }}</span>
+            </div>
+          </div>
+        </div>
+      }
 
       <!-- Recent trades table -->
       <div class="trades-section">
@@ -546,6 +581,38 @@ Chart.register(...registerables);
     @media (max-width: 768px) { .hide-sm { display: none; } }
     .side-badge.buy { background: rgba(74,222,128,0.12); color: #4ade80; }
     .side-badge.sell { background: rgba(248,113,113,0.12); color: #f87171; }
+
+    /* Strategy Logic panel */
+    .strategy-panel {
+      padding: 14px 20px; border-bottom: 1px solid #2d3148;
+      background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
+    }
+    .strategy-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    @media (max-width: 768px) {
+      .strategy-grid { grid-template-columns: 1fr; }
+    }
+    .strat-item {
+      background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
+      padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .strat-label {
+      font-size: 9px; font-weight: 700; color: #6b7280;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .strat-value {
+      font-size: 12px; font-weight: 600; color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .strat-explain {
+      font-size: 10px; color: #6b7280; line-height: 1.4;
+    }
+    .sell-conditions, .buy-conditions {
+      font-size: 11px; line-height: 1.6; white-space: pre-line;
+    }
+    .sell-conditions { color: #f87171; }
+    .buy-conditions { color: #4ade80; }
   `],
 })
 export class MomentumPanelComponent implements OnInit, AfterViewInit {
@@ -599,11 +666,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   }
 
   hasQualifyingAccel(): boolean {
-    return this.accelScores().some(s => s.accel > 0.07);
+    return this.accelScores().some(s => s.accel > 0.20);
   }
 
   qualifyingCount(): number {
-    return this.accelScores().filter(s => s.accel > 0.07).length;
+    return this.accelScores().filter(s => s.accel > 0.20).length;
   }
 
   formatEta(seconds: number): string {
@@ -623,7 +690,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (!s || !s.enabled) return 'Momentum engine not active';
     if (s.status === 'warming_up') return 'Warming up — building price history...';
     if (s.status === 'scanning') return `Scanner ready — ${s.scanner?.pairs_count ?? 0} coins found. Bot will trade automatically when started.`;
-    if (s.status === 'cash') return `In cash — watching for >7% acceleration signals (${s.trade_count} trades total)`;
+    if (s.status === 'cash') return `In cash — watching for >20% acceleration signals (${s.trade_count} trades total)`;
     if (s.holdings?.length) {
       const held = s.holdings.map(h => h.pair.replace('-USD', '')).join(', ');
       return `Holding ${held} — ${s.trade_count} trades total`;
@@ -853,5 +920,93 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       },
       error: (err: unknown) => console.error('Manual sell failed', err),
     });
+  }
+
+  // --- Strategy Logic computed methods ---
+
+  btcVsSma(): string {
+    const s = this.status();
+    if (!s?.btc_price || !s?.btc_ma) return 'loading...';
+    const diff = ((s.btc_price - s.btc_ma) / s.btc_ma) * 100;
+    const dir = diff >= 0 ? 'above' : 'below';
+    return `${this.formatCurrency(s.btc_price)} (${diff >= 0 ? '+' : ''}${diff.toFixed(1)}% ${dir} SMA)`;
+  }
+
+  regimeExplain(): string {
+    const s = this.status();
+    if (!s) return '';
+    const hyst = ((s.regime_hysteresis ?? 0.05) * 100).toFixed(0);
+    if (s.regime_bullish) {
+      return `BTC is above its 500h moving average. Will flip bearish if BTC drops ${hyst}% below SMA.`;
+    }
+    return `BTC is below its 500h moving average. Will flip bullish once BTC rises ${hyst}% above SMA.`;
+  }
+
+  formatHours(hours: number): string {
+    if (hours <= 0) return 'now';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours < 24) return `${Math.round(hours)}h`;
+    const days = Math.floor(hours / 24);
+    const rem = Math.round(hours % 24);
+    return rem > 0 ? `${days}d ${rem}h` : `${days}d`;
+  }
+
+  positionExplain(): string {
+    const s = this.status();
+    if (!s) return '';
+    if (s.holdings?.length) {
+      const h = s.holdings[0];
+      const short = h.pair.replace('-USD', '');
+      return `Holding ${short} for ${this.formatHours(s.hours_in_position ?? 0)}`;
+    }
+    if ((s.exit_cooldown_remaining ?? 0) > 0) {
+      return `In cash — cooldown ${s.exit_cooldown_remaining}h remaining`;
+    }
+    return 'In cash — scanning for entry';
+  }
+
+  positionDetail(): string {
+    const s = this.status();
+    if (!s) return '';
+    if (s.holdings?.length) {
+      const h = s.holdings[0];
+      const pnlStr = h.pnl >= 0 ? `+${h.pnl_pct.toFixed(1)}%` : `${h.pnl_pct.toFixed(1)}%`;
+      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). Stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away).`;
+    }
+    if (s.was_cash) {
+      return 'Waiting for a coin with >20% acceleration in a bullish regime.';
+    }
+    return 'Engine just started — building acceleration data.';
+  }
+
+  sellConditions(): string {
+    const s = this.status();
+    if (!s?.holdings?.length) return 'N/A — not holding';
+    const h = s.holdings[0];
+    const lines: string[] = [];
+    lines.push(`• Equity drops 15% from peak → stop-loss (stop at ${this.formatPrice(h.stop_price)})`);
+    lines.push('• BTC regime flips bearish → regime exit');
+    lines.push('• Weekly rebalance finds a stronger coin → rotate');
+    lines.push('• You click Sell → manual exit');
+    return lines.join('\n');
+  }
+
+  buyConditions(): string {
+    const s = this.status();
+    if (s?.holdings?.length) return 'Already holding — no new entries until current position exits';
+    const lines: string[] = [];
+    if (!s?.regime_bullish) {
+      lines.push('✗ BTC regime must be bullish (currently bearish)');
+    } else {
+      lines.push('✓ BTC regime is bullish');
+    }
+    if ((s?.exit_cooldown_remaining ?? 0) > 0) {
+      lines.push(`✗ Cooldown must expire (${s!.exit_cooldown_remaining}h left)`);
+    } else {
+      lines.push('✓ No cooldown active');
+    }
+    lines.push('• Need a coin with >20% momentum acceleration');
+    lines.push('• Engine checks every hour, buys immediately when conditions met');
+    return lines.join('\n');
   }
 }

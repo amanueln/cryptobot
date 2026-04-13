@@ -309,6 +309,12 @@ export interface MomentumStatusData {
   regime_state?: string;
   exit_cooldown_remaining?: number;
   hours_in_position?: number;
+  warmup_done?: boolean;
+  was_cash?: boolean;
+  next_rebal_hours?: number;
+  btc_price?: number;
+  btc_ma?: number;
+  regime_hysteresis?: number;
   error?: string;
 }
 
