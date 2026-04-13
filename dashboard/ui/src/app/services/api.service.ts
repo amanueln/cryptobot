@@ -331,6 +331,7 @@ export interface MomentumHoldingData {
   peak_price: number;
   stop_price: number;
   stop_distance_pct: number;
+  max_hold_remaining_hours: number;
 }
 
 export interface MomentumTradeData {

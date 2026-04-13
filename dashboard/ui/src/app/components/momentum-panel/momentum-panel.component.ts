@@ -188,9 +188,12 @@ Chart.register(...registerables);
                 <span class="hold-accel">Accel: {{ (h.accel * 100).toFixed(1) }}%</span>
               </div>
               <div class="hold-mid">
-                <span class="hold-stop-label">Equity Stop</span>
-                <span class="hold-stop-price">{{ h.stop_price > 0 ? formatCurrency(h.stop_price) : '—' }}</span>
-                <span class="hold-stop-dist">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '% cushion' : '15% from peak' }}</span>
+                <span class="hold-stop-label">ATR Stop</span>
+                <span class="hold-stop-price">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
+                <span class="hold-stop-dist">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '% away' : 'no stop set' }}</span>
+                @if (h.max_hold_remaining_hours !== undefined) {
+                  <span class="hold-maxhold">Max hold: {{ h.max_hold_remaining_hours }}h left</span>
+                }
               </div>
               <div class="hold-right">
                 <span class="hold-value">{{ formatCurrency(h.value) }}</span>
@@ -553,7 +556,8 @@ Chart.register(...registerables);
     .hold-mid { text-align: center; }
     .hold-stop-label { font-size: 9px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
     .hold-stop-price { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #f87171; display: block; }
-    .hold-stop-dist { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b7280; }
+    .hold-stop-dist { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b7280; display: block; }
+    .hold-maxhold { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #f59e0b; display: block; }
     .hold-right { text-align: right; }
     .hold-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; display: block; }
     .hold-pnl { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; }
@@ -1110,9 +1114,10 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       const h = s.holdings[0];
       const pnlStr = h.pnl >= 0 ? `+${h.pnl_pct.toFixed(1)}%` : `${h.pnl_pct.toFixed(1)}%`;
       const stopStr = h.stop_price > 0
-        ? `Equity stop at ${this.formatCurrency(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% cushion).`
-        : 'Equity stop: 15% drawdown from peak.';
-      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}`;
+        ? `ATR stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away).`
+        : 'No stop set yet.';
+      const holdStr = h.max_hold_remaining_hours > 0 ? ` Max hold: ${h.max_hold_remaining_hours}h left.` : ' Max hold expired.';
+      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}${holdStr}`;
     }
     if (s.was_cash) {
       return 'Waiting for a coin with >20% acceleration in a bullish regime.';
@@ -1125,9 +1130,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (!s?.holdings?.length) return 'N/A — not holding';
     const h = s.holdings[0];
     const lines: string[] = [];
-    lines.push(`• Equity drops 15% from peak → stop-loss (stop at ${this.formatPrice(h.stop_price)})`);
+    lines.push(`• ATR stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away) — per-coin volatility stop`);
+    lines.push(`• Accel fades below 5% → momentum exit (take profit)`);
+    lines.push(`• Max hold 72h reached (${h.max_hold_remaining_hours}h left) → stale position exit`);
     lines.push('• BTC regime flips bearish → regime exit');
-    lines.push('• Weekly rebalance finds a stronger coin → rotate');
+    lines.push('• 15% equity drawdown from peak → emergency backstop');
     lines.push('• You click Sell → manual exit');
     return lines.join('\n');
   }

@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
-data/candles.db
 .venv/
 *.egg-info/
 /dist/
@@ -10,7 +9,32 @@ data/candles.db
 build/
 .env
 docker-compose.local.yml
-docs/
 .superpowers/
 models/
 config/active_pairs.yaml
+
+# Runtime data
+data/candles.db
+data/candles_zima.db
+data/cryptobot.db
+data/*.json
+
+# Logs
+logs/
+
+# IDE / tools
+.claude/
+.playwright-mcp/
+dashboard/ui/.vscode/
+
+# Throwaway research & simulation scripts
+tests/research_*.py
+tests/sim_*.py
+tests/backfill_candles.py
+tests/replay_zima.py
+
+# Old files
+archive/
+dashboard/mockup-dual.html
+dashboard/ui/README.md
+docs/

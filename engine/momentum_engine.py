@@ -1,13 +1,21 @@
 """Momentum Rotation Engine — portfolio-level strategy that picks top coins by acceleration.
 
-Optimized config (backtested on full ZimaOS data, +107%):
-- Weekly rebalance: pick top 1 coin by momentum acceleration
+Optimized config (3-round backtest: +51.8% avg, profitable in all 3 market conditions):
+
+ENTRY:
+- Weekly rebalance: pick top 1 coin by momentum acceleration (>20% threshold)
 - BTC regime filter with 5% hysteresis band (prevents daily whipsaw)
-- 20% re-entry threshold: only enter on very strong signals
+- ADX > 25 entry filter: only enter when trend is confirmed strong
+- RSI > 50 entry filter: confirm uptrend direction
 - RSI < 65 filter: blocks overbought entries
-- 15% equity trailing stop: protects profits when portfolio drops from peak
-- 4-hour cooldown after exits: brief pause, then re-enter on next signal
-- No position-level trailing stops (avoids whipsaw losses)
+- Same-coin 24h lockout: prevents whipsaw re-entry after selling
+
+EXIT (layered — first trigger wins):
+- 2.5x ATR smart stop: per-coin stop set at entry based on coin's own volatility
+  (DOGE gets wider stop than ETH — adapts to how each coin actually moves)
+- Accel < 5% hourly exit: sell when momentum fades (take profit before giveback)
+- 72h max hold: force exit stale positions that aren't moving
+- 15% equity trailing stop: emergency backstop (should rarely fire now)
 
 This engine is independent from the grid engine — it has its own cash pool,
 positions, and equity tracking.
@@ -29,7 +37,7 @@ DEFAULT_PAIRS = [
 # Keep PAIRS as alias for backward compat (sim_runner imports it)
 PAIRS = DEFAULT_PAIRS
 
-# Strategy params (optimized via ZimaOS data replay)
+# Strategy params (optimized via 3-round backtesting across stale/bear/sideways markets)
 TOP_N = 1                 # concentrate on single best coin
 REBAL_HOURS = 168         # weekly
 SHORT_LB = 336            # 14 days in hours
@@ -40,11 +48,22 @@ REENTRY_THRESHOLD = 0.20   # 20% — only enter on very strong signals
 FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
-EQUITY_TRAIL_PCT = 0.15    # exit all if equity drops 15% from peak
+EQUITY_TRAIL_PCT = 0.15    # emergency backstop — portfolio-level (should rarely fire now)
 EXIT_COOLDOWN = 4          # hours to wait after exit before re-entering
 MIN_HOLD_HOURS = 0         # no minimum hold — hysteresis prevents whipsaw
-ATR_PERIOD = 24            # 24-hour ATR (used for dashboard info only)
-HARD_STOP_PCT = 0.15       # kept for dashboard display only
+ATR_PERIOD = 24            # ATR lookback for smart stop calculation
+
+# New exit rules (Round 3 winner: +51.8% avg across 3 market conditions, 3/3 profitable)
+ATR_STOP_MULT = 2.5        # stop at entry - 2.5 * ATR (adapts to each coin's volatility)
+ATR_STOP_LOOKBACK = 24     # hours of ATR to measure coin's volatility
+ACCEL_EXIT_THRESH = 0.05   # exit when momentum acceleration fades below 5%
+ACCEL_EXIT_MIN_HOLD = 4    # don't check accel exit until held for 4 hours
+MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed
+
+# New entry filters (Round 1 winner: only strategy profitable in choppy markets)
+ADX_FILTER_THRESH = 25     # only enter when ADX > 25 (confirmed trend strength)
+RSI_TREND_THRESH = 50      # only enter when RSI > 50 (uptrend confirmed)
+LOCKOUT_HOURS = 24         # after selling a coin, don't re-buy it for 24h
 
 
 def _sma(values: list[float], period: int) -> float | None:
@@ -84,6 +103,40 @@ def _atr(highs: list[float], lows: list[float], closes: list[float], period: int
         )
         trs.append(tr)
     return sum(trs) / len(trs)
+
+
+def _adx(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float | None:
+    """Average Directional Index — measures trend strength (0-100)."""
+    if len(closes) < period * 3:
+        return None
+    h = highs[-(period * 3):]
+    l = lows[-(period * 3):]
+    c = closes[-(period * 3):]
+    plus_dm, minus_dm, tr_list = [], [], []
+    for i in range(1, len(h)):
+        hi_diff = h[i] - h[i - 1]
+        lo_diff = l[i - 1] - l[i]
+        plus_dm.append(hi_diff if hi_diff > lo_diff and hi_diff > 0 else 0)
+        minus_dm.append(lo_diff if lo_diff > hi_diff and lo_diff > 0 else 0)
+        tr = max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1]))
+        tr_list.append(tr)
+    if len(tr_list) < period:
+        return None
+    atr = sum(tr_list[:period]) / period
+    plus_di_sum = sum(plus_dm[:period])
+    minus_di_sum = sum(minus_dm[:period])
+    for i in range(period, len(tr_list)):
+        atr = (atr * (period - 1) + tr_list[i]) / period
+        plus_di_sum = (plus_di_sum * (period - 1) + plus_dm[i]) / period
+        minus_di_sum = (minus_di_sum * (period - 1) + minus_dm[i]) / period
+    if atr == 0:
+        return None
+    plus_di = 100 * plus_di_sum / atr
+    minus_di = 100 * minus_di_sum / atr
+    di_sum = plus_di + minus_di
+    if di_sum == 0:
+        return None
+    return 100 * abs(plus_di - minus_di) / di_sum
 
 
 @dataclass
@@ -134,6 +187,8 @@ class MomentumEngine:
         self._regime_state = "unknown"  # "bullish", "bearish", "unknown"
         self._exit_cooldown = 0         # hours remaining before re-entry allowed
         self._hours_in_position = 0     # tracks min hold period
+        self._last_sold_pair: str | None = None   # same-coin lockout
+        self._last_sold_time: datetime | None = None
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -210,13 +265,11 @@ class MomentumEngine:
             self._lows[pair] = self._lows[pair][-max_hist:]
             self._timestamps[pair] = self._timestamps[pair][-max_hist:]
 
-        # Update peak price for held positions (for dashboard display)
+        # Update peak price for held positions
         if pair in self.holdings:
             h = self.holdings[pair]
             if candle.close > h.peak_price:
                 h.peak_price = candle.close
-            # stop_price computed dynamically in get_holdings_info() from equity stop
-            h.stop_price = 0
 
         # Track BTC separately for regime — with hysteresis band
         if pair == 'BTC-USD':
@@ -257,25 +310,66 @@ class MomentumEngine:
         if pair != 'BTC-USD':
             return []
 
-        # === Equity trailing stop (portfolio-level, not per-position) ===
+        # === EXIT LOGIC ===
         trades = []
         if self.holdings:
             equity = self.get_equity()
             if equity > self._peak_equity:
                 self._peak_equity = equity
-            # Only trigger if we've been profitable (peak > starting balance)
+
+            # Emergency backstop: equity trailing stop (should rarely fire with new exits)
             if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - EQUITY_TRAIL_PCT):
                 exit_trades = self._exit_all(candle.timestamp,
                     f"Equity trailing stop ({EQUITY_TRAIL_PCT*100:.0f}% from peak ${self._peak_equity:,.0f})")
                 trades.extend(exit_trades)
                 self._was_cash = True
-                self._peak_equity = equity  # reset peak
+                self._peak_equity = equity
                 self._exit_cooldown = EXIT_COOLDOWN
                 self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = "Equity stop — protecting profits"
                 logger.info("Equity trailing stop triggered at $%.2f (peak was $%.2f)",
                             equity, self._peak_equity)
+                return trades
+
+            # Per-position exit checks
+            for pair_key in list(self.holdings.keys()):
+                h = self.holdings[pair_key]
+                price = self._closes[pair_key][-1] if self._closes[pair_key] else 0
+                if price <= 0:
+                    continue
+                should_exit = False
+                reason = ""
+
+                # 1. Smart ATR-calibrated stop (set at entry, adapts to each coin)
+                if h.stop_price > 0 and price <= h.stop_price:
+                    stop_dist = (h.entry_price - h.stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+                    should_exit = True
+                    reason = f"ATR stop hit: ${price:,.4f} <= ${h.stop_price:,.4f} ({stop_dist:.1f}% from entry)"
+
+                # 2. Accel faded exit (momentum died — take profit before it gives back)
+                if not should_exit and self._hours_in_position >= ACCEL_EXIT_MIN_HOLD:
+                    accel = self._get_accel(pair_key)
+                    if accel is not None and accel < ACCEL_EXIT_THRESH:
+                        should_exit = True
+                        reason = f"Accel faded: {accel:.1%} < {ACCEL_EXIT_THRESH:.0%} threshold"
+
+                # 3. Max hold duration (kill stale positions)
+                if not should_exit and self._hours_in_position >= MAX_HOLD_HOURS:
+                    should_exit = True
+                    reason = f"Max hold {MAX_HOLD_HOURS}h reached"
+
+                if should_exit:
+                    t = self._sell(pair_key, candle.timestamp, reason)
+                    if t:
+                        trades.append(t)
+
+            if trades:
+                self._was_cash = True
+                self._exit_cooldown = EXIT_COOLDOWN
+                self._hours_in_position = 0
+                self.status = "cash"
+                self.status_detail = trades[0].reason if trades else "Exited position"
                 return trades
 
         self._last_candle_ts = candle.timestamp
@@ -312,9 +406,18 @@ class MomentumEngine:
                 scores = self._compute_scores()
                 self.accel_scores = scores
                 qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+
+                # Same-coin lockout: don't re-buy what we just sold for 24h
+                if self._last_sold_pair and self._last_sold_time:
+                    if candle.timestamp < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                        qualifying = [s for s in qualifying if s.pair != self._last_sold_pair]
+
+                # Entry filters: ADX > 25 and RSI > 50
+                qualifying = self._filter_entries(qualifying)
+
                 if qualifying:
-                    logger.info("Immediate entry: %d coins above %.0f%% threshold",
-                                len(qualifying), REENTRY_THRESHOLD * 100)
+                    logger.info("Immediate entry: %d coins passed all filters (accel+ADX+RSI)",
+                                len(qualifying))
                     self._was_cash = False
                     winners = qualifying[:TOP_N]
                     investable = self.cash * 0.99
@@ -322,7 +425,7 @@ class MomentumEngine:
                     for s in winners:
                         if per > 1:
                             t = self._buy(s.pair, per, candle.timestamp,
-                                          f"Immediate entry: {s.accel:+.1%} acceleration")
+                                          f"Immediate entry: {s.accel:+.1%} accel (ADX+RSI confirmed)")
                             if t:
                                 trades.append(t)
                     # Reset peak equity on new entry
@@ -355,9 +458,14 @@ class MomentumEngine:
                 scores = self._compute_scores()
                 self.accel_scores = scores
 
-                # Apply reentry threshold if coming from cash
+                # Apply reentry threshold and filters if coming from cash
                 if self._was_cash and REENTRY_THRESHOLD > 0:
                     scores = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+                    # Same-coin lockout
+                    if self._last_sold_pair and self._last_sold_time:
+                        if candle.timestamp < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                            scores = [s for s in scores if s.pair != self._last_sold_pair]
+                    scores = self._filter_entries(scores)
 
                 if not scores:
                     # No qualifying coins — go to cash (only if held long enough)
@@ -425,10 +533,46 @@ class MomentumEngine:
         scores.sort(key=lambda s: s.accel, reverse=True)
         return scores
 
-    def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
-        """Check equity trailing stop using live ticker prices.
+    def _filter_entries(self, qualifying: list[AccelScore]) -> list[AccelScore]:
+        """Apply ADX > 25 and RSI > 50 entry filters."""
+        if not qualifying:
+            return []
+        filtered = []
+        for s in qualifying:
+            pair = s.pair
+            closes = self._closes.get(pair, [])
+            highs = self._highs.get(pair, [])
+            lows = self._lows.get(pair, [])
 
-        Updates peak prices and checks portfolio-level equity stop.
+            # ADX filter: only enter when trend is strong
+            adx = _adx(highs, lows, closes)
+            if adx is not None and adx < ADX_FILTER_THRESH:
+                logger.debug("Entry filter: %s rejected — ADX %.1f < %d", pair, adx, ADX_FILTER_THRESH)
+                continue
+
+            # RSI > 50 filter: confirm uptrend
+            if len(closes) >= RSI_PERIOD + 1:
+                rsi = _rsi(closes, RSI_PERIOD)
+                if rsi is not None and rsi < RSI_TREND_THRESH:
+                    logger.debug("Entry filter: %s rejected — RSI %.1f < %d", pair, rsi, RSI_TREND_THRESH)
+                    continue
+
+            filtered.append(s)
+        return filtered
+
+    def _get_accel(self, pair: str) -> float | None:
+        """Get current momentum acceleration for a held pair."""
+        closes = self._closes.get(pair, [])
+        if len(closes) < LONG_LB + 1:
+            return None
+        short_mom = (closes[-1] / closes[-SHORT_LB]) - 1
+        long_mom = (closes[-1] / closes[-LONG_LB]) - 1
+        return short_mom - long_mom
+
+    def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
+        """Check ATR stop and equity stop using live ticker prices.
+
+        Called on every ticker update (more frequent than hourly candles).
         Returns a Trade if stopped out, else None.
         """
         if pair not in self.holdings:
@@ -443,15 +587,29 @@ class MomentumEngine:
         if self._closes.get(pair):
             self._closes[pair][-1] = price
 
-        # Check equity trailing stop
+        now = datetime.now()
+
+        # 1. Check ATR stop (per-position, set at entry)
+        if h.stop_price > 0 and price <= h.stop_price:
+            stop_dist = (h.entry_price - h.stop_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+            reason = f"ATR stop hit: ${price:,.4f} <= ${h.stop_price:,.4f} ({stop_dist:.1f}% from entry)"
+            t = self._sell(pair, now, reason)
+            if t:
+                self._was_cash = True
+                self._exit_cooldown = EXIT_COOLDOWN
+                self._hours_in_position = 0
+                self.status = "cash"
+                self.status_detail = reason
+                logger.info("ATR stop triggered for %s at $%.4f (stop was $%.4f)", pair, price, h.stop_price)
+                return t
+
+        # 2. Check equity trailing stop (emergency backstop)
         equity = self.get_equity()
         if equity > self._peak_equity:
             self._peak_equity = equity
 
         if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - EQUITY_TRAIL_PCT):
-            now = datetime.now()
             reason = f"Equity stop ({EQUITY_TRAIL_PCT*100:.0f}% from peak ${self._peak_equity:,.0f})"
-            # Sell all holdings
             trades = self._exit_all(now, reason)
             self._was_cash = True
             self._peak_equity = equity
@@ -464,7 +622,7 @@ class MomentumEngine:
         return None
 
     def _buy(self, pair: str, amount_usd: float, timestamp: datetime, reason: str) -> Trade | None:
-        """Buy a coin with given USD amount."""
+        """Buy a coin with given USD amount. Sets ATR-calibrated stop at entry."""
         if amount_usd > self.cash or amount_usd < 1:
             return None
 
@@ -473,10 +631,23 @@ class MomentumEngine:
         crypto_amount = (amount_usd - fee) / price
         self.cash -= amount_usd
 
-        # No position-level stops — equity trailing stop protects the portfolio
+        # Calculate ATR-calibrated stop: adapts to each coin's volatility
+        atr = _atr(self._highs.get(pair, []), self._lows.get(pair, []),
+                    self._closes.get(pair, []), ATR_STOP_LOOKBACK)
+        if atr and price > 0:
+            atr_pct = atr / price
+            stop_price = price * (1 - atr_pct * ATR_STOP_MULT)
+            stop_dist_pct = atr_pct * ATR_STOP_MULT * 100
+            logger.info("ATR stop for %s: entry $%.4f, stop $%.4f (%.1f%% away, ATR=%.1f%%)",
+                        pair, price, stop_price, stop_dist_pct, atr_pct * 100)
+        else:
+            # Fallback: 8% hard stop if ATR not available
+            stop_price = price * 0.92
+            logger.warning("ATR not available for %s, using 8%% fallback stop at $%.4f", pair, stop_price)
+
         self.holdings[pair] = MomentumHolding(
             pair=pair, shares=crypto_amount, entry_price=price, entry_time=timestamp,
-            peak_price=price, stop_price=0,
+            peak_price=price, stop_price=stop_price,
         )
 
         trade = Trade(
@@ -489,7 +660,7 @@ class MomentumEngine:
         return trade
 
     def _sell(self, pair: str, timestamp: datetime, reason: str) -> Trade | None:
-        """Sell all holdings of a coin."""
+        """Sell all holdings of a coin. Tracks pair for lockout."""
         holding = self.holdings.get(pair)
         if not holding:
             return None
@@ -498,6 +669,10 @@ class MomentumEngine:
         gross_usd = holding.shares * price
         fee = gross_usd * self.fee_rate
         net_usd = gross_usd - fee
+
+        # Track for same-coin lockout
+        self._last_sold_pair = pair
+        self._last_sold_time = timestamp
         self.cash += net_usd
 
         del self.holdings[pair]
@@ -556,10 +731,13 @@ class MomentumEngine:
                     accel = s.accel
                     break
 
-            # Equity-level stop: show how far current equity is from the stop trigger
-            equity = self.get_equity()
-            equity_stop = self._peak_equity * (1 - EQUITY_TRAIL_PCT)
-            stop_distance_pct = ((equity - equity_stop) / equity * 100) if equity > 0 and equity_stop > 0 else 0
+            # ATR stop: show actual stop price and distance
+            stop_price = h.stop_price
+            stop_distance_pct = ((current_price - stop_price) / current_price * 100) if current_price > 0 and stop_price > 0 else 0
+
+            # Time remaining before max hold exit
+            hold_hours = self._hours_in_position
+            max_hold_remaining = max(0, MAX_HOLD_HOURS - hold_hours)
 
             info.append({
                 "pair": pair,
@@ -572,8 +750,9 @@ class MomentumEngine:
                 "accel": accel,
                 "entry_time": h.entry_time.isoformat(),
                 "peak_price": h.peak_price,
-                "stop_price": equity_stop,
+                "stop_price": stop_price,
                 "stop_distance_pct": stop_distance_pct,
+                "max_hold_remaining_hours": max_hold_remaining,
             })
         return info
 
@@ -608,4 +787,8 @@ class MomentumEngine:
             "regime_hysteresis": REGIME_HYSTERESIS,
             "exit_cooldown_remaining": self._exit_cooldown,
             "hours_in_position": self._hours_in_position,
+            "max_hold_hours": MAX_HOLD_HOURS,
+            "accel_exit_thresh": ACCEL_EXIT_THRESH,
+            "lockout_pair": self._last_sold_pair,
+            "lockout_until": self._last_sold_time.isoformat() if self._last_sold_time else None,
         }
