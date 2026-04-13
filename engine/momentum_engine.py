@@ -409,6 +409,8 @@ class MomentumEngine:
         # === Immediate entry from cash (if cooldown expired and no positions) ===
         self._entry_rejections = []  # track why coins are rejected
         if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash > self.starting_balance * 0.5:
+            if not self.regime_bullish:
+                self._entry_rejections.append("BTC regime is bearish — no entries allowed")
             if self.regime_bullish:
                 scores = self._compute_scores()
                 self.accel_scores = scores

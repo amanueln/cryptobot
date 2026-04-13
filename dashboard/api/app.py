@@ -1984,7 +1984,7 @@ def api_momentum_status():
     for key in ("regime_bullish", "regime_state", "regime_hysteresis",
                 "exit_cooldown_remaining", "hours_in_position",
                 "warmup_done", "was_cash", "next_rebal_hours",
-                "btc_price", "btc_ma"):
+                "btc_price", "btc_ma", "entry_rejections"):
         if key in engine_state:
             result[key] = engine_state[key]
 
