@@ -758,6 +758,14 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   }
 
   ngOnInit() {
+    // Restore pending sell state from sessionStorage (survives page refresh)
+    const pendingSell = sessionStorage.getItem('momentum_selling_pair');
+    if (pendingSell) {
+      this.sellingPair.set(pendingSell);
+      this.sellNotification.set({ type: 'pending', message: `Selling ${pendingSell.replace('-USD', '')}... waiting for engine to execute` });
+      this._resumeSellPoll(pendingSell);
+    }
+
     forkJoin({
       trades: this.api.fetchMomentumTrades(20),
       events: this.api.fetchMomentumEvents(20),
@@ -970,51 +978,58 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (!confirm(`Sell all ${short} now at market price?`)) return;
 
     this.sellingPair.set(pair);
+    sessionStorage.setItem('momentum_selling_pair', pair);
     this.sellNotification.set({ type: 'pending', message: `Selling ${short}... waiting for engine to execute` });
 
     this.api.manualSellMomentum(pair).subscribe({
       next: () => {
         this.sellNotification.set({ type: 'success', message: `${short} sell order sent — engine will execute on next cycle (~60s)` });
-
-        // Poll for the sell to actually complete (holdings disappear)
-        let attempts = 0;
-        const pollSell = () => {
-          attempts++;
-          this.api.fetchMomentumStatus().subscribe({
-            next: (status) => {
-              this.api.momentumStatus.set(status);
-              const stillHeld = status.holdings?.some(h => h.pair === pair);
-              if (!stillHeld) {
-                this.sellingPair.set(null);
-                this.sellNotification.set({ type: 'success', message: `${short} sold successfully` });
-                this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
-                this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
-                this.api.fetchMomentumEquity(72).subscribe(eq => {
-                  this.equityData.set(eq);
-                  setTimeout(() => this.buildChart(), 300);
-                });
-                setTimeout(() => this.sellNotification.set(null), 5000);
-              } else if (attempts < 30) {
-                setTimeout(pollSell, 3000);
-              } else {
-                this.sellingPair.set(null);
-                this.sellNotification.set({ type: 'error', message: `${short} sell is taking longer than expected — check back shortly` });
-                setTimeout(() => this.sellNotification.set(null), 8000);
-              }
-            },
-            error: () => {
-              if (attempts < 30) setTimeout(pollSell, 3000);
-            },
-          });
-        };
-        setTimeout(pollSell, 3000);
+        this._resumeSellPoll(pair);
       },
       error: () => {
         this.sellingPair.set(null);
+        sessionStorage.removeItem('momentum_selling_pair');
         this.sellNotification.set({ type: 'error', message: `Failed to send sell order for ${short}` });
         setTimeout(() => this.sellNotification.set(null), 5000);
       },
     });
+  }
+
+  private _resumeSellPoll(pair: string): void {
+    const short = pair.replace('-USD', '');
+    let attempts = 0;
+    const pollSell = () => {
+      attempts++;
+      this.api.fetchMomentumStatus().subscribe({
+        next: (status) => {
+          this.api.momentumStatus.set(status);
+          const stillHeld = status.holdings?.some(h => h.pair === pair);
+          if (!stillHeld) {
+            this.sellingPair.set(null);
+            sessionStorage.removeItem('momentum_selling_pair');
+            this.sellNotification.set({ type: 'success', message: `${short} sold successfully` });
+            this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+            this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
+            this.api.fetchMomentumEquity(72).subscribe(eq => {
+              this.equityData.set(eq);
+              setTimeout(() => this.buildChart(), 300);
+            });
+            setTimeout(() => this.sellNotification.set(null), 5000);
+          } else if (attempts < 30) {
+            setTimeout(pollSell, 3000);
+          } else {
+            this.sellingPair.set(null);
+            sessionStorage.removeItem('momentum_selling_pair');
+            this.sellNotification.set({ type: 'error', message: `${short} sell is taking longer than expected — check back shortly` });
+            setTimeout(() => this.sellNotification.set(null), 8000);
+          }
+        },
+        error: () => {
+          if (attempts < 30) setTimeout(pollSell, 3000);
+        },
+      });
+    };
+    setTimeout(pollSell, 3000);
   }
 
   // --- P&L breakdown ---
