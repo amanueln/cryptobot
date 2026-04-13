@@ -251,6 +251,16 @@ Chart.register(...registerables);
               <span class="strat-label">Would Buy If</span>
               <span class="strat-value buy-conditions">{{ buyConditions() }}</span>
             </div>
+            @if (entryRejections().length > 0) {
+              <div class="strat-item rejections-item">
+                <span class="strat-label">Why Not Buying</span>
+                <div class="rejection-list">
+                  @for (r of entryRejections(); track r) {
+                    <div class="rejection-line">{{ r }}</div>
+                  }
+                </div>
+              </div>
+            }
           </div>
         </div>
       }
@@ -697,6 +707,15 @@ Chart.register(...registerables);
     }
     .sell-conditions { color: #f87171; }
     .buy-conditions { color: #4ade80; }
+    .rejections-item { grid-column: 1 / -1; }
+    .rejection-list {
+      font-size: 11px; color: #fbbf24; line-height: 1.6;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .rejection-line {
+      padding: 2px 0; border-bottom: 1px solid rgba(251,191,36,0.1);
+    }
+    .rejection-line:last-child { border-bottom: none; }
   `],
 })
 export class MomentumPanelComponent implements OnInit, AfterViewInit {
@@ -1157,7 +1176,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}${holdStr}`;
     }
     if (s.was_cash) {
-      return 'Waiting for a coin with >20% acceleration in a bullish regime.';
+      return 'Waiting for a coin with >10% acceleration in a bullish regime.';
     }
     return 'Engine just started — building acceleration data.';
   }
@@ -1190,8 +1209,13 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     } else {
       lines.push('✓ No cooldown active');
     }
-    lines.push('• Need a coin with >20% momentum acceleration');
+    lines.push('• Need a coin with >10% momentum acceleration');
+    lines.push('• Coin must pass ADX > 25 (strong trend) and RSI > 50 (uptrend)');
     lines.push('• Engine checks every hour, buys immediately when conditions met');
     return lines.join('\n');
+  }
+
+  entryRejections(): string[] {
+    return this.status()?.entry_rejections ?? [];
   }
 }

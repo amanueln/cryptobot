@@ -194,6 +194,7 @@ class MomentumEngine:
         self._last_sold_pair: str | None = None   # same-coin lockout
         self._last_sold_time: datetime | None = None
         self._loss_lockouts: dict[str, datetime] = {}  # pair -> lockout expiry after a loss
+        self._entry_rejections: list[str] = []  # why coins were rejected this tick
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -406,15 +407,22 @@ class MomentumEngine:
                     self.status_detail = "BTC regime bearish — holding cash"
 
         # === Immediate entry from cash (if cooldown expired and no positions) ===
+        self._entry_rejections = []  # track why coins are rejected
         if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash > self.starting_balance * 0.5:
             if self.regime_bullish:
                 scores = self._compute_scores()
                 self.accel_scores = scores
                 qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+                below_thresh = [s for s in scores if s.accel <= REENTRY_THRESHOLD]
+                for s in below_thresh:
+                    self._entry_rejections.append(f"{s.pair}: accel {s.accel:.1%} < {REENTRY_THRESHOLD:.0%} threshold")
 
                 # Same-coin lockout: don't re-buy what we just sold for 24h
                 if self._last_sold_pair and self._last_sold_time:
                     if candle.timestamp < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                        locked = [s for s in qualifying if s.pair == self._last_sold_pair]
+                        for s in locked:
+                            self._entry_rejections.append(f"{s.pair}: same-coin lockout ({LOCKOUT_HOURS}h)")
                         qualifying = [s for s in qualifying if s.pair != self._last_sold_pair]
 
                 # Entry filters: ADX > 25 and RSI > 50
@@ -526,10 +534,12 @@ class MomentumEngine:
                 continue
             # Skip sub-penny coins — price data too noisy for reliable momentum
             if closes[-1] < MIN_PRICE:
+                self._entry_rejections.append(f"{pair}: price ${closes[-1]:.4f} < ${MIN_PRICE} (sub-penny)")
                 continue
             # Skip coins in loss lockout (lost money recently, don't re-enter)
             if pair in self._loss_lockouts:
                 if now < self._loss_lockouts[pair]:
+                    self._entry_rejections.append(f"{pair}: loss lockout (lost money recently)")
                     continue
                 else:
                     del self._loss_lockouts[pair]
@@ -563,6 +573,7 @@ class MomentumEngine:
             adx = _adx(highs, lows, closes)
             if adx is not None and adx < ADX_FILTER_THRESH:
                 logger.debug("Entry filter: %s rejected — ADX %.1f < %d", pair, adx, ADX_FILTER_THRESH)
+                self._entry_rejections.append(f"{pair}: ADX {adx:.1f} < {ADX_FILTER_THRESH} (weak trend)")
                 continue
 
             # RSI > 50 filter: confirm uptrend
@@ -570,6 +581,7 @@ class MomentumEngine:
                 rsi = _rsi(closes, RSI_PERIOD)
                 if rsi is not None and rsi < RSI_TREND_THRESH:
                     logger.debug("Entry filter: %s rejected — RSI %.1f < %d", pair, rsi, RSI_TREND_THRESH)
+                    self._entry_rejections.append(f"{pair}: RSI {rsi:.1f} < {RSI_TREND_THRESH} (not in uptrend)")
                     continue
 
             filtered.append(s)
@@ -812,6 +824,7 @@ class MomentumEngine:
             "hours_in_position": self._hours_in_position,
             "max_hold_hours": MAX_HOLD_HOURS,
             "accel_exit_thresh": ACCEL_EXIT_THRESH,
+            "entry_rejections": self._entry_rejections[-10:],  # last 10 reasons
             "lockout_pair": self._last_sold_pair,
             "lockout_until": self._last_sold_time.isoformat() if self._last_sold_time else None,
             "loss_lockouts": {p: t.isoformat() for p, t in self._loss_lockouts.items()},
