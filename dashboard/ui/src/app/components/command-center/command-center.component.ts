@@ -55,6 +55,7 @@ const STARTING_BALANCE = 3000;
             <span class="engine-dot-tab scanner-dot" [class.active]="true"></span>
             Scanner
           </button>
+          <button class="logout-btn" (click)="logout()">Logout</button>
         </div>
       }
 
@@ -257,6 +258,18 @@ const STARTING_BALANCE = 3000;
     .scanner-tab .engine-dot-tab.active, .scanner-dot.active { background: #38bdf8; box-shadow: 0 0 6px rgba(56,189,248,0.4); }
     .scanner-tab.active { color: #38bdf8 !important; border-bottom-color: #38bdf8 !important; }
     @keyframes tabpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .logout-btn {
+      margin-left: auto;
+      font-size: 9px; font-weight: 600; padding: 4px 10px;
+      background: rgba(248,113,113,0.08); color: #6b7280;
+      border: 1px solid rgba(248,113,113,0.15); border-radius: 4px;
+      cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em;
+      transition: all 0.15s; align-self: center; margin-right: 12px;
+    }
+    .logout-btn:hover {
+      color: #f87171; background: rgba(248,113,113,0.15);
+      border-color: rgba(248,113,113,0.3);
+    }
     .hero-bar {
       display: flex; align-items: center; justify-content: center;
       gap: 0; padding: 20px 24px;
@@ -484,6 +497,12 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
     this.api.triggerUpdate().subscribe({
       next: () => console.log('[CommandCenter] update triggered'),
       error: (err) => console.error('[CommandCenter] update failed', err),
+    });
+  }
+
+  logout(): void {
+    this.api.logout().subscribe({
+      next: () => window.location.href = '/login',
     });
   }
 
