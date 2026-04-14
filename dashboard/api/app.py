@@ -17,12 +17,21 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, jsonify, redirect, request, send_from_directory, send_file
 from flask_cors import CORS
 from ta.trend import ADXIndicator, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
 from ta.momentum import RSIIndicator
 from ta.volume import OnBalanceVolumeIndicator
+
+import hashlib
+import hmac
+import secrets
+import time
+import pyotp
+import qrcode
+import io
+import base64
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "ui", "dist", "ui", "browser")
 
@@ -30,6 +39,83 @@ app = Flask(__name__, static_folder=None)
 CORS(app)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "candles.db")
+
+# --- Auth config ---
+AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+TOTP_SECRET_PATH = os.path.join(DATA_DIR, ".totp_secret")
+FLASK_SECRET_PATH = os.path.join(DATA_DIR, ".flask_secret")
+
+def _get_flask_secret():
+    """Load or generate Flask secret key for cookie signing."""
+    if os.path.exists(FLASK_SECRET_PATH):
+        with open(FLASK_SECRET_PATH, "r") as f:
+            return f.read().strip()
+    secret = secrets.token_hex(32)
+    with open(FLASK_SECRET_PATH, "w") as f:
+        f.write(secret)
+    return secret
+
+if AUTH_ENABLED:
+    app.secret_key = _get_flask_secret()
+
+
+@app.before_request
+def check_auth():
+    """Gate all requests behind TOTP auth when enabled."""
+    if not AUTH_ENABLED:
+        return None
+
+    path = request.path
+
+    # Always allow auth endpoints and static assets
+    if path.startswith("/api/auth/"):
+        return None
+    if path in ("/login", "/setup"):
+        return send_from_directory(STATIC_DIR, "index.html")
+    # Static file extensions
+    ext = path.rsplit(".", 1)[-1] if "." in path else ""
+    if ext in ("js", "css", "ico", "png", "jpg", "svg", "woff", "woff2", "ttf", "map"):
+        return None
+
+    # Check if setup is needed
+    if not os.path.exists(TOTP_SECRET_PATH):
+        if path.startswith("/api/"):
+            return jsonify({"error": "setup_required"}), 401
+        return redirect("/setup")
+
+    # Check session cookie
+    session_token = request.cookies.get("bot_session")
+    if not session_token or not _verify_session(session_token):
+        if path.startswith("/api/"):
+            return jsonify({"error": "unauthorized"}), 401
+        return redirect("/login")
+
+    return None
+
+
+def _create_session_token():
+    """Create a signed session token."""
+    payload = f"{int(time.time())}"
+    sig = hmac.new(app.secret_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+def _verify_session(token):
+    """Verify a session token is valid and not expired."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 2:
+            return False
+        timestamp, sig = parts
+        expected = hmac.new(app.secret_key.encode(), timestamp.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        # Check expiry (30 days)
+        age = int(time.time()) - int(timestamp)
+        return age < 30 * 86400
+    except (ValueError, TypeError):
+        return False
+
 
 DEFAULT_NUM_GRIDS = 20
 
@@ -2264,6 +2350,68 @@ def _start_auto_scan_loop(interval_minutes=10):
 # Start auto-scan on server boot (only in the reloader child process to avoid double-start)
 if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     _start_auto_scan_loop(10)
+
+
+# ---------- Auth endpoints ----------
+
+@app.route("/api/auth/setup", methods=["GET"])
+def auth_setup():
+    """Generate TOTP secret and QR code for first-time setup."""
+    if os.path.exists(TOTP_SECRET_PATH):
+        return jsonify({"error": "already_setup"}), 400
+    secret = pyotp.random_base32()
+    app.config["_pending_totp_secret"] = secret
+    totp = pyotp.TOTP(secret)
+    uri = totp.provisioning_uri(name="CryptoBot", issuer_name="CryptoBot Dashboard")
+    img = qrcode.make(uri)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_b64 = base64.b64encode(buf.getvalue()).decode()
+    return jsonify({"secret": secret, "qr_png": qr_b64})
+
+
+@app.route("/api/auth/setup/confirm", methods=["POST"])
+def auth_setup_confirm():
+    """Verify TOTP code and save secret permanently."""
+    secret = app.config.get("_pending_totp_secret")
+    if not secret:
+        return jsonify({"error": "no_pending_setup"}), 400
+    code = (request.json or {}).get("code", "")
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(code, valid_window=1):
+        return jsonify({"error": "invalid_code"}), 401
+    with open(TOTP_SECRET_PATH, "w") as f:
+        f.write(secret)
+    app.config.pop("_pending_totp_secret", None)
+    resp = jsonify({"status": "ok"})
+    resp.set_cookie("bot_session", _create_session_token(),
+                     max_age=30 * 86400, httponly=True, samesite="Lax")
+    return resp
+
+
+@app.route("/api/auth/verify", methods=["POST"])
+def auth_verify():
+    """Verify TOTP code and create session."""
+    if not os.path.exists(TOTP_SECRET_PATH):
+        return jsonify({"error": "setup_required"}), 401
+    with open(TOTP_SECRET_PATH, "r") as f:
+        secret = f.read().strip()
+    code = (request.json or {}).get("code", "")
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(code, valid_window=1):
+        return jsonify({"error": "invalid_code"}), 401
+    resp = jsonify({"status": "ok"})
+    resp.set_cookie("bot_session", _create_session_token(),
+                     max_age=30 * 86400, httponly=True, samesite="Lax")
+    return resp
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    """Clear session cookie."""
+    resp = jsonify({"status": "ok"})
+    resp.delete_cookie("bot_session")
+    return resp
 
 
 # ---------- Static file serving ----------
