@@ -171,23 +171,17 @@ import {
                     <span class="alert-time">{{ timeAgo(alert.timestamp) }}</span>
                   </div>
 
-                  <!-- Checkpoint timeline -->
+                  <!-- Outcome summary -->
                   <div class="checkpoint-row">
-                    <span class="cp-badge" [class.pos]="(alert.outcome_1h_pct ?? 0) > 0" [class.neg]="(alert.outcome_1h_pct ?? 0) < 0" [class.pending]="alert.outcome_1h_pct === null">
-                      {{ alert.outcome_1h_pct !== null ? '1h ' + formatPct(alert.outcome_1h_pct) : '1h ...' }}
-                    </span>
-                    <span class="cp-arrow">&#8250;</span>
-                    <span class="cp-badge" [class.pos]="(alert.outcome_4h_pct ?? 0) > 0" [class.neg]="(alert.outcome_4h_pct ?? 0) < 0" [class.pending]="alert.outcome_4h_pct === null">
-                      {{ alert.outcome_4h_pct !== null ? '4h ' + formatPct(alert.outcome_4h_pct) : '4h ...' }}
-                    </span>
-                    <span class="cp-arrow">&#8250;</span>
-                    <span class="cp-badge" [class.pos]="(alert.outcome_12h_pct ?? 0) > 0" [class.neg]="(alert.outcome_12h_pct ?? 0) < 0" [class.pending]="alert.outcome_12h_pct === null">
-                      {{ alert.outcome_12h_pct !== null ? '12h ' + formatPct(alert.outcome_12h_pct) : '12h ...' }}
-                    </span>
-                    <span class="cp-arrow">&#8250;</span>
                     <span class="cp-badge peak" [class.pos]="(alert.outcome_peak_pct ?? 0) >= 3" [class.pending]="alert.outcome_peak_pct === null">
-                      {{ alert.outcome_peak_pct !== null ? 'Peak ' + formatPct(alert.outcome_peak_pct) : 'Peak ...' }}
+                      {{ alert.outcome_peak_pct !== null ? 'Peak ' + formatPct(alert.outcome_peak_pct) + (alert.outcome_peak_time ? ' in ' + alert.outcome_peak_time : '') : 'Peak ...' }}
                     </span>
+                    @if (alert.outcome_12h_pct !== null) {
+                      <span class="cp-arrow">&#8250;</span>
+                      <span class="cp-badge" [class.pos]="alert.outcome_12h_pct > 0" [class.neg]="alert.outcome_12h_pct < 0">
+                        Settled {{ formatPct(alert.outcome_12h_pct) }} at 12h
+                      </span>
+                    }
                     <span class="verdict-badge" [class.win]="isWin(alert)" [class.loss]="isLoss(alert)" [class.pending]="isPending(alert)">
                       {{ getVerdict(alert) }}
                     </span>

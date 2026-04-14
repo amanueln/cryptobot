@@ -678,6 +678,7 @@ class EarlyScanner:
                 'outcome_12h_pct': r['outcome_12h_pct'],
                 'outcome_24h_pct': r['outcome_24h_pct'],
                 'outcome_peak_pct': r['outcome_peak_pct'],
+                'outcome_peak_time': r['outcome_peak_time'] if 'outcome_peak_time' in r.keys() else None,
                 'score_adj': adj,
                 'effective_score': effective,
             })
@@ -809,6 +810,9 @@ class EarlyScanner:
                 # Always update peak if we have a better one
                 if row['outcome_peak_pct'] is None or peak_pct > (row['outcome_peak_pct'] or 0):
                     updates['outcome_peak_pct'] = peak_pct
+                    # Estimate peak time: peak_idx candles from oldest
+                    peak_hours_after = max(1, int(hours_since) - (len(candles) - 1 - peak_idx))
+                    updates['outcome_peak_time'] = f"{peak_hours_after}h"
 
                 if updates:
                     set_clause = ', '.join(f"{k} = ?" for k in updates)

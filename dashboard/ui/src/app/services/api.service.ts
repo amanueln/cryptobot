@@ -380,6 +380,7 @@ export interface EarlyScannerAlert {
   outcome_12h_pct: number | null;
   outcome_24h_pct: number | null;
   outcome_peak_pct: number | null;
+  outcome_peak_time: string | null;
   score_adj: number;
   effective_score: number;
 }
