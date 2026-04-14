@@ -181,12 +181,12 @@ import {
                       {{ alert.outcome_4h_pct !== null ? '4h ' + formatPct(alert.outcome_4h_pct) : '4h ...' }}
                     </span>
                     <span class="cp-arrow">&#8250;</span>
-                    <span class="cp-badge peak" [class.pos]="(alert.outcome_peak_pct ?? 0) >= 3" [class.pending]="alert.outcome_peak_pct === null">
-                      {{ alert.outcome_peak_pct !== null ? 'Pk ' + formatPct(alert.outcome_peak_pct) : 'Pk ...' }}
-                    </span>
-                    <span class="cp-arrow">&#8250;</span>
                     <span class="cp-badge" [class.pos]="(alert.outcome_12h_pct ?? 0) > 0" [class.neg]="(alert.outcome_12h_pct ?? 0) < 0" [class.pending]="alert.outcome_12h_pct === null">
                       {{ alert.outcome_12h_pct !== null ? '12h ' + formatPct(alert.outcome_12h_pct) : '12h ...' }}
+                    </span>
+                    <span class="cp-arrow">&#8250;</span>
+                    <span class="cp-badge peak" [class.pos]="(alert.outcome_peak_pct ?? 0) >= 3" [class.pending]="alert.outcome_peak_pct === null">
+                      {{ alert.outcome_peak_pct !== null ? 'Peak ' + formatPct(alert.outcome_peak_pct) : 'Peak ...' }}
                     </span>
                     <span class="verdict-badge" [class.win]="isWin(alert)" [class.loss]="isLoss(alert)" [class.pending]="isPending(alert)">
                       {{ getVerdict(alert) }}
