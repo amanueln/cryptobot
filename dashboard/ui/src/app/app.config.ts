@@ -11,6 +11,12 @@ const authInterceptor: HttpInterceptorFn = (req, next) => {
     tap({
       error: (err) => {
         if (err.status === 401) {
+          // Don't redirect if already on login/setup or if this is an auth request
+          const url = req.url;
+          const path = window.location.pathname;
+          if (path === '/login' || path === '/setup' || url.includes('/api/auth/')) {
+            return;
+          }
           const router = inject(Router);
           const body = err.error;
           if (body?.error === 'setup_required') {

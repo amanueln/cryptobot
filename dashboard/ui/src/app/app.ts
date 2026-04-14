@@ -16,7 +16,11 @@ export class App implements OnInit, OnDestroy {
   private api = inject(ApiService);
 
   ngOnInit() {
-    this.api.startPolling(60);
+    // Don't start polling on login/setup pages — no session yet
+    const path = window.location.pathname;
+    if (path !== '/login' && path !== '/setup') {
+      this.api.startPolling(60);
+    }
   }
 
   ngOnDestroy() {
