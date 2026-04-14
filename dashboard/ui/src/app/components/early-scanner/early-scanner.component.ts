@@ -124,6 +124,9 @@ import {
             <button class="filter-tab" [class.active]="filterMode() === 'all'" (click)="filterMode.set('all')">
               All ({{ alerts().length }})
             </button>
+            <button class="filter-tab" [class.active]="filterMode() === 'winners'" (click)="filterMode.set('winners')">
+              Top Winners ({{ winnersCount() }})
+            </button>
           </div>
         </div>
 
@@ -133,60 +136,77 @@ import {
           </div>
         }
 
-        @for (alert of filteredAlerts(); track alert.id) {
-          <div class="alert-card" [class.high-score]="alert.effective_score >= 3">
-            <div class="alert-header">
-              <span class="alert-pair">{{ coinName(alert.pair) }}</span>
-              <span class="alert-score">
-                @for (i of scoreArray(alert.score); track i) {
-                  <span class="score-dot filled"></span>
-                }
-                @for (i of scoreArray(4 - alert.score); track i) {
-                  <span class="score-dot"></span>
-                }
-                @if (alert.score_adj > 0) {
-                  <span class="score-adj-label pos">+{{ alert.score_adj }}</span>
-                } @else if (alert.score_adj < 0) {
-                  <span class="score-adj-label neg">{{ alert.score_adj }}</span>
-                }
-              </span>
-              <span class="alert-price">\${{ formatPrice(alert.price) }}</span>
-              <span class="alert-time">{{ timeAgo(alert.timestamp) }}</span>
-            </div>
-
-            <!-- Checkpoint timeline -->
-            <div class="checkpoint-row">
-              <span class="cp-badge" [class.pos]="(alert.outcome_1h_pct ?? 0) > 0" [class.neg]="(alert.outcome_1h_pct ?? 0) < 0" [class.pending]="alert.outcome_1h_pct === null">
-                {{ alert.outcome_1h_pct !== null ? '1h ' + formatPct(alert.outcome_1h_pct) : '1h ...' }}
-              </span>
-              <span class="cp-arrow">&#8250;</span>
-              <span class="cp-badge" [class.pos]="(alert.outcome_4h_pct ?? 0) > 0" [class.neg]="(alert.outcome_4h_pct ?? 0) < 0" [class.pending]="alert.outcome_4h_pct === null">
-                {{ alert.outcome_4h_pct !== null ? '4h ' + formatPct(alert.outcome_4h_pct) : '4h ...' }}
-              </span>
-              <span class="cp-arrow">&#8250;</span>
-              <span class="cp-badge peak" [class.pos]="(alert.outcome_peak_pct ?? 0) >= 3" [class.pending]="alert.outcome_peak_pct === null">
-                {{ alert.outcome_peak_pct !== null ? 'Pk ' + formatPct(alert.outcome_peak_pct) : 'Pk ...' }}
-              </span>
-              <span class="cp-arrow">&#8250;</span>
-              <span class="cp-badge" [class.pos]="(alert.outcome_12h_pct ?? 0) > 0" [class.neg]="(alert.outcome_12h_pct ?? 0) < 0" [class.pending]="alert.outcome_12h_pct === null">
-                {{ alert.outcome_12h_pct !== null ? '12h ' + formatPct(alert.outcome_12h_pct) : '12h ...' }}
-              </span>
-              <span class="verdict-badge" [class.win]="isWin(alert)" [class.loss]="isLoss(alert)" [class.pending]="isPending(alert)">
-                {{ getVerdict(alert) }}
+        @for (batch of alertBatches(); track batch.key) {
+          <div class="batch-group">
+            <div class="batch-header" (click)="toggleBatch(batch.key, batch.ts)">
+              <span class="batch-toggle">{{ isBatchExpanded(batch.key, batch.ts) ? '▼' : '▶' }}</span>
+              <span class="batch-label">{{ batch.label }}</span>
+              <span class="batch-count">{{ batch.alerts.length }} alert{{ batch.alerts.length === 1 ? '' : 's' }}</span>
+              <span class="batch-summary">
+                @if (batch.wins > 0) { <span class="batch-tag win">{{ batch.wins }} WIN</span> }
+                @if (batch.losses > 0) { <span class="batch-tag loss">{{ batch.losses }} LOSS</span> }
+                @if (batch.pending > 0) { <span class="batch-tag pending">{{ batch.pending }} pending</span> }
               </span>
             </div>
 
-            <div class="alert-details">
-              <span class="vol-badge">Vol: \${{ formatVol(alert.volume_24h) }}</span>
-            </div>
-            <div class="alert-signals">
-              @for (sig of alert.signals; track sig) {
-                <span class="signal-tag">{{ formatSignal(sig) }}</span>
+            @if (isBatchExpanded(batch.key, batch.ts)) {
+              @for (alert of batch.alerts; track alert.id) {
+                <div class="alert-card" [class.high-score]="alert.effective_score >= 3">
+                  <div class="alert-header">
+                    <span class="alert-pair">{{ coinName(alert.pair) }}</span>
+                    <span class="alert-score">
+                      @for (i of scoreArray(alert.score); track i) {
+                        <span class="score-dot filled"></span>
+                      }
+                      @for (i of scoreArray(4 - alert.score); track i) {
+                        <span class="score-dot"></span>
+                      }
+                      @if (alert.score_adj > 0) {
+                        <span class="score-adj-label pos">+{{ alert.score_adj }}</span>
+                      } @else if (alert.score_adj < 0) {
+                        <span class="score-adj-label neg">{{ alert.score_adj }}</span>
+                      }
+                    </span>
+                    <span class="alert-price">\${{ formatPrice(alert.price) }}</span>
+                    <span class="alert-time">{{ timeAgo(alert.timestamp) }}</span>
+                  </div>
+
+                  <!-- Checkpoint timeline -->
+                  <div class="checkpoint-row">
+                    <span class="cp-badge" [class.pos]="(alert.outcome_1h_pct ?? 0) > 0" [class.neg]="(alert.outcome_1h_pct ?? 0) < 0" [class.pending]="alert.outcome_1h_pct === null">
+                      {{ alert.outcome_1h_pct !== null ? '1h ' + formatPct(alert.outcome_1h_pct) : '1h ...' }}
+                    </span>
+                    <span class="cp-arrow">&#8250;</span>
+                    <span class="cp-badge" [class.pos]="(alert.outcome_4h_pct ?? 0) > 0" [class.neg]="(alert.outcome_4h_pct ?? 0) < 0" [class.pending]="alert.outcome_4h_pct === null">
+                      {{ alert.outcome_4h_pct !== null ? '4h ' + formatPct(alert.outcome_4h_pct) : '4h ...' }}
+                    </span>
+                    <span class="cp-arrow">&#8250;</span>
+                    <span class="cp-badge peak" [class.pos]="(alert.outcome_peak_pct ?? 0) >= 3" [class.pending]="alert.outcome_peak_pct === null">
+                      {{ alert.outcome_peak_pct !== null ? 'Pk ' + formatPct(alert.outcome_peak_pct) : 'Pk ...' }}
+                    </span>
+                    <span class="cp-arrow">&#8250;</span>
+                    <span class="cp-badge" [class.pos]="(alert.outcome_12h_pct ?? 0) > 0" [class.neg]="(alert.outcome_12h_pct ?? 0) < 0" [class.pending]="alert.outcome_12h_pct === null">
+                      {{ alert.outcome_12h_pct !== null ? '12h ' + formatPct(alert.outcome_12h_pct) : '12h ...' }}
+                    </span>
+                    <span class="verdict-badge" [class.win]="isWin(alert)" [class.loss]="isLoss(alert)" [class.pending]="isPending(alert)">
+                      {{ getVerdict(alert) }}
+                    </span>
+                  </div>
+
+                  <div class="alert-details">
+                    <span class="vol-badge">Vol: \${{ formatVol(alert.volume_24h) }}</span>
+                  </div>
+                  <div class="alert-signals">
+                    @for (sig of alert.signals; track sig) {
+                      <span class="signal-tag">{{ formatSignal(sig) }}</span>
+                    }
+                    @if (alert.notified) {
+                      <span class="discord-badge">Discord sent</span>
+                    }
+                  </div>
+                </div>
               }
-              @if (alert.notified) {
-                <span class="discord-badge">Discord sent</span>
-              }
-            </div>
+            }
           </div>
         }
       </div>
@@ -325,7 +345,8 @@ import {
       border: 1px solid #2d3148; cursor: pointer; transition: all 0.15s;
     }
     .filter-tab:first-child { border-radius: 4px 0 0 4px; }
-    .filter-tab:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+    .filter-tab:last-child { border-radius: 0 4px 4px 0; }
+    .filter-tab + .filter-tab { border-left: 0; }
     .filter-tab.active {
       background: rgba(74,222,128,0.15); color: #4ade80;
       border-color: rgba(74,222,128,0.3);
@@ -416,6 +437,32 @@ import {
       text-transform: uppercase; letter-spacing: 0.05em;
     }
 
+    /* Batch grouping */
+    .batch-group { margin-bottom: 4px; }
+    .batch-header {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: rgba(56,189,248,0.06); border: 1px solid rgba(56,189,248,0.15);
+      border-radius: 6px; cursor: pointer; transition: background 0.15s;
+      flex-wrap: wrap;
+    }
+    .batch-header:hover { background: rgba(56,189,248,0.1); }
+    .batch-toggle { font-size: 9px; color: #38bdf8; }
+    .batch-label {
+      font-size: 11px; font-weight: 700; color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .batch-count {
+      font-size: 10px; color: #6b7280;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .batch-summary { display: flex; gap: 6px; margin-left: auto; }
+    .batch-tag {
+      font-size: 8px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+    }
+    .batch-tag.win { background: rgba(74,222,128,0.15); color: #4ade80; }
+    .batch-tag.loss { background: rgba(248,113,113,0.12); color: #f87171; }
+    .batch-tag.pending { background: rgba(100,116,139,0.1); color: #6b7280; font-style: italic; }
+
     /* Responsive */
     @media (max-width: 600px) {
       .stats-bar { gap: 4px; padding: 10px 8px; }
@@ -431,7 +478,7 @@ export class EarlyScannerComponent implements OnInit {
   readonly alerts = signal<EarlyScannerAlert[]>([]);
   readonly stats = signal<EarlyScannerStats | null>(null);
   readonly scanning = signal(false);
-  readonly filterMode = signal<'high' | 'all'>('high');
+  readonly filterMode = signal<'high' | 'all' | 'winners'>('high');
   readonly comboExpanded = signal(true);
 
   readonly comboStats = computed(() => this.stats()?.combo_stats ?? []);
@@ -440,13 +487,80 @@ export class EarlyScannerComponent implements OnInit {
     this.alerts().filter(a => a.effective_score >= 3).length
   );
 
+  readonly winnersCount = computed(() =>
+    this.alerts().filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 3).length
+  );
+
   readonly filteredAlerts = computed(() => {
     const all = this.alerts();
     if (this.filterMode() === 'high') {
       return all.filter(a => a.effective_score >= 3);
     }
+    if (this.filterMode() === 'winners') {
+      return all
+        .filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 3)
+        .sort((a, b) => (b.outcome_peak_pct ?? 0) - (a.outcome_peak_pct ?? 0));
+    }
     return all;
   });
+
+  /** Group filtered alerts into scan batches (~15 min windows) */
+  readonly alertBatches = computed(() => {
+    const alerts = this.filteredAlerts();
+    if (alerts.length === 0) return [];
+
+    const BATCH_WINDOW = 15 * 60 * 1000; // 15 min
+    const groups: { key: string; ts: number; label: string; alerts: EarlyScannerAlert[]; wins: number; losses: number; pending: number }[] = [];
+    let current: typeof groups[0] | null = null;
+
+    for (const alert of alerts) {
+      const t = new Date(alert.timestamp).getTime();
+      if (!current || Math.abs(current.ts - t) > BATCH_WINDOW) {
+        current = { key: alert.timestamp, ts: t, label: '', alerts: [], wins: 0, losses: 0, pending: 0 };
+        groups.push(current);
+      }
+      current.alerts.push(alert);
+      if (this.isWin(alert)) current.wins++;
+      else if (this.isLoss(alert)) current.losses++;
+      else current.pending++;
+    }
+
+    const now = Date.now();
+    for (const g of groups) {
+      g.label = this.batchLabel(g.ts, now);
+      // Auto-expand batches less than 1h old, collapse older
+      if (!this._batchExpandOverrides.has(g.key)) {
+        // don't override user toggles — just set initial default
+      }
+    }
+    return groups;
+  });
+
+  /** Track user-toggled batch expand/collapse state. Key = batch timestamp string */
+  _batchExpandOverrides = new Map<string, boolean>();
+
+  isBatchExpanded(batchKey: string, batchTs: number): boolean {
+    if (this._batchExpandOverrides.has(batchKey)) {
+      return this._batchExpandOverrides.get(batchKey)!;
+    }
+    // Default: expand if less than 1h old
+    return (Date.now() - batchTs) < 3600_000;
+  }
+
+  toggleBatch(batchKey: string, batchTs: number) {
+    const current = this.isBatchExpanded(batchKey, batchTs);
+    this._batchExpandOverrides.set(batchKey, !current);
+    // Force re-render by touching a signal
+    this.alerts.update(a => [...a]);
+  }
+
+  batchLabel(ts: number, now: number): string {
+    const diff = (now - ts) / 1000;
+    if (diff < 60) return 'Scan just now';
+    if (diff < 3600) return 'Scan ' + Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return 'Scan ' + Math.floor(diff / 3600) + 'h ago';
+    return 'Scan ' + Math.floor(diff / 86400) + 'd ago';
+  }
 
   private _pollId: any;
 
