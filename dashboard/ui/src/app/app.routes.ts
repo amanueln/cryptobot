@@ -8,6 +8,20 @@ export const routes: Routes = [
         (m) => m.CommandCenterComponent
       ),
   },
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./components/login/login.component').then(
+        (m) => m.LoginComponent
+      ),
+  },
+  {
+    path: 'setup',
+    loadComponent: () =>
+      import('./components/setup/setup.component').then(
+        (m) => m.SetupComponent
+      ),
+  },
   { path: 'pair/:symbol', redirectTo: '', pathMatch: 'full' },
   { path: 'ml-brain', redirectTo: '', pathMatch: 'full' },
   { path: 'pair-scanner', redirectTo: '', pathMatch: 'full' },

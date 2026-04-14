@@ -630,4 +630,8 @@ export class ApiService {
   triggerEarlyScan() {
     return this.http.post<{ status: string }>(`${API}/early-scanner/scan`, {});
   }
+
+  logout() {
+    return this.http.post<any>('/api/auth/logout', {});
+  }
 }
