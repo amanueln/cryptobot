@@ -1823,6 +1823,7 @@ def api_health():
         "last_update_check": _last_update_check,
         "update_status": _update_status,
         "model_status": model_status,
+        "auth_enabled": AUTH_ENABLED,
     })
 
 

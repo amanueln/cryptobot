@@ -55,7 +55,9 @@ const STARTING_BALANCE = 3000;
             <span class="engine-dot-tab scanner-dot" [class.active]="true"></span>
             Scanner
           </button>
-          <button class="logout-btn" (click)="logout()">Logout</button>
+          @if (authEnabled()) {
+            <button class="logout-btn" (click)="logout()">Logout</button>
+          }
         </div>
       }
 
@@ -386,6 +388,8 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   latestScan = signal<PairScanData | null>(null);
   gridLevels = signal<Map<string, GridLevelData>>(new Map());
 
+  authEnabled = signal(false);
+
   // Equity sub-stats
   realizedPnl = signal(0);
   unrealizedPnl = signal(0);
@@ -410,6 +414,12 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   // ------------------------------------------------------------------ lifecycle
 
   ngOnInit(): void {
+    // Check if auth is enabled to conditionally show logout button
+    this.api.fetchHealth().subscribe({
+      next: (h) => this.authEnabled.set(h.auth_enabled ?? false),
+      error: () => {},
+    });
+
     forkJoin({
       positions: this.api.fetchPositions(),
       trades: this.api.fetchTrades(undefined, 200),

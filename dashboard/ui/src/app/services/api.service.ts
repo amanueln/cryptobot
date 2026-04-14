@@ -259,6 +259,7 @@ export interface HealthData {
   last_update_check: string | null;
   update_status: string;
   model_status: Record<string, string>;
+  auth_enabled: boolean;
 }
 
 export interface UpdateResult {
