@@ -488,7 +488,7 @@ export class EarlyScannerComponent implements OnInit {
   );
 
   readonly winnersCount = computed(() =>
-    this.alerts().filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 3).length
+    this.alerts().filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 5).length
   );
 
   readonly filteredAlerts = computed(() => {
@@ -498,40 +498,37 @@ export class EarlyScannerComponent implements OnInit {
     }
     if (this.filterMode() === 'winners') {
       return all
-        .filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 3)
+        .filter(a => a.outcome_peak_pct !== null && a.outcome_peak_pct >= 5)
         .sort((a, b) => (b.outcome_peak_pct ?? 0) - (a.outcome_peak_pct ?? 0));
     }
     return all;
   });
 
-  /** Group filtered alerts into scan batches (~15 min windows) */
+  /** Group filtered alerts by exact scan timestamp (same scan cycle = same timestamp) */
   readonly alertBatches = computed(() => {
     const alerts = this.filteredAlerts();
     if (alerts.length === 0) return [];
 
-    const BATCH_WINDOW = 15 * 60 * 1000; // 15 min
     const groups: { key: string; ts: number; label: string; alerts: EarlyScannerAlert[]; wins: number; losses: number; pending: number }[] = [];
-    let current: typeof groups[0] | null = null;
+    const byTs = new Map<string, typeof groups[0]>();
 
     for (const alert of alerts) {
-      const t = new Date(alert.timestamp).getTime();
-      if (!current || Math.abs(current.ts - t) > BATCH_WINDOW) {
-        current = { key: alert.timestamp, ts: t, label: '', alerts: [], wins: 0, losses: 0, pending: 0 };
-        groups.push(current);
+      const tsKey = alert.timestamp;
+      let group = byTs.get(tsKey);
+      if (!group) {
+        group = { key: tsKey, ts: new Date(tsKey).getTime(), label: '', alerts: [], wins: 0, losses: 0, pending: 0 };
+        byTs.set(tsKey, group);
+        groups.push(group);
       }
-      current.alerts.push(alert);
-      if (this.isWin(alert)) current.wins++;
-      else if (this.isLoss(alert)) current.losses++;
-      else current.pending++;
+      group.alerts.push(alert);
+      if (this.isWin(alert)) group.wins++;
+      else if (this.isLoss(alert)) group.losses++;
+      else group.pending++;
     }
 
     const now = Date.now();
     for (const g of groups) {
       g.label = this.batchLabel(g.ts, now);
-      // Auto-expand batches less than 1h old, collapse older
-      if (!this._batchExpandOverrides.has(g.key)) {
-        // don't override user toggles — just set initial default
-      }
     }
     return groups;
   });
