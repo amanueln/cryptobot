@@ -18,6 +18,8 @@ data/candles.db
 data/candles_zima.db
 data/cryptobot.db
 data/*.json
+data/.totp_secret
+data/.flask_secret
 
 # Logs
 logs/
