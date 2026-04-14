@@ -555,11 +555,15 @@ export class EarlyScannerComponent implements OnInit {
   }
 
   batchLabel(ts: number, now: number): string {
+    const d = new Date(ts);
     const diff = (now - ts) / 1000;
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
     if (diff < 60) return 'Scan just now';
-    if (diff < 3600) return 'Scan ' + Math.floor(diff / 60) + 'm ago';
-    if (diff < 86400) return 'Scan ' + Math.floor(diff / 3600) + 'h ago';
-    return 'Scan ' + Math.floor(diff / 86400) + 'd ago';
+    if (diff < 3600) return time + ' (' + Math.floor(diff / 60) + 'm ago)';
+    if (diff < 86400) return time + ' (' + Math.floor(diff / 3600) + 'h ' + Math.floor((diff % 3600) / 60) + 'm ago)';
+    const day = d.toLocaleDateString([], { weekday: 'short' });
+    return day + ' ' + time;
   }
 
   private _pollId: any;
