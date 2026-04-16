@@ -706,11 +706,16 @@ Chart.register(...registerables, zoomPlugin);
       text-transform: none; margin-left: auto;
     }
     .accel-cards {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; padding-bottom: 6px;
+      display: flex; gap: 10px; padding-bottom: 6px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
     }
+    .accel-cards::-webkit-scrollbar { height: 4px; }
+    .accel-cards::-webkit-scrollbar-track { background: transparent; }
+    .accel-cards::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 2px; }
     .accel-card {
       background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
       padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
+      min-width: 180px; max-width: 200px; flex-shrink: 0;
     }
     .accel-card.qualifying-card {
       border-color: rgba(74,222,128,0.25);
@@ -787,8 +792,6 @@ Chart.register(...registerables, zoomPlugin);
     @media (max-width: 900px) {
       .hold-strat-accel-row { flex-direction: column; }
       .hold-strat-col { border-right: none; border-bottom: 1px solid #2d3148; }
-      .accel-cards { display: flex; flex-wrap: nowrap; overflow-x: auto; }
-      .accel-card { flex: 0 0 auto; min-width: 180px; }
     }
 
     /* Holdings (compact) */
@@ -1141,10 +1144,17 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   topAccelScores() {
     const all = this.accelScores();
-    const qualifying = all.filter(s => s.accel > 0.20);
-    if (qualifying.length > 0) return qualifying;
-    // If none qualifying, show top 4 so panel isn't empty
-    return all.slice(0, 4);
+    // Sort: READY first, then BLOCKED, then BELOW — within each group by accel descending
+    return [...all].sort((a, b) => {
+      const rank = (s: typeof a) => {
+        if (s.accel <= 0.20) return 2; // BELOW
+        const blocked = (s.quality && !s.quality.pass) || (s.structural && !s.structural.pass);
+        return blocked ? 1 : 0; // READY=0, BLOCKED=1
+      };
+      const ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return b.accel - a.accel;
+    });
   }
 
   accelBarWidth(accel: number): number {
