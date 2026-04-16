@@ -1893,7 +1893,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     });
 
     // Evaluate ALL ready candidates like the engine does — find the best one
-    const all = this.accelScores().filter(c => c.accel > 0.10);
+    const all = this.accelScores().filter(c => c.accel > 0.20);
     const ready = all.filter(c => c.quality?.pass !== false && c.structural?.pass !== false);
     const candidates = ready.length > 0 ? ready : all;
 
