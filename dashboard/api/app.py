@@ -2222,14 +2222,15 @@ def api_momentum_accel():
     for pair in pairs:
         try:
             rows = conn.execute(
-                """SELECT close FROM candles
+                """SELECT open, high, low, close FROM candles
                    WHERE pair=? AND granularity='ONE_HOUR'
                    ORDER BY timestamp DESC LIMIT ?""",
                 (pair, LONG_LB + 1),
             ).fetchall()
             if len(rows) < LONG_LB + 1:
                 continue
-            closes = [r["close"] for r in reversed(rows)]
+            rows_chron = list(reversed(rows))
+            closes = [r["close"] for r in rows_chron]
             cur = closes[-1]
             # Skip sub-penny coins — too noisy for momentum signals
             if cur < 0.01:
@@ -2242,7 +2243,44 @@ def api_momentum_accel():
             long_mom = cur / long_ago - 1
             accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
             if accel > 0:
-                scores.append({"pair": pair, "accel": round(accel, 4), "price": round(cur, 6)})
+                # Entry quality gates
+                opens = [r["open"] for r in rows_chron]
+                highs = [r["high"] for r in rows_chron]
+                lows = [r["low"] for r in rows_chron]
+
+                # Gate 1: green count (>= 2 of last 6)
+                green_count = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o)
+                gate_green = green_count >= 2
+
+                # Gate 2: body ratio (>= 0.3 avg of last 3)
+                body_ratios = []
+                for c, o, h, l in zip(closes[-3:], opens[-3:], highs[-3:], lows[-3:]):
+                    rng = h - l
+                    body_ratios.append(abs(c - o) / rng if rng > 0 else 0)
+                avg_body = sum(body_ratios) / len(body_ratios) if body_ratios else 0.5
+                gate_body = avg_body >= 0.3
+
+                # Gate 3: chg_3h not overextended vs ATR
+                gate_ext = True
+                if len(closes) >= 4 and len(highs) >= 12:
+                    chg_3h = (closes[-1] - closes[-4]) / closes[-4] * 100
+                    atr_vals = [h - l for h, l in zip(highs[-12:], lows[-12:])]
+                    avg_atr = sum(atr_vals) / len(atr_vals)
+                    atr_pct = avg_atr / cur * 100 if cur > 0 else 1
+                    chg_3h_atr = chg_3h / atr_pct if atr_pct > 0 else 0
+                    gate_ext = chg_3h_atr < 3.0
+                else:
+                    chg_3h_atr = 0
+
+                scores.append({
+                    "pair": pair, "accel": round(accel, 4), "price": round(cur, 6),
+                    "quality": {
+                        "green": gate_green, "greenCount": green_count,
+                        "body": gate_body, "bodyRatio": round(avg_body, 2),
+                        "ext": gate_ext, "chg3hAtr": round(chg_3h_atr, 1),
+                        "pass": gate_green and gate_body and gate_ext,
+                    },
+                })
         except Exception:
             continue
 

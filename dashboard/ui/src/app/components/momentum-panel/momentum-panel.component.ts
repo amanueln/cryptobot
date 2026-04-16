@@ -155,21 +155,48 @@ Chart.register(...registerables, zoomPlugin);
         </div>
         <div class="accel-cards">
           @for (s of topAccelScores(); track s.pair) {
-            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20">
+            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20" [class.quality-blocked]="s.accel > 0.20 && s.quality && !s.quality.pass">
               <div class="ac-top">
                 <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
-                <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
-                  {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
-                </span>
+                @if (s.accel > 0.20 && s.quality) {
+                  <span class="ac-badge" [class.qual]="s.quality.pass" [class.blocked]="!s.quality.pass">
+                    {{ s.quality.pass ? 'READY' : 'BLOCKED' }}
+                  </span>
+                } @else {
+                  <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
+                    {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
+                  </span>
+                }
                 <span class="ac-price">{{ formatPrice(s.price) }}</span>
               </div>
               <div class="ac-desc">
-                {{ s.accel > 0.20
-                  ? 'Uptrend accelerating — qualifies for entry.'
-                  : 'Momentum building but below the 20% re-entry threshold.' }}
+                @if (s.accel > 0.20 && s.quality && !s.quality.pass) {
+                  Entry blocked by quality gate — poor short-term action.
+                } @else if (s.accel > 0.20) {
+                  Uptrend accelerating — qualifies for entry.
+                } @else {
+                  Momentum building but below the 20% re-entry threshold.
+                }
               </div>
+              @if (s.quality && s.accel > 0.20) {
+                <div class="ac-gates">
+                  <span class="ac-gate" [class.pass]="s.quality.green" [class.fail]="!s.quality.green"
+                        [title]="s.quality.greenCount + '/6 green candles'">
+                    {{ s.quality.green ? '\u2713' : '\u2717' }} {{ s.quality.greenCount }}/6 green
+                  </span>
+                  <span class="ac-gate" [class.pass]="s.quality.body" [class.fail]="!s.quality.body"
+                        [title]="'Body ratio: ' + s.quality.bodyRatio">
+                    {{ s.quality.body ? '\u2713' : '\u2717' }} body {{ s.quality.bodyRatio }}
+                  </span>
+                  <span class="ac-gate" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext"
+                        [title]="'3h move: ' + s.quality.chg3hAtr + 'x ATR'">
+                    {{ s.quality.ext ? '\u2713' : '\u2717' }} {{ s.quality.chg3hAtr }}x ATR
+                  </span>
+                </div>
+              }
               <div class="ac-bar-track">
-                <div class="ac-bar-fill" [class.qualifying]="s.accel > 0.20"
+                <div class="ac-bar-fill" [class.qualifying]="s.accel > 0.20 && (!s.quality || s.quality.pass)"
+                     [class.blocked-fill]="s.accel > 0.20 && s.quality && !s.quality.pass"
                      [style.width.%]="accelBarWidth(s.accel)"></div>
               </div>
               <div class="ac-stats">
@@ -188,7 +215,7 @@ Chart.register(...registerables, zoomPlugin);
         @if (hasQualifyingAccel()) {
           <div class="accel-note qualifying-note">
             {{ qualifyingCount() }} coin{{ qualifyingCount() > 1 ? 's' : '' }} ready —
-            engine picks the top 1 and enters at market price immediately.
+            engine picks the top 1 that passes quality gates.
           </div>
         }
       </div>
@@ -655,6 +682,23 @@ Chart.register(...registerables, zoomPlugin);
     .ac-bar-fill.qualifying {
       background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
     }
+    .ac-bar-fill.blocked-fill {
+      background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+    }
+    .accel-card.quality-blocked {
+      border-color: rgba(239,68,68,0.25);
+      background: linear-gradient(180deg, rgba(239,68,68,0.04) 0%, #1a1d29 100%);
+    }
+    .ac-badge.blocked { background: rgba(239,68,68,0.12); color: #ef4444; }
+    .ac-gates {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .ac-gate {
+      font-size: 9px; font-family: 'JetBrains Mono', monospace;
+      padding: 2px 5px; border-radius: 3px; white-space: nowrap;
+    }
+    .ac-gate.pass { background: rgba(74,222,128,0.08); color: #4ade80; }
+    .ac-gate.fail { background: rgba(239,68,68,0.10); color: #ef4444; font-weight: 700; }
     .ac-stats { display: flex; align-items: baseline; gap: 6px; }
     .ac-accel {
       font-family: 'JetBrains Mono', monospace; font-size: 14px;
@@ -957,7 +1001,12 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   trades = signal<MomentumTradeData[]>([]);
   events = signal<MomentumEventData[]>([]);
   equityData = signal<MomentumEquityData[]>([]);
-  accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
+  accelScores = signal<{ pair: string; accel: number; price: number; quality?: {
+    green: boolean; greenCount: number;
+    body: boolean; bodyRatio: number;
+    ext: boolean; chg3hAtr: number;
+    pass: boolean;
+  } }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
   activityOpen = signal(window.innerWidth > 768);
   chartHours = signal(72);
@@ -1000,7 +1049,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return this.status()?.holdings?.some(h => h.pair === pair) ?? false;
   }
 
-  topAccelScores(): { pair: string; accel: number; price: number }[] {
+  topAccelScores() {
     return this.accelScores();
   }
 

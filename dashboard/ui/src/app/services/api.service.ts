@@ -595,7 +595,12 @@ export class ApiService {
   }
 
   fetchMomentumAccel() {
-    return this.http.get<{ pair: string; accel: number; price: number }[]>(`${API}/momentum/accel`);
+    return this.http.get<{ pair: string; accel: number; price: number; quality?: {
+      green: boolean; greenCount: number;
+      body: boolean; bodyRatio: number;
+      ext: boolean; chg3hAtr: number;
+      pass: boolean;
+    } }[]>(`${API}/momentum/accel`);
   }
 
   refreshMomentumStatus() {
