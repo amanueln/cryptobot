@@ -317,6 +317,7 @@ Chart.register(...registerables);
       <!-- Recent trades table -->
       <div class="trades-section">
         <div class="section-header">Recent Trades</div>
+        <div class="table-scroll">
         <table class="trades-table">
           <thead>
             <tr>
@@ -376,6 +377,7 @@ Chart.register(...registerables);
             }
           </tbody>
         </table>
+        </div>
       </div>
 
     </div>
@@ -714,8 +716,9 @@ Chart.register(...registerables);
     .cash-reason { font-size: 11px; color: #6b7280; text-align: center; max-width: 280px; line-height: 1.5; }
 
     /* Trades table */
-    .trades-section { padding: 14px 20px; overflow-x: auto; }
-    .trades-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 500px; }
+    .trades-section { padding: 14px 20px; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .trades-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 600px; }
     .trades-table th {
       padding: 8px 12px; font-size: 10px; font-weight: 700; color: #6b7280;
       text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #2d3148;
@@ -750,41 +753,68 @@ Chart.register(...registerables);
     tr.sell-row.odd { background: rgba(239,68,68,0.06); }
     .trades-table tr:hover { background: rgba(255,255,255,0.04) !important; }
     .trades-table tr { transition: background 0.1s; }
-    @media (max-width: 768px) {
-      .hide-sm { display: none; }
-
-      /* Engine tab — wrap and shrink */
-      .engine-tab { flex-wrap: wrap; padding: 0.5rem 0.75rem; gap: 6px; }
-      .engine-alloc { margin-left: 0; }
-      .export-btn, .reset-btn { font-size: 9px; padding: 2px 6px; }
-
-      /* Hero bar — stack vertically */
-      .hero-bar { flex-direction: column; gap: 8px; padding: 12px; }
-      .hero-item { padding: 4px 0; }
-      .hero-divider { width: 60%; height: 1px; }
-      .hero-value { font-size: 1.1rem; }
-
-      /* Status banner — wrap */
-      .status-banner { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
-      .status-text { font-size: 11px; }
-      .poll-timer { margin-left: 0; width: 100%; text-align: right; }
-
-      /* Equity + activity — stack */
+    /* Medium screens — stack side-by-side panels */
+    @media (max-width: 1024px) {
       .equity-activity-row { flex-direction: column; }
       .equity-col { border-right: none; border-bottom: 1px solid #2d3148; }
       .activity-col { max-height: 200px; }
+    }
 
-      /* Accel cards — smaller cards */
-      .accel-cards { gap: 8px; }
-      .accel-card { min-width: 150px; max-width: 180px; padding: 8px 10px; }
-      .ac-coin { font-size: 13px; }
-      .ac-price { font-size: 10px; }
-      .ac-desc { font-size: 9px; }
+    /* Small screens — full mobile layout */
+    @media (max-width: 768px) {
+      .hide-sm { display: none; }
 
-      /* Trades table — tighter */
-      .trades-section { padding: 10px 12px; overflow-x: auto; }
-      .trades-table { font-size: 11px; min-width: 400px; }
-      .trades-table th, .trades-table td { padding: 6px 8px; }
+      /* Engine tab — wrap */
+      .engine-tab { flex-wrap: wrap; padding: 0.5rem 0.75rem; gap: 0.4rem; }
+      .engine-alloc { margin-left: 0; width: 100%; }
+      .export-btn, .reset-btn { font-size: 0.6rem; padding: 0.15rem 0.5rem; }
+
+      /* Hero bar — 2x2 grid */
+      .hero-bar {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 0.5rem; padding: 0.75rem;
+      }
+      .hero-item { padding: 0.25rem 0; }
+      .hero-divider { display: none; }
+      .hero-value { font-size: 1rem; }
+      .pnl-group { grid-column: 1 / -1; text-align: center; }
+
+      /* Status banner — wrap */
+      .status-banner { flex-wrap: wrap; padding: 0.5rem 0.75rem; gap: 0.4rem; }
+      .status-text { font-size: 0.7rem; width: 100%; }
+      .poll-timer { margin-left: auto; }
+
+      /* Accel cards — smaller */
+      .accel-cards { gap: 0.5rem; }
+      .accel-card { min-width: 140px; max-width: 170px; padding: 0.5rem 0.6rem; }
+      .ac-coin { font-size: 0.8rem; }
+      .ac-price { font-size: 0.65rem; }
+      .ac-desc { font-size: 0.55rem; }
+      .ac-accel { font-size: 0.75rem; }
+
+      /* Holdings — stack stats into grid */
+      .ch-top { flex-wrap: wrap; }
+      .ch-stats { gap: 0.5rem; }
+      .ch-pnl-group { margin-left: 0; }
+
+      /* Trades — tighter padding */
+      .trades-section { padding: 0.6rem 0.75rem; }
+      .trades-table { font-size: 0.7rem; }
+      .trades-table th, .trades-table td { padding: 0.4rem 0.5rem; }
+    }
+
+    /* Extra small — phone portrait */
+    @media (max-width: 480px) {
+      .hero-bar { grid-template-columns: 1fr; }
+      .pnl-group { grid-column: 1; }
+      .hero-value { font-size: 0.9rem; }
+      .compact-holding { padding: 0.4rem 0.5rem; }
+      .ch-coin { font-size: 0.9rem; }
+      .ch-stat-val { font-size: 0.65rem; }
+      .cs-chip { padding: 0.25em 0.5em; }
+      .cs-value { font-size: 0.7rem; }
+      .ce-tag { padding: 0.25em 0.4em; }
+      .accel-card { min-width: 120px; }
     }
     .side-badge.buy { background: rgba(74,222,128,0.12); color: #4ade80; }
     .side-badge.sell { background: rgba(248,113,113,0.12); color: #f87171; }
