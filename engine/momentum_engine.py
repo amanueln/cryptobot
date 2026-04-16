@@ -461,6 +461,24 @@ class MomentumEngine:
                 # Entry filters: ADX > 25 and RSI > 50
                 qualifying = self._filter_entries(qualifying)
 
+                # Mark gate log entries with rank + picked status
+                if self._gate_log:
+                    picked_pair = qualifying[0].pair if qualifying else None
+                    already_holding = bool(self.holdings)
+                    rank = 0
+                    for g in self._gate_log:
+                        if g["result"] == "pass":
+                            rank += 1
+                            g["rank"] = rank
+                            if g["pair"] == picked_pair and not already_holding:
+                                g["picked"] = 1
+                            else:
+                                g["picked"] = 0
+                                if already_holding:
+                                    g["reason_not_picked"] = "already holding"
+                                elif rank > TOP_N:
+                                    g["reason_not_picked"] = f"rank {rank} (picked top {TOP_N})"
+
                 if qualifying:
                     logger.info("Immediate entry: %d coins passed all filters (accel+ADX+RSI)",
                                 len(qualifying))

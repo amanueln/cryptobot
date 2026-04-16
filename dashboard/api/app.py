@@ -2391,10 +2391,51 @@ def api_momentum_gate_stats():
                 "savedPnl": round(-sum(p for p in pnls if p < 0), 2),
             }
 
+        # Pick accuracy: did we pick the best one?
+        pick_rows = conn.execute("""
+            SELECT timestamp, pair, accel, rank, picked, reason_not_picked,
+                   pnl_24h, pnl_48h
+            FROM momentum_gate_log
+            WHERE result = 'pass' AND rank IS NOT NULL AND pnl_24h IS NOT NULL
+            ORDER BY timestamp DESC LIMIT 500
+        """).fetchall()
+
+        pick_analysis = {"totalCycles": 0, "pickedRight": 0, "missedBetter": 0, "examples": []}
+        # Group by timestamp to find cycles with multiple passing candidates
+        cycles = {}
+        for r in pick_rows:
+            ts = r["timestamp"]
+            if ts not in cycles:
+                cycles[ts] = []
+            cycles[ts].append(dict(r))
+
+        for ts, candidates in sorted(cycles.items(), reverse=True):
+            if len(candidates) < 2:
+                continue  # only interesting when there were choices
+            pick_analysis["totalCycles"] += 1
+            picked = [c for c in candidates if c.get("picked")]
+            not_picked = [c for c in candidates if not c.get("picked") and c.get("pnl_24h") is not None]
+            if picked and not_picked:
+                picked_pnl = picked[0].get("pnl_24h", 0) or 0
+                best_alt_pnl = max((c.get("pnl_24h", 0) or 0) for c in not_picked)
+                if picked_pnl >= best_alt_pnl:
+                    pick_analysis["pickedRight"] += 1
+                else:
+                    pick_analysis["missedBetter"] += 1
+                    if len(pick_analysis["examples"]) < 5:
+                        pick_analysis["examples"].append({
+                            "timestamp": ts,
+                            "picked": picked[0]["pair"],
+                            "pickedPnl": picked_pnl,
+                            "betterAlt": max(not_picked, key=lambda c: c.get("pnl_24h", 0) or 0)["pair"],
+                            "betterPnl": best_alt_pnl,
+                        })
+
         return jsonify({
             "passed": stats(passed),
             "blocked": stats(blocked),
             "byGate": gate_breakdown,
+            "pickAccuracy": pick_analysis,
         })
     except Exception as e:
         return jsonify({"error": str(e)})

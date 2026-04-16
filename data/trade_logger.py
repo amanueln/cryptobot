@@ -217,11 +217,17 @@ class TradeLogger:
                     pnl_48h REAL
                 )
             """)
-            # Migrate: add follow-up columns to existing momentum_gate_log
-            for col in ["price_6h", "price_12h", "price_24h", "price_48h",
-                         "pnl_6h", "pnl_12h", "pnl_24h", "pnl_48h"]:
+            # Migrate: add follow-up and ranking columns to existing momentum_gate_log
+            for col, ctype in [
+                ("price_6h", "REAL"), ("price_12h", "REAL"),
+                ("price_24h", "REAL"), ("price_48h", "REAL"),
+                ("pnl_6h", "REAL"), ("pnl_12h", "REAL"),
+                ("pnl_24h", "REAL"), ("pnl_48h", "REAL"),
+                ("rank", "INTEGER"), ("picked", "INTEGER"),
+                ("reason_not_picked", "TEXT"),
+            ]:
                 try:
-                    conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} REAL")
+                    conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} {ctype}")
                 except Exception:
                     pass  # column already exists
             # Migrate: add new columns for regression predictions
@@ -570,8 +576,9 @@ class TradeLogger:
                 """INSERT INTO momentum_gate_log
                    (timestamp, pair, accel, result, blocked_by,
                     green_count, body_ratio, chg3h_atr,
-                    ath_dist, mom_age, time_at_level, price, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ath_dist, mom_age, time_at_level, price, created_at,
+                    rank, picked, reason_not_picked)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         g.get("timestamp", now), g["pair"], g["accel"],
@@ -579,6 +586,7 @@ class TradeLogger:
                         g.get("green_count"), g.get("body_ratio"), g.get("chg3h_atr"),
                         g.get("ath_dist"), g.get("mom_age"), g.get("time_at_level"),
                         g.get("price"), now,
+                        g.get("rank"), g.get("picked", 0), g.get("reason_not_picked"),
                     )
                     for g in gates
                 ],
