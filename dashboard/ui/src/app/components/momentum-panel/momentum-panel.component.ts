@@ -1891,41 +1891,87 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       text: 'No cooldown', met: !((s?.exit_cooldown_remaining ?? 0) > 0),
       tooltip: `1-hour cooldown after each sell to avoid emotional re-entries. ${(s?.exit_cooldown_remaining ?? 0) > 0 ? s!.exit_cooldown_remaining + 'h remaining.' : 'Clear.'}`,
     });
-    // Use live data from the top READY candidate (passes quality+structure gates)
-    const all = this.accelScores();
-    const top = all.find(c => c.accel > 0.10 && c.quality?.pass !== false && c.structural?.pass !== false)
-              || all.find(c => c.accel > 0.10); // fallback to top accel if none ready
-    const topName = top ? top.pair.replace('-USD', '') : null;
-    tags.push({
-      text: `Accel > 10%${topName && top!.accel > 0.10 ? ' (' + topName + ' +' + (top!.accel * 100).toFixed(0) + '%)' : ''}`,
-      met: top ? top.accel > 0.10 : false,
-      tooltip: 'A coin must show >10% momentum acceleration — meaning the uptrend is getting stronger, not just going up.',
-    });
-    tags.push({
-      text: `ADX > 25${top?.adx != null ? ' (' + top.adx.toFixed(0) + ')' : ''}`,
-      met: top?.adx != null ? top.adx > 25 : null,
-      tooltip: 'ADX (Average Directional Index) must be above 25, confirming a strong trend is in place rather than random chop.',
-    });
-    tags.push({
-      text: `RSI 50–65${top?.rsi != null ? ' (' + top.rsi.toFixed(0) + ')' : ''}`,
-      met: top?.rsi != null ? (top.rsi > 50 && top.rsi <= 65) : null,
-      tooltip: 'RSI must be above 50 (upward momentum) but below 65 (not overbought). Above 65 means the coin already ran too hard.',
-    });
-    // Quality and structural gates from the top coin
-    if (top?.quality) {
-      tags.push({
-        text: `Candle quality${top.quality.pass === false ? '' : ''}`,
-        met: top.quality.pass !== false,
-        tooltip: `Green candles: ${top.quality.greenCount}/6, body ratio: ${top.quality.bodyRatio}, ATR extension: ${top.quality.chg3hAtr}x`,
-      });
+
+    // Evaluate ALL ready candidates like the engine does — find the best one
+    const all = this.accelScores().filter(c => c.accel > 0.10);
+    const ready = all.filter(c => c.quality?.pass !== false && c.structural?.pass !== false);
+    const candidates = ready.length > 0 ? ready : all;
+
+    // Find the best candidate that passes the most filters
+    let best: typeof all[0] | null = null;
+    let bestReason = '';
+    for (const c of candidates) {
+      const passAdx = c.adx != null && c.adx > 25;
+      const passRsi = c.rsi != null && c.rsi > 50 && c.rsi <= 65;
+      const passQuality = c.quality?.pass !== false;
+      const passStructure = c.structural?.pass !== false;
+      if (passAdx && passRsi && passQuality && passStructure) {
+        best = c; // this one would get bought
+        bestReason = 'would buy';
+        break;
+      }
+      if (!best) {
+        best = c; // first candidate as fallback
+      }
     }
-    if (top?.structural) {
+    if (!best && all.length > 0) best = all[0];
+
+    const coin = best;
+    const name = coin ? coin.pair.replace('-USD', '') : null;
+
+    // Build candidate summary for tooltip
+    const summaryLines = candidates.slice(0, 5).map(c => {
+      const n = c.pair.replace('-USD', '');
+      const adxOk = c.adx != null && c.adx > 25 ? '✓' : '✗';
+      const rsiOk = c.rsi != null && c.rsi > 50 && c.rsi <= 65 ? '✓' : '✗';
+      return `${n}: ADX ${adxOk}${c.adx != null ? c.adx.toFixed(0) : '?'} RSI ${rsiOk}${c.rsi != null ? c.rsi.toFixed(0) : '?'} +${(c.accel * 100).toFixed(0)}%`;
+    }).join(' | ');
+
+    const readyCount = ready.length;
+    const totalCount = all.length;
+
+    tags.push({
+      text: `${totalCount} above 10%, ${readyCount} ready`,
+      met: readyCount > 0,
+      tooltip: `${totalCount} coins above 10% acceleration. ${readyCount} pass quality+structure gates. Engine evaluates all ready coins and picks the best.`,
+    });
+
+    if (coin) {
       tags.push({
-        text: `Structure${top.structural.pass === false ? '' : ''}`,
-        met: top.structural.pass !== false,
-        tooltip: `ATH dist: ${top.structural.athDist}%, momentum age: ${top.structural.momAge}h, stuck: ${top.structural.timeAtLevel}/100`,
+        text: `Target: ${name} +${(coin.accel * 100).toFixed(0)}%`,
+        met: bestReason === 'would buy' ? true : null,
+        tooltip: bestReason === 'would buy'
+          ? `${name} passes all filters — engine would buy this on next tick`
+          : `Best candidate. ${summaryLines}`,
       });
+      tags.push({
+        text: `ADX > 25 (${coin.adx != null ? coin.adx.toFixed(0) : '?'})`,
+        met: coin.adx != null ? coin.adx > 25 : null,
+        tooltip: `${name}'s ADX. All candidates: ${summaryLines}`,
+      });
+      tags.push({
+        text: `RSI 50–65 (${coin.rsi != null ? coin.rsi.toFixed(0) : '?'})`,
+        met: coin.rsi != null ? (coin.rsi > 50 && coin.rsi <= 65) : null,
+        tooltip: `${name}'s RSI. All candidates: ${summaryLines}`,
+      });
+      if (coin.quality) {
+        tags.push({
+          text: 'Candle quality',
+          met: coin.quality.pass !== false,
+          tooltip: `${name}: ${coin.quality.greenCount}/6 green, body ${coin.quality.bodyRatio}, ${coin.quality.chg3hAtr}x ATR`,
+        });
+      }
+      if (coin.structural) {
+        tags.push({
+          text: 'Structure',
+          met: coin.structural.pass !== false,
+          tooltip: `${name}: ATH ${coin.structural.athDist}%, age ${coin.structural.momAge}h, stuck ${coin.structural.timeAtLevel}/100`,
+        });
+      }
+    } else {
+      tags.push({ text: 'No candidates above 10%', met: false, tooltip: 'No coins have acceleration above the 10% entry threshold.' });
     }
+
     return tags;
   }
 
