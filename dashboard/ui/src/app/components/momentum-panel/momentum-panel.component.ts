@@ -793,7 +793,7 @@ Chart.register(...registerables, zoomPlugin);
     .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .ch-stats { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .ch-stats { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; flex: 1; justify-content: center; }
     .ch-stat { display: flex; flex-direction: column; align-items: center; }
     .ch-stat-lbl { font-size: 0.6rem; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
     .ch-stat-val { font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
