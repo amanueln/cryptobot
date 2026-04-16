@@ -1086,7 +1086,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   trades = signal<MomentumTradeData[]>([]);
   events = signal<MomentumEventData[]>([]);
   equityData = signal<MomentumEquityData[]>([]);
-  accelScores = signal<{ pair: string; accel: number; price: number; quality?: {
+  accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; quality?: {
     green: boolean; greenCount: number;
     body: boolean; bodyRatio: number;
     ext: boolean; chg3hAtr: number;
@@ -1851,16 +1851,22 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       text: 'No cooldown', met: !((s?.exit_cooldown_remaining ?? 0) > 0),
       tooltip: `1-hour cooldown after each sell to avoid emotional re-entries. ${(s?.exit_cooldown_remaining ?? 0) > 0 ? s!.exit_cooldown_remaining + 'h remaining.' : 'Clear.'}`,
     });
+    // Use live data from the top qualifying candidate
+    const top = this.accelScores().find(c => c.accel > 0.10);
+    const topName = top ? top.pair.replace('-USD', '') : null;
     tags.push({
-      text: 'Accel > 10%', met: null,
+      text: `Accel > 10%${topName && top!.accel > 0.10 ? ' (' + topName + ' +' + (top!.accel * 100).toFixed(0) + '%)' : ''}`,
+      met: top ? top.accel > 0.10 : false,
       tooltip: 'A coin must show >10% momentum acceleration — meaning the uptrend is getting stronger, not just going up.',
     });
     tags.push({
-      text: 'ADX > 25', met: null,
+      text: `ADX > 25${top?.adx != null ? ' (' + top.adx.toFixed(0) + ')' : ''}`,
+      met: top?.adx != null ? top.adx > 25 : null,
       tooltip: 'ADX (Average Directional Index) must be above 25, confirming a strong trend is in place rather than random chop.',
     });
     tags.push({
-      text: 'RSI > 50', met: null,
+      text: `RSI > 50${top?.rsi != null ? ' (' + top.rsi.toFixed(0) + ')' : ''}`,
+      met: top?.rsi != null ? top.rsi > 50 : null,
       tooltip: 'RSI must be above 50, confirming upward momentum. Below 50 suggests weakening or downward pressure.',
     });
     return tags;

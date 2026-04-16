@@ -2288,6 +2288,20 @@ def api_momentum_accel():
                 highs = [r["high"] for r in rows_chron]
                 lows = [r["low"] for r in rows_chron]
 
+                # Compute ADX and RSI for this coin
+                import pandas as pd
+                h_s = pd.Series(highs)
+                l_s = pd.Series(lows)
+                c_s = pd.Series(closes)
+                try:
+                    adx_val = float(ADXIndicator(h_s, l_s, c_s, window=14).adx().iloc[-1])
+                except Exception:
+                    adx_val = None
+                try:
+                    rsi_val = float(RSIIndicator(c_s, window=14).rsi().iloc[-1])
+                except Exception:
+                    rsi_val = None
+
                 # Gate 1: green count (>= 2 of last 6)
                 green_count = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o)
                 gate_green = green_count >= 2
@@ -2340,6 +2354,8 @@ def api_momentum_accel():
 
                 scores.append({
                     "pair": pair, "accel": round(accel, 4), "price": round(cur, 6),
+                    "adx": round(adx_val, 1) if adx_val is not None and not pd.isna(adx_val) else None,
+                    "rsi": round(rsi_val, 1) if rsi_val is not None and not pd.isna(rsi_val) else None,
                     "quality": {
                         "green": gate_green, "greenCount": green_count,
                         "body": gate_body, "bodyRatio": round(avg_body, 2),
