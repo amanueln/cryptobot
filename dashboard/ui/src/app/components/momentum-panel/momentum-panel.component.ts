@@ -70,7 +70,7 @@ Chart.register(...registerables);
             {{ status()?.regime_bullish ? 'BULL' : 'BEAR' }}
           </span>
           @if ((status()?.exit_cooldown_remaining ?? 0) > 0) {
-            <span class="cooldown-badge">Cooldown {{ status()!.exit_cooldown_remaining }}h</span>
+            <span class="cooldown-badge">Cooldown {{ cooldownDisplay() }}</span>
             <button class="skip-cooldown-btn" (click)="skipCooldown()" [disabled]="skippingCooldown()" title="Skip cooldown and allow immediate re-entry">{{ skippingCooldown() ? 'Skipping...' : 'Skip' }}</button>
           }
           @if ((status()?.hours_in_position ?? 0) > 0) {
@@ -188,9 +188,17 @@ Chart.register(...registerables);
                 <span class="hold-accel">Accel: {{ (h.accel * 100).toFixed(1) }}%</span>
               </div>
               <div class="hold-mid">
-                <span class="hold-stop-label">ATR Stop</span>
+                <span class="hold-stop-label">Trail Stop</span>
                 <span class="hold-stop-price">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
                 <span class="hold-stop-dist">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '% away' : 'no stop set' }}</span>
+                @if (h.trail_layer) {
+                  <span class="hold-trail-layer" [class.layer-wide]="h.trail_layer === 'wide'"
+                        [class.layer-tight]="h.trail_layer === 'tight'"
+                        [class.layer-stale]="h.trail_layer === 'stale'"
+                        [class.layer-inactive]="h.trail_layer === 'inactive'">
+                    {{ trailLayerLabel(h.trail_layer) }}
+                  </span>
+                }
                 @if (h.max_hold_remaining_hours !== undefined) {
                   <span class="hold-maxhold">Max hold: {{ h.max_hold_remaining_hours }}h left</span>
                 }
@@ -243,9 +251,27 @@ Chart.register(...registerables);
               <span class="strat-value">{{ positionExplain() }}</span>
               <span class="strat-explain">{{ positionDetail() }}</span>
             </div>
-            <div class="strat-item">
+            <div class="strat-item exit-conditions-item">
               <span class="strat-label">Would Sell If</span>
-              <span class="strat-value sell-conditions">{{ sellConditions() }}</span>
+              @if (isHolding()) {
+                <div class="exit-bars">
+                  @for (cond of exitConditions(); track cond.label) {
+                    <div class="exit-bar-row">
+                      <div class="exit-bar-header">
+                        <span class="exit-bar-label">{{ cond.label }}</span>
+                        <span class="exit-bar-value" [class.danger]="cond.pct >= 80" [class.warning]="cond.pct >= 50 && cond.pct < 80">{{ cond.detail }}</span>
+                      </div>
+                      <div class="exit-bar-track">
+                        <div class="exit-bar-fill" [class.danger]="cond.pct >= 80" [class.warning]="cond.pct >= 50 && cond.pct < 80"
+                             [style.width.%]="cond.pct"></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+                <span class="strat-explain">Checked every ~60s via ticker, hourly via candle</span>
+              } @else {
+                <span class="strat-value sell-conditions">N/A — not holding</span>
+              }
             </div>
             <div class="strat-item">
               <span class="strat-label">Would Buy If</span>
@@ -707,6 +733,38 @@ Chart.register(...registerables);
     }
     .sell-conditions { color: #f87171; }
     .buy-conditions { color: #4ade80; }
+    .exit-conditions-item { grid-column: 1 / -1; }
+    .exit-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .exit-bar-row { display: flex; flex-direction: column; gap: 3px; }
+    .exit-bar-header { display: flex; justify-content: space-between; align-items: center; }
+    .exit-bar-label { font-size: 10px; font-weight: 600; color: #9ca3af; }
+    .exit-bar-value {
+      font-size: 10px; color: #6b7280;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .exit-bar-value.warning { color: #fbbf24; }
+    .exit-bar-value.danger { color: #f87171; }
+    .exit-bar-track {
+      height: 5px; background: #1e2130; border-radius: 3px; overflow: hidden;
+    }
+    .exit-bar-fill {
+      height: 100%; border-radius: 3px; transition: width 0.5s ease;
+      background: linear-gradient(90deg, #4b5280 0%, #6366f1 100%);
+    }
+    .exit-bar-fill.warning {
+      background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+    }
+    .exit-bar-fill.danger {
+      background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+    }
+    .hold-trail-layer {
+      font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+      display: inline-block; margin-top: 3px; letter-spacing: 0.04em;
+    }
+    .layer-wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .layer-tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .layer-stale { background: rgba(248,113,113,0.15); color: #f87171; }
+    .layer-inactive { background: rgba(100,116,139,0.12); color: #64748b; }
     .rejections-item { grid-column: 1 / -1; }
     .rejection-list {
       font-size: 11px; color: #fbbf24; line-height: 1.6;
@@ -1169,11 +1227,12 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (s.holdings?.length) {
       const h = s.holdings[0];
       const pnlStr = h.pnl >= 0 ? `+${h.pnl_pct.toFixed(1)}%` : `${h.pnl_pct.toFixed(1)}%`;
+      const layerStr = h.trail_layer ? ` Trail: ${h.trail_layer}.` : '';
       const stopStr = h.stop_price > 0
-        ? `ATR stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away).`
+        ? `Stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away).`
         : 'No stop set yet.';
       const holdStr = h.max_hold_remaining_hours > 0 ? ` Max hold: ${h.max_hold_remaining_hours}h left.` : ' Max hold expired.';
-      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}${holdStr}`;
+      return `Entry ${this.formatPrice(h.entry_price)} → now ${this.formatPrice(h.current_price)} (${pnlStr}). ${stopStr}${layerStr}${holdStr}`;
     }
     if (s.was_cash) {
       return 'Waiting for a coin with >10% acceleration in a bullish regime.';
@@ -1184,15 +1243,90 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   sellConditions(): string {
     const s = this.status();
     if (!s?.holdings?.length) return 'N/A — not holding';
+    return ''; // replaced by exitConditions() progress bars
+  }
+
+  exitConditions(): { label: string; detail: string; pct: number }[] {
+    const s = this.status();
+    if (!s?.holdings?.length) return [];
     const h = s.holdings[0];
-    const lines: string[] = [];
-    lines.push(`• ATR stop at ${this.formatPrice(h.stop_price)} (${h.stop_distance_pct.toFixed(1)}% away) — per-coin volatility stop`);
-    lines.push(`• Accel fades below 5% → momentum exit (take profit)`);
-    lines.push(`• Max hold 72h reached (${h.max_hold_remaining_hours}h left) → stale position exit`);
-    lines.push('• BTC regime flips bearish → regime exit');
-    lines.push('• 15% equity drawdown from peak → emergency backstop');
-    lines.push('• You click Sell → manual exit');
-    return lines.join('\n');
+    const conds: { label: string; detail: string; pct: number }[] = [];
+
+    // 1. Trail stop (delayed+stale) — how close price is to stop
+    const stopDist = h.stop_distance_pct ?? 0;
+    const trailLabel = h.trail_layer === 'stale' ? 'Trail Stop (STALE — 2.0%)'
+      : h.trail_layer === 'tight' ? 'Trail Stop (tight — 2.5%)'
+      : h.trail_layer === 'wide' ? 'Trail Stop (wide — 5.0%)'
+      : 'Trail Stop (inactive)';
+    // Closer to stop = higher percentage (e.g. 1% away = 80% bar)
+    const trailPct = h.stop_price > 0 ? Math.min(100, Math.max(0, (1 - stopDist / 5) * 100)) : 0;
+    conds.push({
+      label: trailLabel,
+      detail: h.stop_price > 0 ? `${this.formatPrice(h.stop_price)} (${stopDist.toFixed(1)}% away)` : 'not active',
+      pct: trailPct,
+    });
+
+    // 2. ATR stop floor
+    const atrDist = h.entry_price > 0 && h.atr_stop_price > 0
+      ? ((h.current_price - h.atr_stop_price) / h.current_price) * 100 : 0;
+    const atrPct = h.atr_stop_price > 0 ? Math.min(100, Math.max(0, (1 - atrDist / 8) * 100)) : 0;
+    conds.push({
+      label: 'ATR Stop Floor',
+      detail: h.atr_stop_price > 0 ? `${this.formatPrice(h.atr_stop_price)} (${atrDist.toFixed(1)}% away)` : 'not set',
+      pct: atrPct,
+    });
+
+    // 3. Accel fade — find current accel
+    const accel = h.accel ?? 0;
+    const accelThresh = 0.05;
+    const accelPct = accel > 0 ? Math.min(100, Math.max(0, (1 - (accel - accelThresh) / 0.15) * 100)) : 100;
+    const hoursHeld = s.hours_in_position ?? 0;
+    conds.push({
+      label: 'Accel Fade (< 5%)',
+      detail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}% accel` : `waiting (${4 - hoursHeld}h until checked)`,
+      pct: hoursHeld >= 4 ? accelPct : (hoursHeld / 4) * 30,
+    });
+
+    // 4. Max hold 72h
+    const maxHoldPct = Math.min(100, (hoursHeld / 72) * 100);
+    conds.push({
+      label: 'Max Hold (72h)',
+      detail: `${hoursHeld}h held (${h.max_hold_remaining_hours}h left)`,
+      pct: maxHoldPct,
+    });
+
+    // 5. Regime flip
+    const regimePct = s.regime_bullish ? 5 : 90;
+    conds.push({
+      label: 'BTC Regime Bearish',
+      detail: s.regime_bullish ? 'bullish — safe' : 'BEARISH — will exit',
+      pct: regimePct,
+    });
+
+    // 6. Equity drawdown
+    conds.push({
+      label: 'Equity Drawdown (15%)',
+      detail: 'emergency backstop',
+      pct: 2,
+    });
+
+    return conds;
+  }
+
+  cooldownDisplay(): string {
+    const hours = this.status()?.exit_cooldown_remaining ?? 0;
+    if (hours < 1) return `${Math.round(hours * 60)}min`;
+    return `${hours}h`;
+  }
+
+  trailLayerLabel(layer: string): string {
+    switch (layer) {
+      case 'wide': return 'Wide trail (5%)';
+      case 'tight': return 'Tight trail (2.5%)';
+      case 'stale': return 'STALE — tight (2.0%)';
+      case 'inactive': return 'Trail inactive';
+      default: return layer;
+    }
   }
 
   buyConditions(): string {

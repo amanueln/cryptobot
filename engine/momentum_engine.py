@@ -54,7 +54,7 @@ FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
 EQUITY_TRAIL_PCT = 0.15    # emergency backstop — portfolio-level (should rarely fire now)
-EXIT_COOLDOWN = 4          # hours to wait after exit before re-entering
+EXIT_COOLDOWN = 1          # hours to wait after exit before re-entering (was 4h, sim shows 1h optimal)
 MIN_HOLD_HOURS = 0         # no minimum hold — hysteresis prevents whipsaw
 ATR_PERIOD = 24            # ATR lookback for smart stop calculation
 
