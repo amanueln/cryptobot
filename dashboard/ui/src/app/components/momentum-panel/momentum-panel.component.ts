@@ -79,10 +79,12 @@ Chart.register(...registerables, zoomPlugin);
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
           }
         </span>
-        @if (status()?.status === 'cash' && engineTickDisplay()) {
-          <span class="poll-timer">engine tick {{ engineTickDisplay() }}</span>
+        @if (status()?.status === 'warming_up') {
+          <span class="poll-timer">warming up...</span>
+        } @else if (status()?.status === 'cash' && status()?.last_candle_ts && engineTickDisplay()) {
+          <span class="poll-timer">next entry check {{ engineTickDisplay() }}</span>
         } @else {
-          <span class="poll-timer">next refresh {{ pollCountdown() }}s</span>
+          <span class="poll-timer">refresh {{ pollCountdown() }}s</span>
         }
       </div>
 
@@ -1227,20 +1229,9 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   private _updateEngineTick(): void {
     const s = this.status();
-    if (s?.status !== 'cash') { this._engineTickDisplay.set(''); return; }
-    // Use last_candle_ts if available, otherwise estimate from clock (candles arrive on the hour)
-    let remaining: number;
-    if (s.last_candle_ts) {
-      const last = new Date(s.last_candle_ts).getTime();
-      remaining = Math.max(0, 3600000 - (Date.now() - last));
-    } else {
-      // Estimate: next hour mark
-      const now = new Date();
-      const nextHour = new Date(now);
-      nextHour.setMinutes(0, 0, 0);
-      nextHour.setHours(nextHour.getHours() + 1);
-      remaining = nextHour.getTime() - now.getTime();
-    }
+    if (s?.status !== 'cash' || !s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
+    const last = new Date(s.last_candle_ts).getTime();
+    const remaining = Math.max(0, 3600000 - (Date.now() - last));
     const min = Math.floor(remaining / 60000);
     const sec = Math.floor((remaining % 60000) / 1000);
     this._engineTickDisplay.set(`${min}:${sec.toString().padStart(2, '0')}`);
