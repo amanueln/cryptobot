@@ -550,6 +550,10 @@ export class ApiService {
     return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/reset-data`, {});
   }
 
+  backupNow() {
+    return this.http.post<{ status: string; backed_up: { file: string; size_mb: number }[]; dest: string }>(`${API}/backup-now`, {});
+  }
+
   resetMomentumData() {
     return this.http.post<{ status: string; deleted: Record<string, number> }>(`${API}/momentum/reset`, {});
   }

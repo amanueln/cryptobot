@@ -492,6 +492,9 @@ class SimRunner:
                 for trade in trades:
                     try:
                         self.trade_logger.log_momentum_trade(trade)
+                        if trade.side == "sell" and hasattr(self.momentum_engine, '_last_exit_snapshot') and self.momentum_engine._last_exit_snapshot:
+                            self.trade_logger.log_exit_snapshot(self.momentum_engine._last_exit_snapshot)
+                            self.momentum_engine._last_exit_snapshot = None
                         short = trade.pair.replace("-USD", "")
                         if trade.side == "buy":
                             title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
@@ -561,6 +564,9 @@ class SimRunner:
                         self.momentum_engine.status = "cash"
                         self.momentum_engine.status_detail = "Manual sell — cooldown active"
                     self.trade_logger.log_momentum_trade(trade)
+                    if hasattr(self.momentum_engine, '_last_exit_snapshot') and self.momentum_engine._last_exit_snapshot:
+                        self.trade_logger.log_exit_snapshot(self.momentum_engine._last_exit_snapshot)
+                        self.momentum_engine._last_exit_snapshot = None
                     short = trade.pair.replace("-USD", "")
                     self.trade_logger.log_momentum_event(
                         "momentum_sell",
@@ -604,6 +610,9 @@ class SimRunner:
             trade = self.momentum_engine.check_stop_ticker(pair, price)
             if trade:
                 self.trade_logger.log_momentum_trade(trade)
+                if hasattr(self.momentum_engine, '_last_exit_snapshot') and self.momentum_engine._last_exit_snapshot:
+                    self.trade_logger.log_exit_snapshot(self.momentum_engine._last_exit_snapshot)
+                    self.momentum_engine._last_exit_snapshot = None
                 short = trade.pair.replace("-USD", "")
                 title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
                 self.trade_logger.log_momentum_event(
@@ -622,6 +631,9 @@ class SimRunner:
                 trades = self.momentum_engine.feed_candle(pair, candle)
                 for trade in trades:
                     self.trade_logger.log_momentum_trade(trade)
+                    if trade.side == "sell" and hasattr(self.momentum_engine, '_last_exit_snapshot') and self.momentum_engine._last_exit_snapshot:
+                        self.trade_logger.log_exit_snapshot(self.momentum_engine._last_exit_snapshot)
+                        self.momentum_engine._last_exit_snapshot = None
                     short = trade.pair.replace("-USD", "")
                     if trade.side == "buy":
                         title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"

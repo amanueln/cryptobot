@@ -42,6 +42,7 @@ _start_time = datetime.now()
 _bot_process: multiprocessing.Process | None = None
 _flask_process: multiprocessing.Process | None = None
 _update_process: multiprocessing.Process | None = None
+_backup_process: multiprocessing.Process | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,47 @@ def run_flask():
 # ---------------------------------------------------------------------------
 # Auto-update process
 # ---------------------------------------------------------------------------
+
+def run_backup(interval_seconds: int = 21600):
+    """Periodically back up SQLite databases to /backup (external drive)."""
+    import glob
+    import shutil
+
+    backup_dir = "/backup"
+    logger.info("Backup process starting (interval=%ds, dest=%s)", interval_seconds, backup_dir)
+    while True:
+        time.sleep(interval_seconds)
+        if not os.path.isdir(backup_dir):
+            logger.warning("Backup dir %s not found — skipping", backup_dir)
+            continue
+        try:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            backed = 0
+            for db_file in glob.glob("data/*.db") + glob.glob("/app/persistent/*.db"):
+                name = os.path.basename(db_file)
+                # Keep latest copy (overwritten each time)
+                dest_latest = os.path.join(backup_dir, name)
+                shutil.copy2(db_file, dest_latest)
+                # Keep daily snapshot (one per day)
+                daily_dir = os.path.join(backup_dir, "daily")
+                os.makedirs(daily_dir, exist_ok=True)
+                daily_name = f"{os.path.splitext(name)[0]}_{stamp[:8]}.db"
+                dest_daily = os.path.join(daily_dir, daily_name)
+                if not os.path.exists(dest_daily):
+                    shutil.copy2(db_file, dest_daily)
+                backed += 1
+            # Clean up daily snapshots older than 30 days
+            daily_dir = os.path.join(backup_dir, "daily")
+            if os.path.isdir(daily_dir):
+                cutoff = time.time() - 30 * 86400
+                for f in os.listdir(daily_dir):
+                    fp = os.path.join(daily_dir, f)
+                    if os.path.isfile(fp) and os.path.getmtime(fp) < cutoff:
+                        os.remove(fp)
+            logger.info("Backup complete: %d databases copied to %s", backed, backup_dir)
+        except Exception as e:
+            logger.error("Backup failed: %s", e)
+
 
 def run_auto_update(interval_seconds: int = 21600):
     """Periodically check for updates from git remote."""
@@ -110,7 +152,7 @@ def _handle_sighup(signum, frame):
 def _handle_sigterm(signum, frame):
     """SIGTERM = graceful shutdown."""
     logger.info("SIGTERM received — shutting down")
-    for proc in [_bot_process, _flask_process, _update_process]:
+    for proc in [_bot_process, _flask_process, _update_process, _backup_process]:
         if proc and proc.is_alive():
             proc.terminate()
     sys.exit(0)
@@ -121,7 +163,7 @@ def _handle_sigterm(signum, frame):
 # ---------------------------------------------------------------------------
 
 def main():
-    global _bot_process, _flask_process, _update_process
+    global _bot_process, _flask_process, _update_process, _backup_process
 
     logger.info("=" * 50)
     logger.info("CryptoBot starting")
@@ -161,6 +203,14 @@ def main():
         _update_process.start()
         logger.info("Auto-update started (interval=%s, pid=%d)", interval_str, _update_process.pid)
 
+    # 4. Start backup process (every 6 hours to external drive)
+    if os.path.isdir("/backup") or os.environ.get("BACKUP_ENABLED", "true").lower() in ("true", "1", "yes"):
+        _backup_process = multiprocessing.Process(
+            target=run_backup, args=(21600,), daemon=True,
+        )
+        _backup_process.start()
+        logger.info("Backup started (every 6h, pid=%d)", _backup_process.pid)
+
     logger.info("All processes running. Dashboard at http://0.0.0.0:5001")
 
     # Keep main process alive, restart children if they die
@@ -178,7 +228,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt — shutting down")
     finally:
-        for proc in [_bot_process, _flask_process, _update_process]:
+        for proc in [_bot_process, _flask_process, _update_process, _backup_process]:
             if proc and proc.is_alive():
                 proc.terminate()
 

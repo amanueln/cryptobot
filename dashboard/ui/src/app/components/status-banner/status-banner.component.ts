@@ -54,6 +54,14 @@ import { ApiService, HealthData } from '../../services/api.service';
           </div>
         </div>
 
+        <button class="btn btn-backup" (click)="onBackupClicked()" [disabled]="backupRunning()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          {{ backupRunning() ? 'Backing up...' : backupResult() || 'Backup' }}
+        </button>
         <button class="btn btn-reset" (click)="onResetClicked()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -174,6 +182,22 @@ import { ApiService, HealthData } from '../../services/api.service';
       color: #e2e8f0;
     }
 
+    .btn-backup {
+      background: #1a3b2a;
+      border-color: #16a34a;
+      color: #4ade80;
+    }
+
+    .btn-backup:hover {
+      background: #16a34a;
+      color: #fff;
+    }
+
+    .btn-backup:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .btn-reset {
       background: #3b1a1a;
       border-color: #dc2626;
@@ -250,6 +274,8 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
 
   readonly health = signal<HealthData | null>(null);
   readonly dropdownOpen = signal(false);
+  readonly backupRunning = signal(false);
+  readonly backupResult = signal<string | null>(null);
 
   private readonly status = this.api.status;
 
@@ -306,6 +332,25 @@ export class StatusBannerComponent implements OnInit, OnDestroy {
   selectTool(tool: 'scanner' | 'simulator' | 'regime' | 'self-check'): void {
     this.dropdownOpen.set(false);
     this.toolSelected.emit(tool);
+  }
+
+  onBackupClicked(): void {
+    this.backupRunning.set(true);
+    this.backupResult.set(null);
+    this.api.backupNow().subscribe({
+      next: (res) => {
+        const totalMb = res.backed_up.reduce((s, f) => s + f.size_mb, 0);
+        this.backupResult.set(`Done (${totalMb} MB)`);
+        this.backupRunning.set(false);
+        setTimeout(() => this.backupResult.set(null), 5000);
+      },
+      error: (err) => {
+        this.backupResult.set('Failed');
+        this.backupRunning.set(false);
+        console.error('[Backup] failed', err);
+        setTimeout(() => this.backupResult.set(null), 5000);
+      },
+    });
   }
 
   onResetClicked(): void {

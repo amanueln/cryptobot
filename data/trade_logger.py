@@ -230,6 +230,29 @@ class TradeLogger:
                     conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} {ctype}")
                 except Exception:
                     pass  # column already exists
+            # Migrate: add exit snapshot columns to momentum_trades
+            for col, ctype in [
+                ("entry_price", "REAL"),
+                ("exit_price", "REAL"),
+                ("pnl_pct", "REAL"),
+                ("hold_hours", "REAL"),
+                ("peak_price", "REAL"),
+                ("peak_pnl_pct", "REAL"),
+                ("drawdown_from_peak", "REAL"),
+                ("trail_stop", "REAL"),
+                ("atr_stop", "REAL"),
+                ("exit_accel", "REAL"),
+                ("exit_reason_detail", "TEXT"),
+                ("exit_green_count", "INTEGER"),
+                ("exit_body_ratio", "REAL"),
+                ("exit_ath_dist", "REAL"),
+                ("exit_time_at_level", "INTEGER"),
+                ("ticks_since_new_peak", "INTEGER"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE momentum_trades ADD COLUMN {col} {ctype}")
+                except Exception:
+                    pass  # column already exists
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -491,6 +514,46 @@ class TradeLogger:
                     trade.timestamp.isoformat(), trade.pair, trade.side,
                     trade.price, trade.amount, trade.cost_usd, trade.fee,
                     trade.reason, datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_exit_snapshot(self, snapshot: dict) -> None:
+        """Persist exit-side state to the momentum_trades row for this sell."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """UPDATE momentum_trades
+                   SET entry_price = ?, exit_price = ?, pnl_pct = ?, hold_hours = ?,
+                       peak_price = ?, peak_pnl_pct = ?, drawdown_from_peak = ?,
+                       trail_stop = ?, atr_stop = ?, exit_accel = ?,
+                       exit_reason_detail = ?, exit_green_count = ?, exit_body_ratio = ?,
+                       exit_ath_dist = ?, exit_time_at_level = ?, ticks_since_new_peak = ?
+                   WHERE id = (
+                       SELECT id FROM momentum_trades
+                       WHERE pair = ? AND side = 'sell'
+                       ORDER BY id DESC LIMIT 1
+                   )""",
+                (
+                    snapshot.get("entry_price"),
+                    snapshot.get("exit_price"),
+                    snapshot.get("pnl_pct"),
+                    snapshot.get("hold_hours"),
+                    snapshot.get("peak_price"),
+                    snapshot.get("peak_pnl_pct"),
+                    snapshot.get("drawdown_from_peak"),
+                    snapshot.get("trail_stop"),
+                    snapshot.get("atr_stop"),
+                    snapshot.get("exit_accel"),
+                    snapshot.get("exit_reason"),
+                    snapshot.get("exit_green_count"),
+                    snapshot.get("exit_body_ratio"),
+                    snapshot.get("exit_ath_dist"),
+                    snapshot.get("exit_time_at_level"),
+                    snapshot.get("ticks_since_new_peak"),
+                    snapshot.get("pair"),
                 ),
             )
             conn.commit()

@@ -914,9 +914,65 @@ class MomentumEngine:
             return None
 
         price = self._closes[pair][-1]
+        closes = self._closes.get(pair, [])
+        highs = self._highs.get(pair, [])
+        lows = self._lows.get(pair, [])
         gross_usd = holding.shares * price
         fee = gross_usd * self.fee_rate
         net_usd = gross_usd - fee
+
+        # Capture exit snapshot before we delete the holding
+        pnl_pct = (price - holding.entry_price) / holding.entry_price * 100 if holding.entry_price > 0 else 0
+        hold_hours = int((timestamp - holding.entry_time).total_seconds() / 3600) if holding.entry_time else 0
+        peak_pnl = (holding.peak_price - holding.entry_price) / holding.entry_price * 100 if holding.entry_price > 0 else 0
+        drawdown_from_peak = (price - holding.peak_price) / holding.peak_price * 100 if holding.peak_price > 0 else 0
+
+        # Current acceleration at exit
+        exit_accel = None
+        if len(closes) >= LONG_LB + 1:
+            sm = closes[-1] / closes[-SHORT_LB] - 1 if len(closes) > SHORT_LB else 0
+            lm = closes[-1] / closes[-LONG_LB] - 1
+            exit_accel = sm - (lm * SHORT_LB / LONG_LB)
+
+        # Gate values at exit time (same metrics as entry)
+        exit_green = None
+        exit_body = None
+        exit_ath_dist = None
+        exit_time_at_lvl = None
+        opens = self._opens.get(pair, [])
+        if len(closes) >= 6 and len(opens) >= 6:
+            exit_green = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o)
+        if len(closes) >= 3 and len(opens) >= 3 and len(highs) >= 3 and len(lows) >= 3:
+            brs = []
+            for c, o, h, l in zip(closes[-3:], opens[-3:], highs[-3:], lows[-3:]):
+                rng = h - l
+                brs.append(abs(c - o) / rng if rng > 0 else 0)
+            exit_body = round(sum(brs) / len(brs), 3)
+        if len(highs) >= 100:
+            ath = max(highs)
+            exit_ath_dist = round((price - ath) / ath * 100, 2)
+        if len(closes) >= 100:
+            exit_time_at_lvl = sum(1 for c in closes[-100:] if abs(c - price) / price < 0.03)
+
+        self._last_exit_snapshot = {
+            "pair": pair,
+            "entry_price": holding.entry_price,
+            "exit_price": price,
+            "pnl_pct": round(pnl_pct, 2),
+            "hold_hours": hold_hours,
+            "peak_price": holding.peak_price,
+            "peak_pnl_pct": round(peak_pnl, 2),
+            "drawdown_from_peak": round(drawdown_from_peak, 2),
+            "trail_stop": round(holding.trail_stop_price, 6),
+            "atr_stop": round(holding.atr_stop_price, 6),
+            "exit_accel": round(exit_accel, 4) if exit_accel is not None else None,
+            "exit_reason": reason,
+            "exit_green_count": exit_green,
+            "exit_body_ratio": exit_body,
+            "exit_ath_dist": exit_ath_dist,
+            "exit_time_at_level": exit_time_at_lvl,
+            "ticks_since_new_peak": getattr(holding, 'ticks_since_new_peak', None),
+        }
 
         # Track for same-coin lockout
         self._last_sold_pair = pair
