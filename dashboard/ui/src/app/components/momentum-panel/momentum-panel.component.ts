@@ -1239,7 +1239,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     const s = this.status();
     if (s?.status !== 'cash' || !s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
     const last = new Date(s.last_candle_ts).getTime();
-    const remaining = Math.max(0, 3600000 - (Date.now() - last));
+    const elapsed = Date.now() - last;
+    // Use modular arithmetic so countdown wraps around each hour
+    const remaining = elapsed >= 3600000
+      ? 3600000 - (elapsed % 3600000)
+      : 3600000 - elapsed;
     const min = Math.floor(remaining / 60000);
     const sec = Math.floor((remaining % 60000) / 1000);
     this._engineTickDisplay.set(`${min}:${sec.toString().padStart(2, '0')}`);
