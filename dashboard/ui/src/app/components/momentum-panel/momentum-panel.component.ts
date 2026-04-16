@@ -1891,8 +1891,10 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       text: 'No cooldown', met: !((s?.exit_cooldown_remaining ?? 0) > 0),
       tooltip: `1-hour cooldown after each sell to avoid emotional re-entries. ${(s?.exit_cooldown_remaining ?? 0) > 0 ? s!.exit_cooldown_remaining + 'h remaining.' : 'Clear.'}`,
     });
-    // Use live data from the top qualifying candidate
-    const top = this.accelScores().find(c => c.accel > 0.10);
+    // Use live data from the top READY candidate (passes quality+structure gates)
+    const all = this.accelScores();
+    const top = all.find(c => c.accel > 0.10 && c.quality?.pass !== false && c.structural?.pass !== false)
+              || all.find(c => c.accel > 0.10); // fallback to top accel if none ready
     const topName = top ? top.pair.replace('-USD', '') : null;
     tags.push({
       text: `Accel > 10%${topName && top!.accel > 0.10 ? ' (' + topName + ' +' + (top!.accel * 100).toFixed(0) + '%)' : ''}`,
