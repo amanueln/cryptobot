@@ -441,6 +441,8 @@ class MomentumEngine:
                     self.status_detail = "BTC regime bearish — holding cash"
 
         # === Immediate entry from cash (if cooldown expired and no positions) ===
+        if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash <= self.starting_balance * 0.5:
+            self._entry_rejections = [f"Cash ${self.cash:.2f} < 50% of starting balance ${self.starting_balance:.2f}"]
         if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash > self.starting_balance * 0.5:
             self._entry_rejections = []  # only clear when actually re-evaluating
             if not self.regime_bullish:
