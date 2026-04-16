@@ -454,7 +454,7 @@ Chart.register(...registerables, zoomPlugin);
                     <span [style.color]="t.net_pnl >= 0 ? '#4ade80' : '#f87171'" style="font-weight: 600">
                       {{ t.net_pnl >= 0 ? 'WIN' : 'LOSS' }} {{ t.net_pnl >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl) }}
                     </span>
-                    <span class="result-breakdown">price {{ t.net_pnl + t.fee >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl + t.fee) }} / fees -{{ formatCurrency(t.fee) }}</span>
+                    <span class="result-breakdown">price {{ t.net_pnl + t.fee + (t.buy_fee || 0) >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl + t.fee + (t.buy_fee || 0)) }} / fees -{{ formatCurrency(t.fee + (t.buy_fee || 0)) }}</span>
                   } @else if (t.side === 'buy' && t.closed) {
                     <span class="status-badge closed">Closed</span>
                   } @else if (t.side === 'buy') {

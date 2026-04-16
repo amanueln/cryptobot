@@ -2171,22 +2171,27 @@ def api_momentum_trades():
         if r["side"] == "buy":
             buy_costs.setdefault(r["pair"], []).append({
                 "id": r["id"], "cost_usd": r["cost_usd"], "amount": r["amount"],
+                "fee": r.get("fee", 0) or 0,
             })
             r["net_pnl"] = None
             r["entry_price"] = None
+            r["buy_fee"] = None
         elif r["side"] == "sell":
             # Find matching buy(s) for this pair
             buys = buy_costs.get(r["pair"], [])
             total_buy_cost = 0.0
+            buy_fee = 0.0
             entry_price = None
             if buys:
                 # Simple: pop the most recent buy (momentum only holds 1 at a time)
                 matched = buys.pop(0)
                 total_buy_cost = matched["cost_usd"]
+                buy_fee = matched["fee"]
                 sold_buy_ids.add(matched["id"])
                 entry_price = total_buy_cost / matched["amount"] if matched["amount"] else None
             r["net_pnl"] = r["cost_usd"] - total_buy_cost if total_buy_cost else None
             r["entry_price"] = entry_price
+            r["buy_fee"] = buy_fee
         results.append(r)
 
     # Mark buys that have been sold

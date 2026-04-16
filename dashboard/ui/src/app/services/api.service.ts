@@ -352,6 +352,7 @@ export interface MomentumTradeData {
   reason: string;
   net_pnl: number | null;
   entry_price: number | null;
+  buy_fee: number | null;
   closed: boolean;
 }
 
