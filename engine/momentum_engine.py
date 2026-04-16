@@ -598,12 +598,14 @@ class MomentumEngine:
             long_mom = closes[-1] / closes[-LONG_LB] - 1
             accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
             if long_mom <= 0:
+                self._entry_rejections.append(f"{pair}: 30-day momentum negative (downtrend)")
                 continue
             if accel <= 0:
                 continue
             # RSI filter: skip overbought coins
             rsi = _rsi(closes, RSI_PERIOD)
             if rsi is not None and rsi > RSI_MAX:
+                self._entry_rejections.append(f"{pair}: RSI {rsi:.0f} > {RSI_MAX} (overbought)")
                 continue
             scores.append(AccelScore(pair=pair, accel=accel, short_mom=short_mom, long_mom=long_mom))
         scores.sort(key=lambda s: s.accel, reverse=True)

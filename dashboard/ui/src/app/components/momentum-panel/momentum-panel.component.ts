@@ -1865,9 +1865,9 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       tooltip: 'ADX (Average Directional Index) must be above 25, confirming a strong trend is in place rather than random chop.',
     });
     tags.push({
-      text: `RSI > 50${top?.rsi != null ? ' (' + top.rsi.toFixed(0) + ')' : ''}`,
-      met: top?.rsi != null ? top.rsi > 50 : null,
-      tooltip: 'RSI must be above 50, confirming upward momentum. Below 50 suggests weakening or downward pressure.',
+      text: `RSI 50–65${top?.rsi != null ? ' (' + top.rsi.toFixed(0) + ')' : ''}`,
+      met: top?.rsi != null ? (top.rsi > 50 && top.rsi <= 65) : null,
+      tooltip: 'RSI must be above 50 (upward momentum) but below 65 (not overbought). Above 65 means the coin already ran too hard.',
     });
     return tags;
   }
