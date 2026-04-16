@@ -1904,9 +1904,12 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     // Skip coins in lockout (same-coin or loss lockout) — engine won't buy them
     const lockoutPair = s?.lockout_pair ?? null;
     const lossLockouts = Object.keys(s?.loss_lockouts ?? {});
-    const all = this.accelScores().filter(c =>
-      c.accel > 0.20 && c.pair !== lockoutPair && !lossLockouts.includes(c.pair)
-    );
+    console.log('[BuyConditions] lockout_pair:', lockoutPair, 'loss_lockouts:', lossLockouts);
+    const all = this.accelScores().filter(c => {
+      const locked = c.pair === lockoutPair || lossLockouts.includes(c.pair);
+      if (locked) console.log('[BuyConditions] SKIPPING locked:', c.pair);
+      return c.accel > 0.20 && !locked;
+    });
     const ready = all.filter(c => c.quality?.pass !== false && c.structural?.pass !== false);
     const candidates = ready.length > 0 ? ready : all;
 
