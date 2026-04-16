@@ -317,6 +317,7 @@ export interface MomentumStatusData {
   btc_ma?: number;
   regime_hysteresis?: number;
   entry_rejections?: string[];
+  last_candle_ts?: string;
   error?: string;
 }
 

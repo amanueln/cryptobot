@@ -79,7 +79,11 @@ Chart.register(...registerables, zoomPlugin);
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
           }
         </span>
-        <span class="poll-timer">next check in {{ pollCountdown() }}s</span>
+        @if (status()?.status === 'cash' && nextEngineTickMin() !== null) {
+          <span class="poll-timer">engine tick in ~{{ nextEngineTickMin() }}min</span>
+        } @else {
+          <span class="poll-timer">next refresh {{ pollCountdown() }}s</span>
+        }
       </div>
 
       <!-- Warmup progress bar -->
@@ -1190,12 +1194,41 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     if (!s || !s.enabled) return 'Momentum engine not active';
     if (s.status === 'warming_up') return 'Warming up — building price history...';
     if (s.status === 'scanning') return `Scanner ready — ${s.scanner?.pairs_count ?? 0} coins found. Bot will trade automatically when started.`;
-    if (s.status === 'cash') return `In cash — watching for >10% acceleration signals (${s.trade_count} trades total)`;
+    if (s.status === 'cash') {
+      const cd = s.exit_cooldown_remaining ?? 0;
+      if (cd > 0) return `Cooldown active — waiting ${cd}h before next entry`;
+      const rejections = s.entry_rejections ?? [];
+      if (rejections.length > 0) {
+        // Show first rejection reason as summary
+        const first = rejections[0];
+        if (first.includes('overbought')) return `Waiting — top coins overbought (RSI > 65)`;
+        if (first.includes('bearish')) return `Waiting — BTC regime is bearish`;
+        if (first.includes('ADX')) return `Waiting — no strong trends (ADX too low)`;
+        if (first.includes('RSI') && first.includes('uptrend')) return `Waiting — RSI below 50 (no uptrend)`;
+        if (first.includes('green candles')) return `Waiting — poor candle quality`;
+        if (first.includes('body ratio')) return `Waiting — indecision candles`;
+        if (first.includes('lockout')) return `Waiting — coin lockout active`;
+        return `Waiting — ${rejections.length} coins checked, none passed filters`;
+      }
+      const tick = this.nextEngineTickMin();
+      if (tick !== null && tick > 0) return `Scanning — next engine check in ~${tick}min`;
+      return `Scanning for entries — ${s.trade_count} trades so far`;
+    }
     if (s.holdings?.length) {
       const held = s.holdings.map(h => h.pair.replace('-USD', '')).join(', ');
       return `Holding ${held} — ${s.trade_count} trades total`;
     }
     return `${s.status} — ${s.trade_count} trades`;
+  }
+
+  nextEngineTickMin(): number | null {
+    const s = this.status();
+    if (!s?.last_candle_ts) return null;
+    const last = new Date(s.last_candle_ts).getTime();
+    const now = Date.now();
+    const elapsed = now - last;
+    const remaining = Math.max(0, 3600000 - elapsed); // 1 hour interval
+    return Math.ceil(remaining / 60000);
   }
 
   ngOnInit() {
@@ -1869,6 +1902,21 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       met: top?.rsi != null ? (top.rsi > 50 && top.rsi <= 65) : null,
       tooltip: 'RSI must be above 50 (upward momentum) but below 65 (not overbought). Above 65 means the coin already ran too hard.',
     });
+    // Quality and structural gates from the top coin
+    if (top?.quality) {
+      tags.push({
+        text: `Candle quality${top.quality.pass === false ? '' : ''}`,
+        met: top.quality.pass !== false,
+        tooltip: `Green candles: ${top.quality.greenCount}/6, body ratio: ${top.quality.bodyRatio}, ATR extension: ${top.quality.chg3hAtr}x`,
+      });
+    }
+    if (top?.structural) {
+      tags.push({
+        text: `Structure${top.structural.pass === false ? '' : ''}`,
+        met: top.structural.pass !== false,
+        tooltip: `ATH dist: ${top.structural.athDist}%, momentum age: ${top.structural.momAge}h, stuck: ${top.structural.timeAtLevel}/100`,
+      });
+    }
     return tags;
   }
 

@@ -1125,4 +1125,5 @@ class MomentumEngine:
             "lockout_until": self._last_sold_time.isoformat() if self._last_sold_time else None,
             "loss_lockouts": {p: t.isoformat() for p, t in self._loss_lockouts.items()},
             "min_price_filter": MIN_PRICE,
+            "last_candle_ts": self._last_candle_ts.isoformat() if self._last_candle_ts else None,
         }
