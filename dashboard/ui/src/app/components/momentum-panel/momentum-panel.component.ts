@@ -3,13 +3,14 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import {
   ApiService, MomentumStatusData, MomentumTradeData,
   MomentumEquityData, MomentumEventData,
 } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 
-Chart.register(...registerables);
+Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-momentum-panel',
@@ -102,12 +103,21 @@ Chart.register(...registerables);
       <!-- Equity chart + Activity log -->
       <div class="equity-activity-row">
         <div class="equity-col">
-          <div class="section-header">Portfolio Equity (72h)</div>
+          <div class="chart-header">
+            <span class="section-header" style="margin-bottom:0">Portfolio Equity</span>
+            <div class="chart-range-btns">
+              @for (r of chartRanges; track r.hours) {
+                <button class="range-btn" [class.active]="chartHours() === r.hours" (click)="setChartRange(r.hours)">{{ r.label }}</button>
+              }
+            </div>
+            <button class="range-btn reset-zoom-btn" (click)="resetChartZoom()" title="Reset zoom">↺</button>
+          </div>
           <div class="chart-slot">
             <canvas #momEquityCanvas></canvas>
           </div>
           <div class="equity-substats">
             <span><span class="sub-label">Trades </span>{{ status()?.trade_count ?? 0 }}</span>
+            <span class="sub-label zoom-hint">Scroll to zoom · Drag to pan</span>
           </div>
         </div>
         <div class="activity-col">
@@ -543,6 +553,23 @@ Chart.register(...registerables);
       font-size: 12px; font-weight: 600; color: #e2e8f0;
       margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em;
     }
+    .chart-header {
+      display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;
+    }
+    .chart-range-btns { display: flex; gap: 2px; margin-left: auto; }
+    .range-btn {
+      font-size: 0.6rem; font-weight: 600; padding: 0.2em 0.5em; border-radius: 3px;
+      background: transparent; color: #4b5280; border: 1px solid transparent;
+      cursor: pointer; transition: all 0.15s;
+      font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em;
+    }
+    .range-btn:hover { color: #a78bfa; background: rgba(167,139,250,0.08); }
+    .range-btn.active {
+      color: #a78bfa; background: rgba(167,139,250,0.12);
+      border-color: rgba(167,139,250,0.3);
+    }
+    .reset-zoom-btn { font-size: 0.75rem; padding: 0.15em 0.4em; }
+    .zoom-hint { margin-left: auto; font-style: italic; font-size: 0.55rem; }
     .chart-slot { position: relative; height: 180px; border-radius: 8px; overflow: hidden; }
     .chart-slot canvas { display: block; width: 100% !important; height: 100% !important; }
     .equity-substats { display: flex; gap: 14px; margin-top: 8px; font-size: 10px; }
@@ -927,6 +954,14 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
   activityOpen = signal(window.innerWidth > 768);
+  chartHours = signal(72);
+  chartRanges = [
+    { label: '24h', hours: 24 },
+    { label: '3d', hours: 72 },
+    { label: '7d', hours: 168 },
+    { label: '30d', hours: 720 },
+    { label: 'All', hours: 8760 },
+  ];
   skippingCooldown = signal(false);
   sellingPair = signal<string | null>(null);
   sellNotification = signal<{ type: string; message: string } | null>(null);
@@ -1016,7 +1051,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     forkJoin({
       trades: this.api.fetchMomentumTrades(20),
       events: this.api.fetchMomentumEvents(20),
-      equity: this.api.fetchMomentumEquity(72),
+      equity: this.api.fetchMomentumEquity(this.chartHours()),
       accel: this.api.fetchMomentumAccel(),
     }).subscribe({
       next: ({ trades, events, equity, accel }) => {
@@ -1050,7 +1085,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
     this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
     this.api.fetchMomentumAccel().subscribe(a => this.accelScores.set(a));
-    this.api.fetchMomentumEquity(72).subscribe(eq => {
+    this.api.fetchMomentumEquity(this.chartHours()).subscribe(eq => {
       this.equityData.set(eq);
       setTimeout(() => this.buildChart(), 300);
     });
@@ -1067,7 +1102,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
           forkJoin({
             trades: this.api.fetchMomentumTrades(20),
             events: this.api.fetchMomentumEvents(20),
-            equity: this.api.fetchMomentumEquity(72),
+            equity: this.api.fetchMomentumEquity(this.chartHours()),
             accel: this.api.fetchMomentumAccel(),
           }).subscribe({
             next: ({ trades, events, equity, accel }) => {
@@ -1089,26 +1124,49 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     setTimeout(() => this.buildChart(), 300);
   }
 
+  setChartRange(hours: number): void {
+    this.chartHours.set(hours);
+    this.api.fetchMomentumEquity(hours).subscribe(eq => {
+      this.equityData.set(eq);
+      setTimeout(() => this.buildChart(), 100);
+    });
+  }
+
+  resetChartZoom(): void {
+    if (this.chart) (this.chart as any).resetZoom();
+  }
+
   private buildChart() {
     if (!this.canvasRef?.nativeElement) return;
     const ctx = this.canvasRef.nativeElement.getContext('2d');
     if (!ctx) return;
 
+    // Destroy previous chart
+    if (this.chart) { this.chart.destroy(); this.chart = undefined; }
+
     let data = this.equityData();
     const startBal = this.status()?.starting_balance ?? 3000;
+    const hours = this.chartHours();
 
     // If no equity history, show a flat line at starting balance
     if (!data.length) {
       const now = new Date();
       data = [
-        { time: new Date(now.getTime() - 72 * 3600000).toISOString(), equity: startBal, cash: startBal, positions_value: 0, status: 'starting' },
+        { time: new Date(now.getTime() - hours * 3600000).toISOString(), equity: startBal, cash: startBal, positions_value: 0, status: 'starting' },
         { time: now.toISOString(), equity: startBal, cash: startBal, positions_value: 0, status: 'starting' },
       ];
     }
 
+    // Format labels based on time range
     const labels = data.map(d => {
       const dt = new Date(d.time);
-      return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      if (hours <= 24) {
+        return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      } else if (hours <= 168) {
+        return dt.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', hour12: true });
+      } else {
+        return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
     });
     const values = data.map(d => d.equity);
 
@@ -1160,13 +1218,32 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
             borderWidth: 1,
             filter: (item) => item.dataset.label !== 'Starting Balance',
             callbacks: {
+              title: (items) => {
+                if (!items.length) return '';
+                const idx = items[0].dataIndex;
+                const d = data[idx];
+                if (!d) return '';
+                const dt = new Date(d.time);
+                return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+              },
               label: (item) => ` Equity: ${this.formatCurrency(item.parsed.y ?? 0)}`,
             },
           },
+          zoom: {
+            pan: {
+              enabled: true,
+              mode: 'x',
+            },
+            zoom: {
+              wheel: { enabled: true },
+              pinch: { enabled: true },
+              mode: 'x',
+            },
+          } as any,
         },
         scales: {
           x: {
-            ticks: { color: '#8b8fa3', font: { size: 9 }, maxTicksLimit: 6, maxRotation: 0 },
+            ticks: { color: '#8b8fa3', font: { size: 9 }, maxTicksLimit: 8, maxRotation: 0 },
             grid: { color: '#2d3148' },
             border: { color: '#2d3148' },
           },
@@ -1286,7 +1363,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
             this.sellNotification.set({ type: 'success', message: `${short} sold successfully` });
             this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
             this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
-            this.api.fetchMomentumEquity(72).subscribe(eq => {
+            this.api.fetchMomentumEquity(this.chartHours()).subscribe(eq => {
               this.equityData.set(eq);
               setTimeout(() => this.buildChart(), 300);
             });
