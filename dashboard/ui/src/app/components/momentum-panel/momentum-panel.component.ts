@@ -160,10 +160,11 @@ Chart.register(...registerables, zoomPlugin);
                   <div class="ch-row">
                     <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
                     @if (h.trail_layer) {
-                      <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
+                      <span class="ch-layer tt-wrap" [class.inactive]="h.trail_layer === 'inactive'"
                             [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
                             [class.stale]="h.trail_layer === 'stale'">
                         {{ trailLayerLabel(h.trail_layer) }}
+                        <span class="tt">{{ trailLayerTooltip(h.trail_layer) }}</span>
                       </span>
                     }
                     <div class="ch-stats">
@@ -1683,6 +1684,16 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       case 'stale': return 'STALE — tight (2.0%)';
       case 'inactive': return 'Trail inactive';
       default: return layer;
+    }
+  }
+
+  trailLayerTooltip(layer: string): string {
+    switch (layer) {
+      case 'inactive': return 'Trail stop is off until profit reaches +2%. Only the ATR floor stop protects you right now.';
+      case 'wide': return 'Profit is +2% to +5%. Trail stop is active with a wide leash — gives room to run while locking in some gains.';
+      case 'tight': return 'Profit is above +5%. Trail stop tightens to lock in more profit — smaller pullback allowed before selling.';
+      case 'stale': return 'No new price peak for 12+ hours. Trail gets aggressive — if momentum is dying, it exits faster.';
+      default: return '';
     }
   }
 
