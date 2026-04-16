@@ -600,6 +600,11 @@ export class ApiService {
       body: boolean; bodyRatio: number;
       ext: boolean; chg3hAtr: number;
       pass: boolean;
+    }; structural?: {
+      ath: boolean; athDist: number;
+      fresh: boolean; momAge: number;
+      level: boolean; timeAtLevel: number;
+      pass: boolean;
     } }[]>(`${API}/momentum/accel`);
   }
 

@@ -155,13 +155,16 @@ Chart.register(...registerables, zoomPlugin);
         </div>
         <div class="accel-cards">
           @for (s of topAccelScores(); track s.pair) {
-            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20" [class.quality-blocked]="s.accel > 0.20 && s.quality && !s.quality.pass">
+            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20"
+                 [class.quality-blocked]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
               <div class="ac-top">
                 <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
-                @if (s.accel > 0.20 && s.quality) {
-                  <span class="ac-badge" [class.qual]="s.quality.pass" [class.blocked]="!s.quality.pass">
-                    {{ s.quality.pass ? 'READY' : 'BLOCKED' }}
-                  </span>
+                @if (s.accel > 0.20 && (s.quality || s.structural)) {
+                  @if (s.quality?.pass !== false && s.structural?.pass !== false) {
+                    <span class="ac-badge qual">READY</span>
+                  } @else {
+                    <span class="ac-badge blocked">BLOCKED</span>
+                  }
                 } @else {
                   <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
                     {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
@@ -171,32 +174,53 @@ Chart.register(...registerables, zoomPlugin);
               </div>
               <div class="ac-desc">
                 @if (s.accel > 0.20 && s.quality && !s.quality.pass) {
-                  Entry blocked by quality gate — poor short-term action.
+                  Entry blocked — poor short-term candle action.
+                } @else if (s.accel > 0.20 && s.structural && !s.structural.pass) {
+                  Entry blocked — structural risk detected.
                 } @else if (s.accel > 0.20) {
                   Uptrend accelerating — qualifies for entry.
                 } @else {
                   Momentum building but below the 20% re-entry threshold.
                 }
               </div>
-              @if (s.quality && s.accel > 0.20) {
+              @if (s.accel > 0.20 && s.quality) {
+                <div class="ac-gates-label">Candle Quality</div>
                 <div class="ac-gates">
                   <span class="ac-gate" [class.pass]="s.quality.green" [class.fail]="!s.quality.green"
-                        [title]="s.quality.greenCount + '/6 green candles'">
+                        title="Are recent candles closing up? Need 2+ of last 6 candles green to confirm buyers are present.">
                     {{ s.quality.green ? '\u2713' : '\u2717' }} {{ s.quality.greenCount }}/6 green
                   </span>
                   <span class="ac-gate" [class.pass]="s.quality.body" [class.fail]="!s.quality.body"
-                        [title]="'Body ratio: ' + s.quality.bodyRatio">
+                        title="Are candles decisive? Body ratio measures real movement vs wicks. Below 0.3 means indecision/doji candles.">
                     {{ s.quality.body ? '\u2713' : '\u2717' }} body {{ s.quality.bodyRatio }}
                   </span>
                   <span class="ac-gate" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext"
-                        [title]="'3h move: ' + s.quality.chg3hAtr + 'x ATR'">
+                        title="Is the price overextended? Measures 3h price move vs normal volatility. Above 3x ATR means it spiked too fast and will likely pull back.">
                     {{ s.quality.ext ? '\u2713' : '\u2717' }} {{ s.quality.chg3hAtr }}x ATR
                   </span>
                 </div>
               }
+              @if (s.accel > 0.20 && s.structural) {
+                <div class="ac-gates-label">Structure</div>
+                <div class="ac-gates">
+                  <span class="ac-gate" [class.pass]="s.structural.ath" [class.fail]="!s.structural.ath"
+                        title="Is there room to run? Within 5% of all-time high means the coin is hitting a ceiling it has historically been rejected from.">
+                    {{ s.structural.ath ? '\u2713' : '\u2717' }} {{ s.structural.athDist }}% ATH
+                  </span>
+                  <span class="ac-gate" [class.pass]="s.structural.fresh" [class.fail]="!s.structural.fresh"
+                        title="Is this momentum fresh? If acceleration has been above threshold for 100+ hours, the move already happened — you are late to the party.">
+                    {{ s.structural.fresh ? '\u2713' : '\u2717' }} {{ s.structural.momAge }}h age
+                  </span>
+                  <span class="ac-gate" [class.pass]="s.structural.level" [class.fail]="!s.structural.level"
+                        title="Is the price actually moving? Counts how many of the last 100 hours the price stayed within 3%. Over 30 means the coin is stuck sideways despite acceleration math saying otherwise.">
+                    {{ s.structural.level ? '\u2713' : '\u2717' }} {{ s.structural.timeAtLevel }}/100 stuck
+                  </span>
+                </div>
+              }
               <div class="ac-bar-track">
-                <div class="ac-bar-fill" [class.qualifying]="s.accel > 0.20 && (!s.quality || s.quality.pass)"
-                     [class.blocked-fill]="s.accel > 0.20 && s.quality && !s.quality.pass"
+                <div class="ac-bar-fill"
+                     [class.qualifying]="s.accel > 0.20 && (s.quality?.pass !== false) && (s.structural?.pass !== false)"
+                     [class.blocked-fill]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))"
                      [style.width.%]="accelBarWidth(s.accel)"></div>
               </div>
               <div class="ac-stats">
@@ -690,6 +714,10 @@ Chart.register(...registerables, zoomPlugin);
       background: linear-gradient(180deg, rgba(239,68,68,0.04) 0%, #1a1d29 100%);
     }
     .ac-badge.blocked { background: rgba(239,68,68,0.12); color: #ef4444; }
+    .ac-gates-label {
+      font-size: 8px; color: #4b5280; text-transform: uppercase; letter-spacing: 0.5px;
+      margin-top: 4px; margin-bottom: 1px;
+    }
     .ac-gates {
       display: flex; gap: 6px; flex-wrap: wrap;
     }
@@ -1005,6 +1033,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     green: boolean; greenCount: number;
     body: boolean; bodyRatio: number;
     ext: boolean; chg3hAtr: number;
+    pass: boolean;
+  }; structural?: {
+    ath: boolean; athDist: number;
+    fresh: boolean; momAge: number;
+    level: boolean; timeAtLevel: number;
     pass: boolean;
   } }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });

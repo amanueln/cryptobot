@@ -591,12 +591,17 @@ class MomentumEngine:
         return scores
 
     def _filter_entries(self, qualifying: list[AccelScore]) -> list[AccelScore]:
-        """Apply ADX > 25, RSI > 50, and entry quality filters.
+        """Apply ADX > 25, RSI > 50, entry quality, and structural filters.
 
         Entry quality filters (backtested on 131 simulated trades):
         - green_count >= 2: at least 2 of last 6 candles closed green (blocks dead entries, 100% precision)
         - body_ratio >= 0.3: candle bodies are decisive, not indecision wicks (88% precision)
         - chg_3h_atr < 3.0: 3h move not overextended vs coin's volatility (88% precision)
+
+        Structural filters (backtested on 1,299 trades across 90 pairs):
+        - ATH proximity: block if within 5% of all-time high (61% precision — no room to run)
+        - Freshness: block if momentum has been above threshold for 100+ hours (stale signal)
+        - Time at level: block if price stuck within 3% band for 30+ of last 100 hours (fake momentum)
         """
         if not qualifying:
             return []
@@ -653,6 +658,42 @@ class MomentumEngine:
                 if chg_3h_atr > 3.0:
                     logger.debug("Entry filter: %s rejected — chg_3h_atr %.1f > 3.0 (overextended)", pair, chg_3h_atr)
                     self._entry_rejections.append(f"{pair}: 3h move {chg_3h:+.1f}% = {chg_3h_atr:.1f}x ATR (overextended)")
+                    continue
+
+            # --- Structural: ATH proximity (block if within 5% of all-time high) ---
+            if len(highs) >= 100:
+                ath = max(highs)
+                ath_dist = (closes[-1] - ath) / ath * 100
+                if ath_dist >= -5:
+                    logger.debug("Entry filter: %s rejected — %.1f%% from ATH (ceiling)", pair, ath_dist)
+                    self._entry_rejections.append(f"{pair}: {ath_dist:+.1f}% from ATH (at ceiling)")
+                    continue
+
+            # --- Structural: freshness (block stale momentum above threshold 100+ hours) ---
+            if len(closes) > SHORT_LB + 100:
+                mom_age = 0
+                for j in range(len(closes) - 1, max(LONG_LB, len(closes) - 200), -1):
+                    if j < LONG_LB or j < SHORT_LB:
+                        break
+                    sm = closes[j] / closes[j - SHORT_LB] - 1
+                    lm = closes[j] / closes[j - LONG_LB] - 1
+                    ac = sm - (lm * SHORT_LB / LONG_LB)
+                    if ac >= ACCEL_ENTRY:
+                        mom_age += 1
+                    else:
+                        break
+                if mom_age >= 100:
+                    logger.debug("Entry filter: %s rejected — momentum age %dh (stale)", pair, mom_age)
+                    self._entry_rejections.append(f"{pair}: momentum age {mom_age}h (stale signal)")
+                    continue
+
+            # --- Structural: time at level (block if stuck in 3% band for 30+ of last 100h) ---
+            if len(closes) >= 100:
+                cur_price = closes[-1]
+                time_at_lvl = sum(1 for c in closes[-100:] if abs(c - cur_price) / cur_price < 0.03)
+                if time_at_lvl > 30:
+                    logger.debug("Entry filter: %s rejected — time_at_level %d/100 (stuck)", pair, time_at_lvl)
+                    self._entry_rejections.append(f"{pair}: price stuck {time_at_lvl}/100h in 3% band")
                     continue
 
             filtered.append(s)

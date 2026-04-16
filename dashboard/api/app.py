@@ -2272,13 +2272,45 @@ def api_momentum_accel():
                 else:
                     chg_3h_atr = 0
 
+                # Gate 4: ATH proximity (block if within 5% of all-time high)
+                ath = max(highs)
+                ath_dist = (cur - ath) / ath * 100 if ath > 0 else -100
+                gate_ath = ath_dist < -5
+
+                # Gate 5: freshness (block stale momentum above threshold 100+ hours)
+                ACCEL_ENTRY = 0.20
+                mom_age = 0
+                for j in range(len(closes) - 1, max(LONG_LB, len(closes) - 200), -1):
+                    if j < LONG_LB or j < SHORT_LB:
+                        break
+                    sm_j = closes[j] / closes[j - SHORT_LB] - 1
+                    lm_j = closes[j] / closes[j - LONG_LB] - 1
+                    ac_j = sm_j - (lm_j * SHORT_LB / LONG_LB)
+                    if ac_j >= ACCEL_ENTRY:
+                        mom_age += 1
+                    else:
+                        break
+                gate_fresh = mom_age < 100
+
+                # Gate 6: time at level (block if stuck in 3% band for 30+ of last 100h)
+                time_at_lvl = sum(1 for c in closes[-100:] if abs(c - cur) / cur < 0.03)
+                gate_level = time_at_lvl <= 30
+
+                all_pass = gate_green and gate_body and gate_ext and gate_ath and gate_fresh and gate_level
+
                 scores.append({
                     "pair": pair, "accel": round(accel, 4), "price": round(cur, 6),
                     "quality": {
                         "green": gate_green, "greenCount": green_count,
                         "body": gate_body, "bodyRatio": round(avg_body, 2),
                         "ext": gate_ext, "chg3hAtr": round(chg_3h_atr, 1),
-                        "pass": gate_green and gate_body and gate_ext,
+                        "pass": all_pass,
+                    },
+                    "structural": {
+                        "ath": gate_ath, "athDist": round(ath_dist, 1),
+                        "fresh": gate_fresh, "momAge": mom_age,
+                        "level": gate_level, "timeAtLevel": time_at_lvl,
+                        "pass": gate_ath and gate_fresh and gate_level,
                     },
                 })
         except Exception:
