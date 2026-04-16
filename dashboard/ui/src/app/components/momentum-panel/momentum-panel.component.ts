@@ -186,34 +186,34 @@ Chart.register(...registerables, zoomPlugin);
               @if (s.accel > 0.20 && s.quality) {
                 <div class="ac-gates-label">Candle Quality</div>
                 <div class="ac-gates">
-                  <span class="ac-gate" [class.pass]="s.quality.green" [class.fail]="!s.quality.green"
-                        title="Are recent candles closing up? Need 2+ of last 6 candles green to confirm buyers are present.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.green" [class.fail]="!s.quality.green">
                     {{ s.quality.green ? '\u2713' : '\u2717' }} {{ s.quality.greenCount }}/6 green
+                    <span class="tt">Are recent candles closing up? Need 2+ of last 6 candles green to confirm buyers are present.</span>
                   </span>
-                  <span class="ac-gate" [class.pass]="s.quality.body" [class.fail]="!s.quality.body"
-                        title="Are candles decisive? Body ratio measures real movement vs wicks. Below 0.3 means indecision/doji candles.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.body" [class.fail]="!s.quality.body">
                     {{ s.quality.body ? '\u2713' : '\u2717' }} body {{ s.quality.bodyRatio }}
+                    <span class="tt">Are candles decisive? Body ratio measures real movement vs wicks. Below 0.3 means indecision/doji candles.</span>
                   </span>
-                  <span class="ac-gate" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext"
-                        title="Is the price overextended? Measures 3h price move vs normal volatility. Above 3x ATR means it spiked too fast and will likely pull back.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext">
                     {{ s.quality.ext ? '\u2713' : '\u2717' }} {{ s.quality.chg3hAtr }}x ATR
+                    <span class="tt">Is the price overextended? Measures 3h price move vs normal volatility. Above 3x ATR means it spiked too fast and will likely pull back.</span>
                   </span>
                 </div>
               }
               @if (s.accel > 0.20 && s.structural) {
                 <div class="ac-gates-label">Structure</div>
                 <div class="ac-gates">
-                  <span class="ac-gate" [class.pass]="s.structural.ath" [class.fail]="!s.structural.ath"
-                        title="Is there room to run? Within 5% of all-time high means the coin is hitting a ceiling it has historically been rejected from.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.ath" [class.fail]="!s.structural.ath">
                     {{ s.structural.ath ? '\u2713' : '\u2717' }} {{ s.structural.athDist }}% ATH
+                    <span class="tt">Is there room to run? Within 5% of all-time high means the coin is hitting a ceiling it has historically been rejected from.</span>
                   </span>
-                  <span class="ac-gate" [class.pass]="s.structural.fresh" [class.fail]="!s.structural.fresh"
-                        title="Is this momentum fresh? If acceleration has been above threshold for 100+ hours, the move already happened — you are late to the party.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.fresh" [class.fail]="!s.structural.fresh">
                     {{ s.structural.fresh ? '\u2713' : '\u2717' }} {{ s.structural.momAge }}h age
+                    <span class="tt">Is this momentum fresh? If acceleration has been above threshold for 100+ hours, the move already happened — you are late to the party.</span>
                   </span>
-                  <span class="ac-gate" [class.pass]="s.structural.level" [class.fail]="!s.structural.level"
-                        title="Is the price actually moving? Counts how many of the last 100 hours the price stayed within 3%. Over 30 means the coin is stuck sideways despite acceleration math saying otherwise.">
+                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.level" [class.fail]="!s.structural.level">
                     {{ s.structural.level ? '\u2713' : '\u2717' }} {{ s.structural.timeAtLevel }}/100 stuck
+                    <span class="tt">Is the price actually moving? Counts how many of the last 100 hours the price stayed within 3%. Over 30 means the coin is stuck sideways despite acceleration math saying otherwise.</span>
                   </span>
                 </div>
               }
