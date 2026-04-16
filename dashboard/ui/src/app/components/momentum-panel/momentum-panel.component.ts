@@ -386,6 +386,7 @@ Chart.register(...registerables);
       color: #e2e8f0;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
       min-height: 100%;
+      overflow-x: hidden;
     }
 
     /* Engine tab */
@@ -713,7 +714,7 @@ Chart.register(...registerables);
     .cash-reason { font-size: 11px; color: #6b7280; text-align: center; max-width: 280px; line-height: 1.5; }
 
     /* Trades table */
-    .trades-section { padding: 14px 20px; }
+    .trades-section { padding: 14px 20px; overflow-x: auto; }
     .trades-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 500px; }
     .trades-table th {
       padding: 8px 12px; font-size: 10px; font-weight: 700; color: #6b7280;
@@ -749,7 +750,42 @@ Chart.register(...registerables);
     tr.sell-row.odd { background: rgba(239,68,68,0.06); }
     .trades-table tr:hover { background: rgba(255,255,255,0.04) !important; }
     .trades-table tr { transition: background 0.1s; }
-    @media (max-width: 768px) { .hide-sm { display: none; } }
+    @media (max-width: 768px) {
+      .hide-sm { display: none; }
+
+      /* Engine tab — wrap and shrink */
+      .engine-tab { flex-wrap: wrap; padding: 0.5rem 0.75rem; gap: 6px; }
+      .engine-alloc { margin-left: 0; }
+      .export-btn, .reset-btn { font-size: 9px; padding: 2px 6px; }
+
+      /* Hero bar — stack vertically */
+      .hero-bar { flex-direction: column; gap: 8px; padding: 12px; }
+      .hero-item { padding: 4px 0; }
+      .hero-divider { width: 60%; height: 1px; }
+      .hero-value { font-size: 1.1rem; }
+
+      /* Status banner — wrap */
+      .status-banner { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
+      .status-text { font-size: 11px; }
+      .poll-timer { margin-left: 0; width: 100%; text-align: right; }
+
+      /* Equity + activity — stack */
+      .equity-activity-row { flex-direction: column; }
+      .equity-col { border-right: none; border-bottom: 1px solid #2d3148; }
+      .activity-col { max-height: 200px; }
+
+      /* Accel cards — smaller cards */
+      .accel-cards { gap: 8px; }
+      .accel-card { min-width: 150px; max-width: 180px; padding: 8px 10px; }
+      .ac-coin { font-size: 13px; }
+      .ac-price { font-size: 10px; }
+      .ac-desc { font-size: 9px; }
+
+      /* Trades table — tighter */
+      .trades-section { padding: 10px 12px; overflow-x: auto; }
+      .trades-table { font-size: 11px; min-width: 400px; }
+      .trades-table th, .trades-table td { padding: 6px 8px; }
+    }
     .side-badge.buy { background: rgba(74,222,128,0.12); color: #4ade80; }
     .side-badge.sell { background: rgba(248,113,113,0.12); color: #f87171; }
 
