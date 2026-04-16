@@ -438,8 +438,8 @@ class MomentumEngine:
                     self.status_detail = "BTC regime bearish — holding cash"
 
         # === Immediate entry from cash (if cooldown expired and no positions) ===
-        self._entry_rejections = []  # track why coins are rejected
         if self._was_cash and not self.holdings and self._exit_cooldown <= 0 and self.cash > self.starting_balance * 0.5:
+            self._entry_rejections = []  # only clear when actually re-evaluating
             if not self.regime_bullish:
                 self._entry_rejections.append("BTC regime is bearish — no entries allowed")
             if self.regime_bullish:
@@ -483,6 +483,7 @@ class MomentumEngine:
                     logger.info("Immediate entry: %d coins passed all filters (accel+ADX+RSI)",
                                 len(qualifying))
                     self._was_cash = False
+                    self._entry_rejections = []  # clear — we're buying
                     winners = qualifying[:TOP_N]
                     investable = self.cash * 0.99
                     per = investable / len(winners)
