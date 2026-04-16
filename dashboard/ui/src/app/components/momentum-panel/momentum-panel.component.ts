@@ -146,240 +146,245 @@ Chart.register(...registerables, zoomPlugin);
         </div>
       </div>
 
-      <!-- Acceleration Scanner -->
-      <div class="accel-section">
-        <div class="section-header">
-          ACCELERATION SCANNER
-          @if (status()?.scanner) {
-            <span class="scanner-meta">{{ status()!.scanner!.pairs_count }} scanned &middot; top {{ topAccelScores().length }} accelerating</span>
-          }
-        </div>
-        <div class="accel-cards">
-          @for (s of topAccelScores(); track s.pair) {
-            <div class="accel-card" [class.qualifying-card]="s.accel > 0.20"
-                 [class.quality-blocked]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
-              <div class="ac-top">
-                <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
-                @if (s.accel > 0.20 && (s.quality || s.structural)) {
-                  @if (s.quality?.pass !== false && s.structural?.pass !== false) {
-                    <span class="ac-badge qual">READY</span>
-                  } @else {
-                    <span class="ac-badge blocked">BLOCKED</span>
-                  }
-                } @else {
-                  <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
-                    {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
-                  </span>
-                }
-                <span class="ac-price">{{ formatPrice(s.price) }}</span>
-              </div>
-              <div class="ac-desc">
-                @if (s.accel > 0.20 && s.quality && !s.quality.pass) {
-                  Entry blocked — poor short-term candle action.
-                } @else if (s.accel > 0.20 && s.structural && !s.structural.pass) {
-                  Entry blocked — structural risk detected.
-                } @else if (s.accel > 0.20) {
-                  Uptrend accelerating — qualifies for entry.
-                } @else {
-                  Momentum building but below the 20% re-entry threshold.
-                }
-              </div>
-              @if (s.accel > 0.20 && s.quality) {
-                <div class="ac-gates-label">Candle Quality</div>
-                <div class="ac-gates">
-                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.green" [class.fail]="!s.quality.green">
-                    {{ s.quality.green ? '\u2713' : '\u2717' }} {{ s.quality.greenCount }}/6 green
-                    <span class="tt">Are recent candles closing up? Need 2+ of last 6 candles green to confirm buyers are present.</span>
-                  </span>
-                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.body" [class.fail]="!s.quality.body">
-                    {{ s.quality.body ? '\u2713' : '\u2717' }} body {{ s.quality.bodyRatio }}
-                    <span class="tt">Are candles decisive? Body ratio measures real movement vs wicks. Below 0.3 means indecision/doji candles.</span>
-                  </span>
-                  <span class="ac-gate tt-wrap" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext">
-                    {{ s.quality.ext ? '\u2713' : '\u2717' }} {{ s.quality.chg3hAtr }}x ATR
-                    <span class="tt">Is the price overextended? Measures 3h price move vs normal volatility. Above 3x ATR means it spiked too fast and will likely pull back.</span>
-                  </span>
-                </div>
-              }
-              @if (s.accel > 0.20 && s.structural) {
-                <div class="ac-gates-label">Structure</div>
-                <div class="ac-gates">
-                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.ath" [class.fail]="!s.structural.ath">
-                    {{ s.structural.ath ? '\u2713' : '\u2717' }} {{ s.structural.athDist }}% ATH
-                    <span class="tt">Is there room to run? Within 5% of all-time high means the coin is hitting a ceiling it has historically been rejected from.</span>
-                  </span>
-                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.fresh" [class.fail]="!s.structural.fresh">
-                    {{ s.structural.fresh ? '\u2713' : '\u2717' }} {{ s.structural.momAge }}h age
-                    <span class="tt">Is this momentum fresh? If acceleration has been above threshold for 100+ hours, the move already happened — you are late to the party.</span>
-                  </span>
-                  <span class="ac-gate tt-wrap" [class.pass]="s.structural.level" [class.fail]="!s.structural.level">
-                    {{ s.structural.level ? '\u2713' : '\u2717' }} {{ s.structural.timeAtLevel }}/100 stuck
-                    <span class="tt">Is the price actually moving? Counts how many of the last 100 hours the price stayed within 3%. Over 30 means the coin is stuck sideways despite acceleration math saying otherwise.</span>
-                  </span>
-                </div>
-              }
-              <div class="ac-bar-track">
-                <div class="ac-bar-fill"
-                     [class.qualifying]="s.accel > 0.20 && (s.quality?.pass !== false) && (s.structural?.pass !== false)"
-                     [class.blocked-fill]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))"
-                     [style.width.%]="accelBarWidth(s.accel)"></div>
-              </div>
-              <div class="ac-stats">
-                <span class="ac-accel" [class.pos]="s.accel > 0.20">+{{ (s.accel * 100).toFixed(1) }}%</span>
-                <span class="ac-stat-label">acceleration</span>
-              </div>
-            </div>
-          }
-        </div>
-        @if (topAccelScores().length === 0) {
-          <div class="accel-empty">No acceleration data yet — engine is warming up</div>
-        }
-        @if (topAccelScores().length > 0 && !hasQualifyingAccel()) {
-          <div class="accel-note">No coins above 20% — staying in cash until a strong uptrend confirms.</div>
-        }
-        @if (hasQualifyingAccel()) {
-          <div class="accel-note qualifying-note">
-            {{ qualifyingCount() }} coin{{ qualifyingCount() > 1 ? 's' : '' }} ready —
-            engine picks the top 1 that passes quality gates.
-          </div>
-        }
-      </div>
+      <!-- Holdings/Strategy + Acceleration Scanner row -->
+      <div class="hold-strat-accel-row">
 
-      <!-- Holdings + Strategy side-by-side row -->
-      <div class="hold-strat-row">
-        <!-- Holdings column -->
-        <div class="hold-col">
-          @if (isHolding()) {
-            <div class="section-label">Holdings</div>
-            @for (h of status()?.holdings ?? []; track h.pair) {
-              <div class="compact-holding">
-                <div class="ch-top">
-                  <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
-                  @if (h.trail_layer) {
-                    <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
-                          [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
-                          [class.stale]="h.trail_layer === 'stale'">
-                      {{ trailLayerLabel(h.trail_layer) }}
-                    </span>
-                  }
-                  <div class="ch-pnl-group">
-                    <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
-                    <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
-                      {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
-                    </span>
+        <!-- Left: Holdings + Strategy stacked -->
+        <div class="hold-strat-col">
+          <!-- Holdings -->
+          <div class="hold-col">
+            @if (isHolding()) {
+              <div class="section-label">Holdings</div>
+              @for (h of status()?.holdings ?? []; track h.pair) {
+                <div class="compact-holding">
+                  <div class="ch-top">
+                    <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
+                    @if (h.trail_layer) {
+                      <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
+                            [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
+                            [class.stale]="h.trail_layer === 'stale'">
+                        {{ trailLayerLabel(h.trail_layer) }}
+                      </span>
+                    }
+                    <div class="ch-pnl-group">
+                      <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
+                      <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
+                        {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
+                      </span>
+                    </div>
+                    <button class="ch-sell"
+                            [class.selling]="sellingPair() === h.pair"
+                            [disabled]="sellingPair() !== null"
+                            (click)="manualSell(h.pair)">
+                      {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
+                    </button>
                   </div>
-                  <button class="ch-sell"
-                          [class.selling]="sellingPair() === h.pair"
-                          [disabled]="sellingPair() !== null"
-                          (click)="manualSell(h.pair)">
-                    {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
-                  </button>
+                  <div class="ch-stats">
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Entry</span>
+                      <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
+                      <span class="tt">Entry price when position was opened</span>
+                    </div>
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Now</span>
+                      <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
+                      <span class="tt">Current market price (updated every ~60s)</span>
+                    </div>
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Stop</span>
+                      <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
+                      <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
+                    </div>
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Dist</span>
+                      <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
+                      <span class="tt">How far current price is from the stop — lower = closer to selling</span>
+                    </div>
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Hold</span>
+                      <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
+                      <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
+                    </div>
+                    <div class="ch-stat tt-wrap">
+                      <span class="ch-stat-lbl">Accel</span>
+                      <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
+                      <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="ch-stats">
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Entry</span>
-                    <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
-                    <span class="tt">Entry price when position was opened</span>
-                  </div>
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Now</span>
-                    <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
-                    <span class="tt">Current market price (updated every ~60s)</span>
-                  </div>
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Stop</span>
-                    <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
-                    <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
-                  </div>
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Dist</span>
-                    <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
-                    <span class="tt">How far current price is from the stop — lower = closer to selling</span>
-                  </div>
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Hold</span>
-                    <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
-                    <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
-                  </div>
-                  <div class="ch-stat tt-wrap">
-                    <span class="ch-stat-lbl">Accel</span>
-                    <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
-                    <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
-                  </div>
-                </div>
+              }
+            }
+
+            <!-- Sell notification banner -->
+            @if (sellNotification()) {
+              <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
+                {{ sellNotification()!.message }}
               </div>
             }
-          }
+          </div>
 
-          <!-- Sell notification banner -->
-          @if (sellNotification()) {
-            <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
-              {{ sellNotification()!.message }}
-            </div>
-          }
-        </div>
+          <!-- Strategy -->
+          @if (status()?.warmup_done) {
+            <div class="strat-col">
+              <div class="section-label">Strategy</div>
+              <div class="compact-strategy">
+                <div class="cs-chip tt-wrap">
+                  <span class="cs-label">Regime</span>
+                  <span class="cs-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
+                    {{ status()?.regime_bullish ? 'Bull' : 'Bear' }}
+                  </span>
+                  <span class="cs-detail">BTC {{ btcVsSmaShort() }}</span>
+                  <span class="tt">{{ regimeExplain() }}</span>
+                </div>
+                <div class="cs-chip tt-wrap">
+                  <span class="cs-label">Rebalance</span>
+                  <span class="cs-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
+                  <span class="tt">Weekly rotation — engine compares your holding to the top acceleration coin and swaps if a better one is found</span>
+                </div>
+                <div class="cs-chip tt-wrap">
+                  <span class="cs-label">Position</span>
+                  <span class="cs-value">{{ positionExplainShort() }}</span>
+                  <span class="tt">{{ positionDetail() }}</span>
+                </div>
+              </div>
 
-        <!-- Strategy column -->
-        @if (status()?.warmup_done) {
-          <div class="strat-col">
-            <div class="section-label">Strategy</div>
-            <div class="compact-strategy">
-              <div class="cs-chip tt-wrap">
-                <span class="cs-label">Regime</span>
-                <span class="cs-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
-                  {{ status()?.regime_bullish ? 'Bull' : 'Bear' }}
-                </span>
-                <span class="cs-detail">BTC {{ btcVsSmaShort() }}</span>
-                <span class="tt">{{ regimeExplain() }}</span>
-              </div>
-              <div class="cs-chip tt-wrap">
-                <span class="cs-label">Rebalance</span>
-                <span class="cs-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
-                <span class="tt">Weekly rotation — engine compares your holding to the top acceleration coin and swaps if a better one is found</span>
-              </div>
-              <div class="cs-chip tt-wrap">
-                <span class="cs-label">Position</span>
-                <span class="cs-value">{{ positionExplainShort() }}</span>
-                <span class="tt">{{ positionDetail() }}</span>
-              </div>
-            </div>
+              @if (isHolding()) {
+                <div class="section-label">Would Sell If</div>
+                <div class="compact-exits">
+                  @for (cond of exitConditions(); track cond.label) {
+                    <div class="ce-tag tt-wrap" [class.ce-amber]="cond.color === 'amber'" [class.ce-red]="cond.color === 'red'" [class.ce-purple]="cond.color === 'purple'" [class.ce-blue]="cond.color === 'blue'">
+                      <span class="ce-label">{{ cond.shortLabel }}</span>
+                      @if (cond.pct >= 0) {
+                        <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
+                      }
+                      <span class="ce-val" [class.dim]="cond.pct < 50" [class.warn]="cond.pct >= 50 && cond.pct < 80" [class.danger]="cond.pct >= 80" [class.safe]="cond.pct < 0">{{ cond.shortDetail }}</span>
+                      <span class="tt">{{ cond.tooltip }}</span>
+                    </div>
+                  }
+                </div>
+              }
 
-            @if (isHolding()) {
-              <div class="section-label">Would Sell If</div>
-              <div class="compact-exits">
-                @for (cond of exitConditions(); track cond.label) {
-                  <div class="ce-tag tt-wrap" [class.ce-amber]="cond.color === 'amber'" [class.ce-red]="cond.color === 'red'" [class.ce-purple]="cond.color === 'purple'" [class.ce-blue]="cond.color === 'blue'">
-                    <span class="ce-label">{{ cond.shortLabel }}</span>
-                    @if (cond.pct >= 0) {
-                      <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
-                    }
-                    <span class="ce-val" [class.dim]="cond.pct < 50" [class.warn]="cond.pct >= 50 && cond.pct < 80" [class.danger]="cond.pct >= 80" [class.safe]="cond.pct < 0">{{ cond.shortDetail }}</span>
+              <div class="section-label">Would Buy If</div>
+              <div class="compact-buy">
+                @for (cond of buyConditionTags(); track cond.text) {
+                  <div class="cb-tag tt-wrap">
+                    <span class="cb-text" [class.green]="cond.met" [class.red]="cond.met === false">{{ cond.met ? '✓' : cond.met === false ? '✗' : '•' }} {{ cond.text }}</span>
                     <span class="tt">{{ cond.tooltip }}</span>
                   </div>
                 }
               </div>
-            }
 
-            <div class="section-label">Would Buy If</div>
-            <div class="compact-buy">
-              @for (cond of buyConditionTags(); track cond.text) {
-                <div class="cb-tag tt-wrap">
-                  <span class="cb-text" [class.green]="cond.met" [class.red]="cond.met === false">{{ cond.met ? '✓' : cond.met === false ? '✗' : '•' }} {{ cond.text }}</span>
-                  <span class="tt">{{ cond.tooltip }}</span>
+              @if (entryRejections().length > 0) {
+                <div class="section-label">Why Not Buying</div>
+                <div class="compact-rejections">
+                  @for (r of entryRejections(); track r) {
+                    <span class="cr-tag">{{ r }}</span>
+                  }
                 </div>
               }
             </div>
+          }
+        </div>
 
-            @if (entryRejections().length > 0) {
-              <div class="section-label">Why Not Buying</div>
-              <div class="compact-rejections">
-                @for (r of entryRejections(); track r) {
-                  <span class="cr-tag">{{ r }}</span>
+        <!-- Right: Acceleration Scanner -->
+        <div class="accel-col">
+          <div class="section-header">
+            ACCELERATION SCANNER
+            @if (status()?.scanner) {
+              <span class="scanner-meta">{{ status()!.scanner!.pairs_count }} scanned &middot; top {{ topAccelScores().length }} accelerating</span>
+            }
+          </div>
+          <div class="accel-cards">
+            @for (s of topAccelScores(); track s.pair) {
+              <div class="accel-card" [class.qualifying-card]="s.accel > 0.20"
+                   [class.quality-blocked]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
+                <div class="ac-top">
+                  <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
+                  @if (s.accel > 0.20 && (s.quality || s.structural)) {
+                    @if (s.quality?.pass !== false && s.structural?.pass !== false) {
+                      <span class="ac-badge qual">READY</span>
+                    } @else {
+                      <span class="ac-badge blocked">BLOCKED</span>
+                    }
+                  } @else {
+                    <span class="ac-badge" [class.qual]="s.accel > 0.20" [class.below]="s.accel <= 0.20">
+                      {{ s.accel > 0.20 ? 'READY' : 'BELOW 20%' }}
+                    </span>
+                  }
+                  <span class="ac-price">{{ formatPrice(s.price) }}</span>
+                </div>
+                <div class="ac-desc">
+                  @if (s.accel > 0.20 && s.quality && !s.quality.pass) {
+                    Entry blocked — poor short-term candle action.
+                  } @else if (s.accel > 0.20 && s.structural && !s.structural.pass) {
+                    Entry blocked — structural risk detected.
+                  } @else if (s.accel > 0.20) {
+                    Uptrend accelerating — qualifies for entry.
+                  } @else {
+                    Momentum building but below the 20% re-entry threshold.
+                  }
+                </div>
+                @if (s.accel > 0.20 && s.quality) {
+                  <div class="ac-gates-label">Candle Quality</div>
+                  <div class="ac-gates">
+                    <span class="ac-gate tt-wrap" [class.pass]="s.quality.green" [class.fail]="!s.quality.green">
+                      {{ s.quality.green ? '\u2713' : '\u2717' }} {{ s.quality.greenCount }}/6 green
+                      <span class="tt">Are recent candles closing up? Need 2+ of last 6 candles green to confirm buyers are present.</span>
+                    </span>
+                    <span class="ac-gate tt-wrap" [class.pass]="s.quality.body" [class.fail]="!s.quality.body">
+                      {{ s.quality.body ? '\u2713' : '\u2717' }} body {{ s.quality.bodyRatio }}
+                      <span class="tt">Are candles decisive? Body ratio measures real movement vs wicks. Below 0.3 means indecision/doji candles.</span>
+                    </span>
+                    <span class="ac-gate tt-wrap" [class.pass]="s.quality.ext" [class.fail]="!s.quality.ext">
+                      {{ s.quality.ext ? '\u2713' : '\u2717' }} {{ s.quality.chg3hAtr }}x ATR
+                      <span class="tt">Is the price overextended? Measures 3h price move vs normal volatility. Above 3x ATR means it spiked too fast and will likely pull back.</span>
+                    </span>
+                  </div>
                 }
+                @if (s.accel > 0.20 && s.structural) {
+                  <div class="ac-gates-label">Structure</div>
+                  <div class="ac-gates">
+                    <span class="ac-gate tt-wrap" [class.pass]="s.structural.ath" [class.fail]="!s.structural.ath">
+                      {{ s.structural.ath ? '\u2713' : '\u2717' }} {{ s.structural.athDist }}% ATH
+                      <span class="tt">Is there room to run? Within 5% of all-time high means the coin is hitting a ceiling it has historically been rejected from.</span>
+                    </span>
+                    <span class="ac-gate tt-wrap" [class.pass]="s.structural.fresh" [class.fail]="!s.structural.fresh">
+                      {{ s.structural.fresh ? '\u2713' : '\u2717' }} {{ s.structural.momAge }}h age
+                      <span class="tt">Is this momentum fresh? If acceleration has been above threshold for 100+ hours, the move already happened — you are late to the party.</span>
+                    </span>
+                    <span class="ac-gate tt-wrap" [class.pass]="s.structural.level" [class.fail]="!s.structural.level">
+                      {{ s.structural.level ? '\u2713' : '\u2717' }} {{ s.structural.timeAtLevel }}/100 stuck
+                      <span class="tt">Is the price actually moving? Counts how many of the last 100 hours the price stayed within 3%. Over 30 means the coin is stuck sideways despite acceleration math saying otherwise.</span>
+                    </span>
+                  </div>
+                }
+                <div class="ac-bar-track">
+                  <div class="ac-bar-fill"
+                       [class.qualifying]="s.accel > 0.20 && (s.quality?.pass !== false) && (s.structural?.pass !== false)"
+                       [class.blocked-fill]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))"
+                       [style.width.%]="accelBarWidth(s.accel)"></div>
+                </div>
+                <div class="ac-stats">
+                  <span class="ac-accel" [class.pos]="s.accel > 0.20">+{{ (s.accel * 100).toFixed(1) }}%</span>
+                  <span class="ac-stat-label">acceleration</span>
+                </div>
               </div>
             }
           </div>
-        }
+          @if (topAccelScores().length === 0) {
+            <div class="accel-empty">No acceleration data yet — engine is warming up</div>
+          }
+          @if (topAccelScores().length > 0 && !hasQualifyingAccel()) {
+            <div class="accel-note">No coins above 20% — staying in cash until a strong uptrend confirms.</div>
+          }
+          @if (hasQualifyingAccel()) {
+            <div class="accel-note qualifying-note">
+              {{ qualifyingCount() }} coin{{ qualifyingCount() > 1 ? 's' : '' }} ready —
+              engine picks the top 1 that passes quality gates.
+            </div>
+          }
+        </div>
+
       </div>
 
       <!-- Recent trades table -->
@@ -668,10 +673,17 @@ Chart.register(...registerables, zoomPlugin);
     .no-data { font-size: 11px; color: #4b5280; font-style: italic; }
 
     /* Acceleration Scanner */
-    .accel-section {
-      padding: 14px 20px; border-bottom: 1px solid #2d3148; background: #12141e;
+    /* Holdings/Strategy + Accel Scanner side-by-side */
+    .hold-strat-accel-row {
+      display: flex; border-bottom: 1px solid #2d3148;
     }
-    .accel-section .section-header {
+    .hold-strat-col {
+      flex: 1; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
+    }
+    .accel-col {
+      flex: 1; padding: 14px 16px; background: #12141e; min-width: 0;
+    }
+    .accel-col .section-header {
       display: flex; align-items: center; gap: 10px;
     }
     .scanner-meta {
@@ -679,10 +691,10 @@ Chart.register(...registerables, zoomPlugin);
       text-transform: none; margin-left: auto;
     }
     .accel-cards {
-      display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px;
+      display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 6px;
     }
     .accel-card {
-      min-width: 190px; max-width: 220px; flex-shrink: 0;
+      flex: 1 1 calc(50% - 4px); min-width: 170px; max-width: none;
       background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
       padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
     }
@@ -751,20 +763,18 @@ Chart.register(...registerables, zoomPlugin);
     }
     .accel-note.qualifying-note { color: #4ade80; }
 
-    /* Holdings + Strategy side-by-side */
-    .hold-strat-row {
-      display: flex; gap: 0; border-bottom: 1px solid #2d3148;
-    }
     .hold-col {
-      flex: 1; padding: 0.65rem 1rem; border-right: 1px solid #2d3148; min-width: 0;
+      padding: 0.65rem 1rem; border-bottom: 1px solid #2d3148; min-width: 0;
     }
     .strat-col {
       flex: 1; padding: 0.65rem 1rem; min-width: 0;
       background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
     }
     @media (max-width: 900px) {
-      .hold-strat-row { flex-direction: column; }
-      .hold-col { border-right: none; border-bottom: 1px solid #2d3148; }
+      .hold-strat-accel-row { flex-direction: column; }
+      .hold-strat-col { border-right: none; border-bottom: 1px solid #2d3148; }
+      .accel-cards { flex-wrap: nowrap; overflow-x: auto; }
+      .accel-card { flex: 0 0 auto; min-width: 190px; max-width: 220px; }
     }
 
     /* Holdings (compact) */
