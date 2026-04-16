@@ -678,10 +678,10 @@ Chart.register(...registerables, zoomPlugin);
       display: flex; border-bottom: 1px solid #2d3148;
     }
     .hold-strat-col {
-      flex: 0 0 30%; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
+      flex: 0 0 auto; width: 340px; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
     }
     .accel-col {
-      flex: 1; padding: 14px 16px; background: #12141e; min-width: 0;
+      flex: 1; padding: 14px 16px; background: #12141e; min-width: 0; overflow: hidden;
     }
     .accel-col .section-header {
       display: flex; align-items: center; gap: 10px;
@@ -691,7 +691,7 @@ Chart.register(...registerables, zoomPlugin);
       text-transform: none; margin-left: auto;
     }
     .accel-cards {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding-bottom: 6px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding-bottom: 6px;
     }
     .accel-card {
       background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
