@@ -983,7 +983,7 @@ Chart.register(...registerables, zoomPlugin);
       box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-weight: 400;
     }
-    .tt-wrap:hover .tt { display: block; }
+    /* tooltip show/hide handled by JS for smart positioning */
 
     /* Strategy chips */
     .compact-strategy { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -1243,6 +1243,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     this.elRef.nativeElement.addEventListener('mouseenter', (e: MouseEvent) => {
       const wrap = (e.target as HTMLElement).closest('.tt-wrap');
       if (!wrap) return;
+      // Hide all other tooltips first
+      this.elRef.nativeElement.querySelectorAll('.tt').forEach((el: HTMLElement) => el.style.display = 'none');
       const tt = wrap.querySelector('.tt') as HTMLElement;
       if (!tt) return;
       const rect = wrap.getBoundingClientRect();
@@ -1271,6 +1273,14 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       tt.style.top = top + 'px';
       tt.style.left = left + 'px';
       tt.style.transform = 'none';
+    }, true);
+
+    // Hide tooltip when mouse leaves
+    this.elRef.nativeElement.addEventListener('mouseleave', (e: MouseEvent) => {
+      const wrap = (e.target as HTMLElement).closest('.tt-wrap');
+      if (!wrap) return;
+      const tt = wrap.querySelector('.tt') as HTMLElement;
+      if (tt) tt.style.display = 'none';
     }, true);
   }
 
