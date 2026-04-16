@@ -296,7 +296,7 @@ Chart.register(...registerables, zoomPlugin);
               <div class="section-label">Would Sell If</div>
               <div class="compact-exits">
                 @for (cond of exitConditions(); track cond.label) {
-                  <div class="ce-tag tt-wrap">
+                  <div class="ce-tag tt-wrap" [class.ce-amber]="cond.color === 'amber'" [class.ce-red]="cond.color === 'red'" [class.ce-purple]="cond.color === 'purple'" [class.ce-blue]="cond.color === 'blue'">
                     <span class="ce-label">{{ cond.shortLabel }}</span>
                     @if (cond.pct >= 0) {
                       <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
@@ -903,12 +903,21 @@ Chart.register(...registerables, zoomPlugin);
     .cs-value { font-size: 0.8rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; }
     .cs-detail { font-size: 0.7rem; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
 
-    /* Exit condition tags */
+    /* Exit condition tags — color coded */
     .compact-exits { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
     .ce-tag {
       display: flex; align-items: center; gap: 0.4em;
-      padding: 0.35em 0.6em; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
+      padding: 0.35em 0.6em; border-radius: 5px; background: #12141e;
+      border: 1px solid #2d3148;
     }
+    .ce-tag.ce-amber { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.06); }
+    .ce-tag.ce-amber .ce-label { color: #f59e0b; }
+    .ce-tag.ce-red { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.06); }
+    .ce-tag.ce-red .ce-label { color: #f87171; }
+    .ce-tag.ce-purple { border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.06); }
+    .ce-tag.ce-purple .ce-label { color: #a855f7; }
+    .ce-tag.ce-blue { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.06); }
+    .ce-tag.ce-blue .ce-label { color: #3b82f6; }
     .ce-label { font-size: 0.7rem; font-weight: 600; color: #6b7280; white-space: nowrap; }
     .ce-bar { width: 1.75rem; height: 0.25rem; background: #1e2130; border-radius: 2px; overflow: hidden; }
     .ce-fill { height: 100%; border-radius: 2px; }
@@ -1462,11 +1471,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return ''; // replaced by exitConditions() progress bars
   }
 
-  exitConditions(): { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string }[] {
+  exitConditions(): { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string; color: string }[] {
     const s = this.status();
     if (!s?.holdings?.length) return [];
     const h = s.holdings[0];
-    const conds: { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string }[] = [];
+    const conds: { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string; color: string }[] = [];
 
     // 1. Trail stop (delayed+stale) — how close price is to stop
     const stopDist = h.stop_distance_pct ?? 0;
@@ -1476,6 +1485,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       label: `Trail (${layerName})`, detail: h.stop_price > 0 ? `${stopDist.toFixed(1)}% away` : 'not active', pct: trailPct,
       shortLabel: 'Trail', shortDetail: h.stop_price > 0 ? `${stopDist.toFixed(1)}%` : '—',
       tooltip: `Trailing stop at ${h.stop_price > 0 ? this.formatPrice(h.stop_price) : '—'} (${layerName}). Activates at +2% profit with 5% trail, tightens to 2.5% after 30min above +5%, and locks to 2.0% if price stalls for 30min.`,
+      color: 'amber',
     });
 
     // 2. ATR stop floor
@@ -1486,6 +1496,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       label: 'ATR Floor', detail: h.atr_stop_price > 0 ? `${atrDist.toFixed(1)}% away` : 'not set', pct: atrPct,
       shortLabel: 'ATR', shortDetail: h.atr_stop_price > 0 ? `${atrDist.toFixed(1)}%` : '—',
       tooltip: `ATR-based stop floor at ${h.atr_stop_price > 0 ? this.formatPrice(h.atr_stop_price) : '—'}. Set at entry using Average True Range to prevent selling during normal volatility. Acts as a floor — trail stop can only be higher.`,
+      color: 'red',
     });
 
     // 3. Accel fade
@@ -1497,6 +1508,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       label: 'Accel Fade', detail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}%` : `wait ${Math.round(4 - hoursHeld)}h`, pct: hoursHeld >= 4 ? accelPct : (hoursHeld / 4) * 30,
       shortLabel: 'Accel', shortDetail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}%` : `wait ${Math.round(4 - hoursHeld)}h`,
       tooltip: `Exits if momentum acceleration drops below 5%. Only checked after holding for 4 hours to avoid exiting during initial volatility. Current accel: ${(accel * 100).toFixed(1)}%.`,
+      color: 'purple',
     });
 
     // 4. Max hold 72h
@@ -1505,21 +1517,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       label: 'Max Hold', detail: `${h.max_hold_remaining_hours}h left`, pct: maxHoldPct,
       shortLabel: 'Hold', shortDetail: `${h.max_hold_remaining_hours}h`,
       tooltip: `Force-exits after 72 hours regardless of profit. Currently held ${hoursHeld}h with ${h.max_hold_remaining_hours}h remaining. Prevents getting stuck in sideways trades.`,
-    });
-
-    // 5. Regime flip — use negative pct to signal "no bar needed"
-    const regimePct = s.regime_bullish ? -1 : 90;
-    conds.push({
-      label: 'Regime', detail: s.regime_bullish ? 'Bull' : 'BEAR', pct: regimePct,
-      shortLabel: 'Regime', shortDetail: s.regime_bullish ? 'Bull' : 'BEAR!',
-      tooltip: `Exits immediately if BTC drops below its 500h moving average (bearish regime). Currently ${s.regime_bullish ? 'bullish — safe to hold' : 'BEARISH — will trigger exit'}.`,
-    });
-
-    // 6. Equity drawdown
-    conds.push({
-      label: 'Equity', detail: 'OK', pct: -1,
-      shortLabel: 'Equity', shortDetail: 'OK',
-      tooltip: 'Emergency backstop: exits all positions if total equity drops 15% below starting balance. Protects against catastrophic losses.',
+      color: 'blue',
     });
 
     return conds;
