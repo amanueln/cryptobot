@@ -28,6 +28,7 @@ Chart.register(...registerables, zoomPlugin);
         </span>
         <span class="engine-alloc">{{ formatCurrency(status()?.starting_balance ?? 0) }} allocated</span>
         <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
+        <button class="backup-btn" (click)="backupNow()" [disabled]="backupRunning()" title="Backup databases to external drive">{{ backupRunning() ? 'Backing up...' : backupResult() || 'Backup' }}</button>
         <button class="reset-btn" (click)="resetData()" title="Reset momentum data">Reset Data</button>
       </div>
 
@@ -498,6 +499,13 @@ Chart.register(...registerables, zoomPlugin);
       border-radius: 4px; cursor: pointer; transition: all 0.15s; text-decoration: none;
     }
     .export-btn:hover { background: rgba(59,130,246,0.2); border-color: #60a5fa; }
+    .backup-btn {
+      margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
+      background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 4px; cursor: pointer; transition: all 0.15s;
+    }
+    .backup-btn:hover { background: rgba(34,197,94,0.2); border-color: #4ade80; }
+    .backup-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .reset-btn {
       margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
       background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.3);
@@ -888,7 +896,7 @@ Chart.register(...registerables, zoomPlugin);
       /* Engine tab — keep inline */
       .engine-tab { flex-wrap: wrap; padding: 0.4rem 0.75rem; gap: 0.3rem; }
       .engine-alloc { font-size: 0.6rem; }
-      .export-btn, .reset-btn { font-size: 0.55rem; padding: 0.1rem 0.4rem; margin-left: 0; }
+      .export-btn, .backup-btn, .reset-btn { font-size: 0.55rem; padding: 0.1rem 0.4rem; margin-left: 0; }
 
       /* Hero bar — 2x2 grid on mobile */
       .hero-bar {
@@ -1041,6 +1049,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     pass: boolean;
   } }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
+  backupRunning = signal(false);
+  backupResult = signal<string | null>(null);
   activityOpen = signal(window.innerWidth > 768);
   chartHours = signal(72);
   chartRanges = [
@@ -1395,6 +1405,25 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       error: (err: unknown) => {
         this.skippingCooldown.set(false);
         console.error('Skip cooldown failed', err);
+      },
+    });
+  }
+
+  backupNow(): void {
+    this.backupRunning.set(true);
+    this.backupResult.set(null);
+    this.api.backupNow().subscribe({
+      next: (res) => {
+        const totalMb = res.backed_up.reduce((s: number, f: { size_mb: number }) => s + f.size_mb, 0);
+        this.backupResult.set(`Done (${totalMb} MB)`);
+        this.backupRunning.set(false);
+        setTimeout(() => this.backupResult.set(null), 5000);
+      },
+      error: (err: unknown) => {
+        this.backupResult.set('Failed');
+        this.backupRunning.set(false);
+        console.error('[Backup] failed', err);
+        setTimeout(() => this.backupResult.set(null), 5000);
       },
     });
   }
