@@ -621,10 +621,10 @@ Chart.register(...registerables);
       display: flex; gap: 0; border-bottom: 1px solid #2d3148;
     }
     .hold-col {
-      flex: 1; padding: 10px 16px; border-right: 1px solid #2d3148; min-width: 0;
+      flex: 1; padding: 0.65rem 1rem; border-right: 1px solid #2d3148; min-width: 0;
     }
     .strat-col {
-      flex: 1; padding: 10px 16px; min-width: 0;
+      flex: 1; padding: 0.65rem 1rem; min-width: 0;
       background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
     }
     @media (max-width: 900px) {
@@ -635,36 +635,36 @@ Chart.register(...registerables);
     /* Holdings (compact) */
     .compact-holding {
       background: #1a1d29; border: 1px solid #2d3148;
-      border-radius: 8px; border-left: 3px solid #a78bfa; padding: 8px 12px;
+      border-radius: 0.5rem; border-left: 3px solid #a78bfa; padding: 0.6rem 0.85rem;
     }
     .ch-top {
-      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
     }
-    .ch-coin { font-weight: 700; font-size: 14px; white-space: nowrap; }
+    .ch-coin { font-weight: 700; font-size: 1.1rem; white-space: nowrap; }
     .ch-layer {
-      font-size: 8px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+      font-size: 0.65rem; font-weight: 700; padding: 0.2em 0.5em; border-radius: 3px;
       letter-spacing: 0.04em; white-space: nowrap;
     }
     .ch-layer.inactive { background: rgba(100,116,139,0.12); color: #64748b; }
     .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .ch-stats { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .ch-stats { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
     .ch-stat { display: flex; flex-direction: column; align-items: center; }
-    .ch-stat-lbl { font-size: 7px; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
-    .ch-stat-val { font-size: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
+    .ch-stat-lbl { font-size: 0.6rem; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
+    .ch-stat-val { font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
     .ch-stat-val.red { color: #f87171; }
     .ch-stat-val.green { color: #4ade80; }
     .ch-stat-val.dim { color: #6b7280; }
     .ch-stat-val.purple { color: #a78bfa; }
     .ch-pnl-group { margin-left: auto; text-align: right; white-space: nowrap; }
-    .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; }
-    .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; margin-left: 4px; }
+    .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; font-weight: 700; }
+    .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; margin-left: 0.25em; }
     .ch-pnl-pct.neg { color: #f87171; }
     .ch-pnl-pct.pos { color: #4ade80; }
     .ch-sell {
-      padding: 4px 12px; border: 1px solid #f87171; border-radius: 4px;
-      background: rgba(248,113,113,0.08); color: #f87171; font-size: 10px;
+      padding: 0.3em 0.8em; border: 1px solid #f87171; border-radius: 4px;
+      background: rgba(248,113,113,0.08); color: #f87171; font-size: 0.7rem;
       font-weight: 700; cursor: pointer; white-space: nowrap; transition: all 0.15s;
     }
     .ch-sell:hover:not(:disabled) { background: #f87171; color: #0f1117; }
@@ -755,19 +755,19 @@ Chart.register(...registerables);
 
     /* Strategy Logic panel (compact) — layout handled by .strat-col */
     .section-label {
-      font-size: 9px; font-weight: 700; color: #4b5280; text-transform: uppercase;
-      letter-spacing: 0.06em; margin-bottom: 6px; margin-top: 10px;
+      font-size: 0.7rem; font-weight: 700; color: #4b5280; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 0.4rem; margin-top: 0.65rem;
     }
     .section-label:first-child { margin-top: 0; }
 
     /* Tooltip */
     .tt-wrap { position: relative; cursor: help; }
     .tt {
-      display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+      display: none; position: absolute; bottom: calc(100% + 0.5rem); left: 50%;
       transform: translateX(-50%); z-index: 100;
-      background: #1e2130; border: 1px solid #3d4168; border-radius: 6px;
-      padding: 8px 12px; font-size: 11px; color: #c8cdd8; line-height: 1.5;
-      white-space: normal; width: max-content; max-width: 280px;
+      background: #1e2130; border: 1px solid #3d4168; border-radius: 0.4rem;
+      padding: 0.5rem 0.75rem; font-size: 0.8rem; color: #c8cdd8; line-height: 1.5;
+      white-space: normal; width: max-content; max-width: 20rem;
       box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-weight: 400;
     }
@@ -778,49 +778,49 @@ Chart.register(...registerables);
     .tt-wrap:hover .tt { display: block; }
 
     /* Strategy chips */
-    .compact-strategy { display: flex; gap: 8px; flex-wrap: wrap; }
+    .compact-strategy { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .cs-chip {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 10px; background: #1a1d29; border: 1px solid #2d3148;
-      border-radius: 6px; white-space: nowrap;
+      display: flex; align-items: center; gap: 0.4em;
+      padding: 0.35em 0.65em; background: #1a1d29; border: 1px solid #2d3148;
+      border-radius: 0.4rem; white-space: nowrap;
     }
-    .cs-label { font-size: 8px; font-weight: 700; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; }
-    .cs-value { font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; }
-    .cs-detail { font-size: 9px; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
+    .cs-label { font-size: 0.65rem; font-weight: 700; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; }
+    .cs-value { font-size: 0.8rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; }
+    .cs-detail { font-size: 0.7rem; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
 
     /* Exit condition tags */
-    .compact-exits { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .compact-exits { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
     .ce-tag {
-      display: flex; align-items: center; gap: 5px;
-      padding: 4px 8px; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
+      display: flex; align-items: center; gap: 0.4em;
+      padding: 0.35em 0.6em; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
     }
-    .ce-label { font-size: 8px; font-weight: 600; color: #6b7280; white-space: nowrap; }
-    .ce-bar { width: 24px; height: 3px; background: #1e2130; border-radius: 2px; overflow: hidden; }
+    .ce-label { font-size: 0.7rem; font-weight: 600; color: #6b7280; white-space: nowrap; }
+    .ce-bar { width: 1.75rem; height: 0.25rem; background: #1e2130; border-radius: 2px; overflow: hidden; }
     .ce-fill { height: 100%; border-radius: 2px; }
     .ce-fill.low { background: #4b5280; }
     .ce-fill.mid { background: #fbbf24; }
     .ce-fill.high { background: #f87171; }
-    .ce-val { font-size: 8px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+    .ce-val { font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
     .ce-val.dim { color: #6b7280; }
     .ce-val.warn { color: #fbbf24; }
     .ce-val.danger { color: #f87171; }
     .ce-val.safe { color: #4ade80; }
 
     /* Buy condition tags */
-    .compact-buy { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .compact-buy { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
     .cb-tag {
-      display: flex; align-items: center; gap: 4px;
-      padding: 4px 8px; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
-      font-size: 9px;
+      display: flex; align-items: center; gap: 0.3em;
+      padding: 0.35em 0.6em; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
+      font-size: 0.75rem;
     }
     .cb-text { color: #9ca3af; white-space: nowrap; }
     .cb-text.green { color: #4ade80; }
     .cb-text.red { color: #f87171; }
 
     /* Rejection tags */
-    .compact-rejections { display: flex; gap: 5px; flex-wrap: wrap; }
+    .compact-rejections { display: flex; gap: 0.4rem; flex-wrap: wrap; }
     .cr-tag {
-      font-size: 9px; padding: 3px 8px; border-radius: 4px;
+      font-size: 0.75rem; padding: 0.25em 0.6em; border-radius: 4px;
       background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.15);
       color: #fbbf24; font-family: 'JetBrains Mono', monospace;
     }
