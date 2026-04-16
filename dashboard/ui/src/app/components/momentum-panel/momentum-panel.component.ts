@@ -702,18 +702,18 @@ Chart.register(...registerables, zoomPlugin);
       background: linear-gradient(180deg, rgba(74,222,128,0.04) 0%, #1a1d29 100%);
     }
     .ac-top {
-      display: flex; align-items: center; gap: 8px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
-    .ac-coin { font-weight: 700; font-size: 15px; color: #f1f5f9; }
+    .ac-coin { font-weight: 700; font-size: 14px; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ac-badge {
       font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.06em; flex-shrink: 0;
     }
     .ac-badge.qual { background: rgba(74,222,128,0.12); color: #4ade80; }
     .ac-badge.below { background: rgba(100,116,139,0.12); color: #64748b; }
     .ac-price {
       margin-left: auto; font-family: 'JetBrains Mono', monospace;
-      font-size: 12px; font-weight: 600; color: #e2e8f0;
+      font-size: 11px; font-weight: 600; color: #e2e8f0; white-space: nowrap;
     }
     .ac-desc {
       font-size: 10px; color: #6b7280; line-height: 1.4;
