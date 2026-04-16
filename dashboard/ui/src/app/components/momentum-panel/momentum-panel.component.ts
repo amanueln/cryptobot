@@ -976,17 +976,12 @@ Chart.register(...registerables, zoomPlugin);
     /* Tooltip */
     .tt-wrap { position: relative; cursor: help; }
     .tt {
-      display: none; position: absolute; bottom: calc(100% + 0.5rem); left: 50%;
-      transform: translateX(-50%); z-index: 100;
+      display: none; position: fixed; z-index: 9999;
       background: #1e2130; border: 1px solid #3d4168; border-radius: 0.4rem;
       padding: 0.5rem 0.75rem; font-size: 0.8rem; color: #c8cdd8; line-height: 1.5;
       white-space: normal; width: max-content; max-width: 20rem;
       box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none;
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-weight: 400;
-    }
-    .tt::after {
-      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-      border: 5px solid transparent; border-top-color: #3d4168;
     }
     .tt-wrap:hover .tt { display: block; }
 
@@ -1087,6 +1082,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   @ViewChild('momEquityCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   private chart?: Chart;
+  private elRef = inject(ElementRef);
 
   pollCountdown(): number { return this._pollCountdown(); }
 
@@ -1242,6 +1238,31 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   ngAfterViewInit() {
     // Slight delay to ensure canvas is ready
     setTimeout(() => this.buildChart(), 300);
+
+    // Smart tooltip positioning — avoids clipping at edges
+    this.elRef.nativeElement.addEventListener('mouseenter', (e: MouseEvent) => {
+      const wrap = (e.target as HTMLElement).closest('.tt-wrap');
+      if (!wrap) return;
+      const tt = wrap.querySelector('.tt') as HTMLElement;
+      if (!tt) return;
+      const rect = wrap.getBoundingClientRect();
+      const ttW = 280; // approximate max width
+      // Position above the element by default
+      let top = rect.top - 8;
+      let left = rect.left + rect.width / 2;
+      // If too close to top, show below
+      if (rect.top < 120) {
+        top = rect.bottom + 8;
+        tt.style.transform = 'translateX(-50%)';
+      } else {
+        tt.style.transform = 'translateX(-50%) translateY(-100%)';
+      }
+      // Clamp horizontally
+      if (left - ttW / 2 < 8) left = ttW / 2 + 8;
+      if (left + ttW / 2 > window.innerWidth - 8) left = window.innerWidth - ttW / 2 - 8;
+      tt.style.top = top + 'px';
+      tt.style.left = left + 'px';
+    }, true);
   }
 
   setChartRange(hours: number): void {
