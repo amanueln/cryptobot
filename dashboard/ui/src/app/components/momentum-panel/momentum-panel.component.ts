@@ -1897,21 +1897,24 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     const ready = all.filter(c => c.quality?.pass !== false && c.structural?.pass !== false);
     const candidates = ready.length > 0 ? ready : all;
 
-    // Find the best candidate that passes the most filters
+    // Find the best candidate — one that passes ALL filters, like the engine does
     let best: typeof all[0] | null = null;
     let bestReason = '';
+    let bestScore = -1;
     for (const c of candidates) {
       const passAdx = c.adx != null && c.adx > 25;
       const passRsi = c.rsi != null && c.rsi > 50 && c.rsi <= 65;
       const passQuality = c.quality?.pass !== false;
       const passStructure = c.structural?.pass !== false;
+      const score = (passAdx ? 1 : 0) + (passRsi ? 1 : 0) + (passQuality ? 1 : 0) + (passStructure ? 1 : 0);
       if (passAdx && passRsi && passQuality && passStructure) {
-        best = c; // this one would get bought
+        best = c;
         bestReason = 'would buy';
-        break;
+        break; // perfect candidate — engine would pick this
       }
-      if (!best) {
-        best = c; // first candidate as fallback
+      if (score > bestScore) {
+        bestScore = score;
+        best = c; // closest to passing everything
       }
     }
     if (!best && all.length > 0) best = all[0];

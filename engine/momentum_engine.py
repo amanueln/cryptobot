@@ -50,6 +50,7 @@ LONG_LB = 720             # 30 days in hours
 REGIME_MA = 500            # BTC SMA period (hourly)
 REGIME_HYSTERESIS = 0.05   # 5% band — BTC must be 5% above SMA to go bullish
 REENTRY_THRESHOLD = 0.10   # 10% — enter on strong signals (20% was too restrictive for normal markets)
+ACCEL_ENTRY = 0.20         # 20% — threshold for freshness gate (how long has accel been above this)
 FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
