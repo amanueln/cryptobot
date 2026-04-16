@@ -244,11 +244,31 @@ class SimRunner:
             return
 
         grid_pairs = {e.pair for e in self.engines}
+        old_pairs = set(self.momentum_engine.pairs)
         pairs = self.momentum_scanner.scan(exclude_pairs=grid_pairs)
 
         if pairs:
             self.momentum_engine.update_pairs(pairs)
             print(f"  Momentum scanner: {len(pairs)} pairs selected (excluding {len(grid_pairs)} grid pairs)")
+
+            # Warmup any newly added pairs so engine can evaluate them immediately
+            new_pairs = set(pairs) - old_pairs
+            if new_pairs:
+                end = datetime.now()
+                start = end - timedelta(hours=900)
+                for pair in new_pairs:
+                    if len(self.momentum_engine._closes.get(pair, [])) >= 720:
+                        continue  # already has data
+                    candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end)
+                    if not candles or len(candles) < 100:
+                        fetched = self.client.get_candles(pair, "ONE_HOUR", start, end)
+                        if fetched:
+                            self.candle_store.save_candles(pair, "ONE_HOUR", fetched)
+                        candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end) or fetched
+                    if candles:
+                        for c in candles:
+                            self.momentum_engine.feed_candle(pair, c, warmup=True)
+                        print(f"  Warmed new pair {pair} with {len(candles)} candles")
         else:
             print("  Momentum scanner: no pairs found, keeping current list")
 

@@ -585,6 +585,7 @@ class MomentumEngine:
         for pair in self.pairs:
             closes = self._closes[pair]
             if len(closes) < LONG_LB + 1:
+                self._entry_rejections.append(f"{pair}: only {len(closes)}/{LONG_LB + 1} candles (needs warmup)")
                 continue
             # Skip sub-penny coins — price data too noisy for reliable momentum
             if closes[-1] < MIN_PRICE:
