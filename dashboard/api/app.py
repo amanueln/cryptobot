@@ -2172,6 +2172,7 @@ def api_momentum_trades():
             buy_costs.setdefault(r["pair"], []).append({
                 "id": r["id"], "cost_usd": r["cost_usd"], "amount": r["amount"],
                 "fee": r.get("fee", 0) or 0,
+                "price": r["price"],  # actual market buy price
             })
             r["net_pnl"] = None
             r["entry_price"] = None
@@ -2188,7 +2189,7 @@ def api_momentum_trades():
                 total_buy_cost = matched["cost_usd"]
                 buy_fee = matched["fee"]
                 sold_buy_ids.add(matched["id"])
-                entry_price = total_buy_cost / matched["amount"] if matched["amount"] else None
+                entry_price = matched["price"]  # actual market buy price, not cost basis
             r["net_pnl"] = r["cost_usd"] - total_buy_cost if total_buy_cost else None
             r["entry_price"] = entry_price
             r["buy_fee"] = buy_fee
