@@ -28,6 +28,7 @@ from intelligence.pair_selector import PairSelector, load_pair_selector_config
 from intelligence.ml_predictor import MLPredictor, load_ml_config
 from intelligence.volatility_predictor import VolatilityPredictor, VolatilityPrediction
 from strategies.base_strategy import BaseStrategy
+from exchange.ws_recorder import WSRecorder
 from engine.momentum_engine import MomentumEngine, PAIRS as MOMENTUM_PAIRS
 from engine.momentum_scanner import MomentumScanner
 
@@ -182,6 +183,9 @@ class SimRunner:
         self._last_momentum_scan: datetime | None = None
         self._momentum_scan_interval_hours = 24  # rescan every 24h
 
+        # WebSocket tick recorder for stop comparison analysis
+        self._ws_recorder = WSRecorder()
+
     def add_pair(
         self,
         name: str,
@@ -237,6 +241,50 @@ class SimRunner:
             else:
                 engine.last_candle_ts = datetime.now()
                 print(f"  {engine.name:<20} WARNING: no warmup data")
+
+    def _ws_start_recording(self, pair: str):
+        """Start WebSocket recording when a position is opened."""
+        try:
+            trade_id = f"{pair}_{int(time.time())}"
+            self._ws_recorder.start(pair, trade_id)
+            logger.info("WS recorder started for %s (id=%s)", pair, trade_id)
+        except Exception as e:
+            logger.warning("WS recorder failed to start: %s", e)
+
+    def _ws_stop_and_compare(self, pair: str, trade: "Trade"):
+        """Stop WebSocket recording and log comparison after a sell."""
+        try:
+            tick_count = self._ws_recorder.stop()
+            if tick_count < 10:
+                logger.info("WS recorder: only %d ticks, skipping comparison", tick_count)
+                return
+            # Get stop prices from the holding (already sold, but we can reconstruct)
+            holding_info = getattr(self.momentum_engine, '_last_exit_snapshot', None)
+            atr_stop = 0.0
+            trail_stop = 0.0
+            entry_price = trade.price  # fallback
+            if holding_info and isinstance(holding_info, dict):
+                atr_stop = holding_info.get("atr_stop_price", 0.0)
+                trail_stop = holding_info.get("trail_stop_price", 0.0)
+                entry_price = holding_info.get("entry_price", trade.price)
+            result = self._ws_recorder.compare_stops(
+                entry_price=entry_price,
+                atr_stop=atr_stop,
+                trail_stop=trail_stop,
+                actual_sell_price=trade.price,
+            )
+            if result:
+                summary = result.get("summary", "no data")
+                logger.info("WS vs Poll comparison: %s (%d ticks over %.0fs)",
+                            summary, result["total_ticks"], result["duration_seconds"])
+                self.trade_logger.log_momentum_event(
+                    "ws_comparison",
+                    f"[WS] {pair.replace('-USD', '')}: {summary}",
+                    f"Ticks: {result['total_ticks']}, Duration: {result['duration_seconds']:.0f}s, "
+                    f"Poll sell: ${result['sell_price_poll']:.4f}, WS sell: ${result['sell_price_ws']:.4f}",
+                )
+        except Exception as e:
+            logger.warning("WS recorder comparison failed: %s", e)
 
     def _run_momentum_scan(self):
         """Run the momentum scanner to find best coins, excluding grid pairs."""
@@ -518,8 +566,10 @@ class SimRunner:
                         short = trade.pair.replace("-USD", "")
                         if trade.side == "buy":
                             title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
+                            self._ws_start_recording(trade.pair)
                         else:
                             title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
+                            self._ws_stop_and_compare(trade.pair, trade)
                         self.trade_logger.log_momentum_event(
                             f"momentum_{trade.side}", title, trade.reason
                         )
@@ -588,6 +638,7 @@ class SimRunner:
                         self.trade_logger.log_exit_snapshot(self.momentum_engine._last_exit_snapshot)
                         self.momentum_engine._last_exit_snapshot = None
                     short = trade.pair.replace("-USD", "")
+                    self._ws_stop_and_compare(trade.pair, trade)
                     self.trade_logger.log_momentum_event(
                         "momentum_sell",
                         f"[MOM] Manual sold {short} at {_fmt_price(trade.price)}",
@@ -635,6 +686,7 @@ class SimRunner:
                     self.momentum_engine._last_exit_snapshot = None
                 short = trade.pair.replace("-USD", "")
                 title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
+                self._ws_stop_and_compare(trade.pair, trade)
                 self.trade_logger.log_momentum_event(
                     f"momentum_{trade.side}", title, trade.reason
                 )
