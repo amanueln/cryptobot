@@ -391,17 +391,7 @@ Chart.register(...registerables);
       overflow-x: hidden;
     }
 
-    /* Custom scrollbars — thin, dark themed */
-    :host ::ng-deep ::-webkit-scrollbar { width: 6px; height: 6px; }
-    :host ::ng-deep ::-webkit-scrollbar-track { background: #1a1d29; border-radius: 3px; }
-    :host ::ng-deep ::-webkit-scrollbar-thumb { background: #3d4168; border-radius: 3px; }
-    :host ::ng-deep ::-webkit-scrollbar-thumb:hover { background: #4b5280; }
-    :host ::ng-deep ::-webkit-scrollbar-corner { background: #1a1d29; }
-    /* Firefox */
-    .table-scroll, .activity-col, .accel-cards {
-      scrollbar-width: thin;
-      scrollbar-color: #3d4168 #1a1d29;
-    }
+    /* Scrollbars inherited from global styles.css */
 
     /* Engine tab */
     .engine-tab {
