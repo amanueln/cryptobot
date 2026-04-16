@@ -143,6 +143,15 @@ class WSRecorder:
         except Exception as e:
             logger.error("WS recorder flush error: %s", e)
 
+    def get_status(self) -> dict:
+        """Return current recorder status for dashboard display."""
+        return {
+            "active": self._running,
+            "pair": self._pair,
+            "trade_id": self._trade_id,
+            "tick_count": len(self._ticks) + self._get_tick_count(),
+        }
+
     def stop(self) -> int:
         """Stop recording and flush remaining ticks. Returns tick count."""
         self._running = False

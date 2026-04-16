@@ -743,8 +743,10 @@ class SimRunner:
         # Persist engine status for dashboard API
         try:
             status_path = os.path.join(os.path.dirname(__file__), "data", "momentum_status.json")
+            status_dict = mom.get_status_dict()
+            status_dict["ws_recorder"] = self._ws_recorder.get_status()
             with open(status_path, "w") as f:
-                json.dump(mom.get_status_dict(), f, default=str)
+                json.dump(status_dict, f, default=str)
         except Exception:
             pass
 

@@ -2106,7 +2106,7 @@ def api_momentum_status():
                 "exit_cooldown_remaining", "hours_in_position",
                 "warmup_done", "was_cash", "next_rebal_hours",
                 "btc_price", "btc_ma", "entry_rejections",
-                "last_candle_ts"):
+                "last_candle_ts", "ws_recorder"):
         if key in engine_state:
             result[key] = engine_state[key]
 

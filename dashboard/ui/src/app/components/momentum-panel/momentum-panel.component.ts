@@ -78,6 +78,9 @@ Chart.register(...registerables, zoomPlugin);
           @if ((status()?.hours_in_position ?? 0) > 0) {
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
           }
+          @if (status()?.ws_recorder?.active) {
+            <span class="ws-badge" title="WebSocket recording ticks for stop comparison analysis">WS ● {{ status()!.ws_recorder.tick_count }} ticks</span>
+          }
         </span>
         @if (status()?.status === 'warming_up') {
           <span class="poll-timer">warming up...</span>
@@ -593,6 +596,11 @@ Chart.register(...registerables, zoomPlugin);
     .hold-time {
       font-size: 10px; color: #64748b;
       font-family: 'JetBrains Mono', monospace;
+    }
+    .ws-badge {
+      font-size: 9px; color: #22c55e; font-family: 'JetBrains Mono', monospace;
+      background: rgba(34,197,94,0.1); padding: 1px 6px; border-radius: 3px;
+      border: 1px solid rgba(34,197,94,0.25);
     }
     .skip-cooldown-btn {
       font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 3px;

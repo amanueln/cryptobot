@@ -318,6 +318,7 @@ export interface MomentumStatusData {
   regime_hysteresis?: number;
   entry_rejections?: string[];
   last_candle_ts?: string;
+  ws_recorder?: { active: boolean; pair: string | null; tick_count: number };
   error?: string;
 }
 
