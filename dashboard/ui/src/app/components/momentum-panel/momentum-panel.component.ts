@@ -157,7 +157,7 @@ Chart.register(...registerables, zoomPlugin);
               <div class="section-label">Holdings</div>
               @for (h of status()?.holdings ?? []; track h.pair) {
                 <div class="compact-holding">
-                  <div class="ch-top">
+                  <div class="ch-row">
                     <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
                     @if (h.trail_layer) {
                       <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
@@ -166,6 +166,38 @@ Chart.register(...registerables, zoomPlugin);
                         {{ trailLayerLabel(h.trail_layer) }}
                       </span>
                     }
+                    <div class="ch-stats">
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Entry</span>
+                        <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
+                        <span class="tt">Entry price when position was opened</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Now</span>
+                        <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
+                        <span class="tt">Current market price (updated every ~60s)</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Stop</span>
+                        <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
+                        <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Dist</span>
+                        <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
+                        <span class="tt">How far current price is from the stop — lower = closer to selling</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Hold</span>
+                        <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
+                        <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">Accel</span>
+                        <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
+                        <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
+                      </div>
+                    </div>
                     <div class="ch-pnl-group">
                       <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
                       <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
@@ -178,38 +210,6 @@ Chart.register(...registerables, zoomPlugin);
                             (click)="manualSell(h.pair)">
                       {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
                     </button>
-                  </div>
-                  <div class="ch-stats">
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Entry</span>
-                      <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
-                      <span class="tt">Entry price when position was opened</span>
-                    </div>
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Now</span>
-                      <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
-                      <span class="tt">Current market price (updated every ~60s)</span>
-                    </div>
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Stop</span>
-                      <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
-                      <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
-                    </div>
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Dist</span>
-                      <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
-                      <span class="tt">How far current price is from the stop — lower = closer to selling</span>
-                    </div>
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Hold</span>
-                      <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
-                      <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
-                    </div>
-                    <div class="ch-stat tt-wrap">
-                      <span class="ch-stat-lbl">Accel</span>
-                      <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
-                      <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
-                    </div>
                   </div>
                 </div>
               }
@@ -781,8 +781,8 @@ Chart.register(...registerables, zoomPlugin);
       background: #1a1d29; border: 1px solid #2d3148;
       border-radius: 0.5rem; border-left: 3px solid #a78bfa; padding: 0.6rem 0.85rem;
     }
-    .ch-top {
-      display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
+    .ch-row {
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
     }
     .ch-coin { font-weight: 700; font-size: 1.1rem; white-space: nowrap; }
     .ch-layer {
@@ -793,7 +793,7 @@ Chart.register(...registerables, zoomPlugin);
     .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .ch-stats { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .ch-stats { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
     .ch-stat { display: flex; flex-direction: column; align-items: center; }
     .ch-stat-lbl { font-size: 0.6rem; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
     .ch-stat-val { font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
@@ -939,8 +939,8 @@ Chart.register(...registerables, zoomPlugin);
       .ac-desc { font-size: 0.55rem; }
       .ac-accel { font-size: 0.75rem; }
 
-      /* Holdings — stack stats into grid */
-      .ch-top { flex-wrap: wrap; }
+      /* Holdings — wrap on mobile */
+      .ch-row { flex-wrap: wrap; }
       .ch-stats { gap: 0.5rem; }
       .ch-pnl-group { margin-left: 0; }
 
