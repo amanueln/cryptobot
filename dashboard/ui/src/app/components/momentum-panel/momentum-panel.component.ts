@@ -180,42 +180,61 @@ Chart.register(...registerables);
       <!-- Holdings / Cash state -->
       <div class="holdings-section">
         @if (isHolding()) {
-          <div class="section-header">Current Holdings</div>
+          <div class="section-label">Holdings</div>
           @for (h of status()?.holdings ?? []; track h.pair) {
-            <div class="holding-card">
-              <div class="hold-left">
-                <span class="hold-coin">{{ h.pair.replace('-USD', '') }}</span>
-                <span class="hold-accel">Accel: {{ (h.accel * 100).toFixed(1) }}%</span>
+            <div class="compact-holding">
+              <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
+              @if (h.trail_layer) {
+                <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
+                      [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
+                      [class.stale]="h.trail_layer === 'stale'">
+                  {{ trailLayerLabel(h.trail_layer) }}
+                </span>
+              }
+              <div class="ch-stats">
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Entry</span>
+                  <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
+                  <span class="tt">Entry price when position was opened</span>
+                </div>
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Now</span>
+                  <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
+                  <span class="tt">Current market price (updated every ~60s)</span>
+                </div>
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Stop</span>
+                  <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
+                  <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
+                </div>
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Dist</span>
+                  <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
+                  <span class="tt">How far current price is from the stop — lower = closer to selling</span>
+                </div>
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Hold</span>
+                  <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
+                  <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
+                </div>
+                <div class="ch-stat tt-wrap">
+                  <span class="ch-stat-lbl">Accel</span>
+                  <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
+                  <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
+                </div>
               </div>
-              <div class="hold-mid">
-                <span class="hold-stop-label">Trail Stop</span>
-                <span class="hold-stop-price">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
-                <span class="hold-stop-dist">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '% away' : 'no stop set' }}</span>
-                @if (h.trail_layer) {
-                  <span class="hold-trail-layer" [class.layer-wide]="h.trail_layer === 'wide'"
-                        [class.layer-tight]="h.trail_layer === 'tight'"
-                        [class.layer-stale]="h.trail_layer === 'stale'"
-                        [class.layer-inactive]="h.trail_layer === 'inactive'">
-                    {{ trailLayerLabel(h.trail_layer) }}
-                  </span>
-                }
-                @if (h.max_hold_remaining_hours !== undefined) {
-                  <span class="hold-maxhold">Max hold: {{ h.max_hold_remaining_hours }}h left</span>
-                }
-              </div>
-              <div class="hold-right">
-                <span class="hold-value">{{ formatCurrency(h.value) }}</span>
-                <span class="hold-pnl" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
+              <div class="ch-pnl-group">
+                <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
+                <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
                   {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
                 </span>
-                <button class="manual-sell-btn"
-                        [class.selling]="sellingPair() === h.pair"
-                        [disabled]="sellingPair() !== null"
-                        (click)="manualSell(h.pair)"
-                        title="Sell this position now">
-                  {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
-                </button>
               </div>
+              <button class="ch-sell"
+                      [class.selling]="sellingPair() === h.pair"
+                      [disabled]="sellingPair() !== null"
+                      (click)="manualSell(h.pair)">
+                {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
+              </button>
             </div>
           }
         }
@@ -228,66 +247,69 @@ Chart.register(...registerables);
         </div>
       }
 
-      <!-- Strategy Logic panel -->
+      <!-- Strategy Logic panel (compact) -->
       @if (status()?.warmup_done) {
         <div class="strategy-panel">
-          <div class="section-header">Strategy Logic</div>
-          <div class="strategy-grid">
-            <div class="strat-item">
-              <span class="strat-label">BTC Regime</span>
-              <span class="strat-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
-                {{ status()?.regime_bullish ? 'Bullish' : 'Bearish' }}
-                — BTC {{ btcVsSma() }}
+          <!-- Strategy chips -->
+          <div class="section-label">Strategy</div>
+          <div class="compact-strategy">
+            <div class="cs-chip tt-wrap">
+              <span class="cs-label">Regime</span>
+              <span class="cs-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
+                {{ status()?.regime_bullish ? 'Bull' : 'Bear' }}
               </span>
-              <span class="strat-explain">{{ regimeExplain() }}</span>
+              <span class="cs-detail">BTC {{ btcVsSmaShort() }}</span>
+              <span class="tt">{{ regimeExplain() }}</span>
             </div>
-            <div class="strat-item">
-              <span class="strat-label">Next Rebalance</span>
-              <span class="strat-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
-              <span class="strat-explain">Weekly rotation — engine compares your holding to top acceleration coin</span>
+            <div class="cs-chip tt-wrap">
+              <span class="cs-label">Rebalance</span>
+              <span class="cs-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
+              <span class="tt">Weekly rotation — engine compares your holding to the top acceleration coin and swaps if a better one is found</span>
             </div>
-            <div class="strat-item">
-              <span class="strat-label">Position</span>
-              <span class="strat-value">{{ positionExplain() }}</span>
-              <span class="strat-explain">{{ positionDetail() }}</span>
+            <div class="cs-chip tt-wrap">
+              <span class="cs-label">Position</span>
+              <span class="cs-value">{{ positionExplainShort() }}</span>
+              <span class="tt">{{ positionDetail() }}</span>
             </div>
-            <div class="strat-item exit-conditions-item">
-              <span class="strat-label">Would Sell If</span>
-              @if (isHolding()) {
-                <div class="exit-bars">
-                  @for (cond of exitConditions(); track cond.label) {
-                    <div class="exit-bar-row">
-                      <div class="exit-bar-header">
-                        <span class="exit-bar-label">{{ cond.label }}</span>
-                        <span class="exit-bar-value" [class.danger]="cond.pct >= 80" [class.warning]="cond.pct >= 50 && cond.pct < 80">{{ cond.detail }}</span>
-                      </div>
-                      <div class="exit-bar-track">
-                        <div class="exit-bar-fill" [class.danger]="cond.pct >= 80" [class.warning]="cond.pct >= 50 && cond.pct < 80"
-                             [style.width.%]="cond.pct"></div>
-                      </div>
-                    </div>
+          </div>
+
+          <!-- Exit conditions (compact inline tags) -->
+          @if (isHolding()) {
+            <div class="section-label">Would Sell If</div>
+            <div class="compact-exits">
+              @for (cond of exitConditions(); track cond.label) {
+                <div class="ce-tag tt-wrap">
+                  <span class="ce-label">{{ cond.shortLabel }}</span>
+                  @if (cond.pct >= 0) {
+                    <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
                   }
+                  <span class="ce-val" [class.dim]="cond.pct < 50" [class.warn]="cond.pct >= 50 && cond.pct < 80" [class.danger]="cond.pct >= 80" [class.safe]="cond.pct < 0">{{ cond.shortDetail }}</span>
+                  <span class="tt">{{ cond.tooltip }}</span>
                 </div>
-                <span class="strat-explain">Checked every ~60s via ticker, hourly via candle</span>
-              } @else {
-                <span class="strat-value sell-conditions">N/A — not holding</span>
               }
             </div>
-            <div class="strat-item">
-              <span class="strat-label">Would Buy If</span>
-              <span class="strat-value buy-conditions">{{ buyConditions() }}</span>
-            </div>
-            @if (entryRejections().length > 0) {
-              <div class="strat-item rejections-item">
-                <span class="strat-label">Why Not Buying</span>
-                <div class="rejection-list">
-                  @for (r of entryRejections(); track r) {
-                    <div class="rejection-line">{{ r }}</div>
-                  }
-                </div>
+          }
+
+          <!-- Buy conditions (compact tags) -->
+          <div class="section-label">Would Buy If</div>
+          <div class="compact-buy">
+            @for (cond of buyConditionTags(); track cond.text) {
+              <div class="cb-tag tt-wrap">
+                <span class="cb-text" [class.green]="cond.met" [class.red]="cond.met === false">{{ cond.met ? '✓' : cond.met === false ? '✗' : '•' }} {{ cond.text }}</span>
+                <span class="tt">{{ cond.tooltip }}</span>
               </div>
             }
           </div>
+
+          <!-- Rejections (compact tags) -->
+          @if (entryRejections().length > 0) {
+            <div class="section-label">Why Not Buying</div>
+            <div class="compact-rejections">
+              @for (r of entryRejections(); track r) {
+                <span class="cr-tag">{{ r }}</span>
+              }
+            </div>
+          }
         </div>
       }
 
@@ -593,32 +615,43 @@ Chart.register(...registerables);
     }
     .accel-note.qualifying-note { color: #4ade80; }
 
-    /* Holdings */
-    .holdings-section { padding: 14px 20px; border-bottom: 1px solid #2d3148; }
-    .holding-card {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 14px; background: #1a1d29; border: 1px solid #2d3148;
-      border-radius: 8px; border-left: 3px solid #a78bfa; margin-bottom: 8px;
+    /* Holdings (compact) */
+    .holdings-section { padding: 10px 20px; border-bottom: 1px solid #2d3148; }
+    .compact-holding {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 14px; background: #1a1d29; border: 1px solid #2d3148;
+      border-radius: 8px; border-left: 3px solid #a78bfa;
     }
-    .hold-left { display: flex; align-items: center; gap: 12px; }
-    .hold-coin { font-weight: 700; font-size: 15px; }
-    .hold-accel { font-size: 10px; font-weight: 600; color: #a78bfa; }
-    .hold-mid { text-align: center; }
-    .hold-stop-label { font-size: 9px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; display: block; }
-    .hold-stop-price { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #f87171; display: block; }
-    .hold-stop-dist { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b7280; display: block; }
-    .hold-maxhold { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #f59e0b; display: block; }
-    .hold-right { text-align: right; }
-    .hold-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; display: block; }
-    .hold-pnl { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; }
-    .manual-sell-btn {
-      margin-top: 6px; padding: 4px 16px; border: 1px solid #f87171; border-radius: 4px;
-      background: rgba(248,113,113,0.1); color: #f87171; font-size: 11px; font-weight: 700;
-      cursor: pointer; letter-spacing: 0.05em; transition: all 0.15s;
+    .ch-coin { font-weight: 700; font-size: 14px; white-space: nowrap; }
+    .ch-layer {
+      font-size: 8px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+      letter-spacing: 0.04em; white-space: nowrap;
     }
-    .manual-sell-btn:hover:not(:disabled) { background: #f87171; color: #0f1117; }
-    .manual-sell-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .manual-sell-btn.selling {
+    .ch-layer.inactive { background: rgba(100,116,139,0.12); color: #64748b; }
+    .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
+    .ch-stats { display: flex; align-items: center; gap: 14px; flex: 1; }
+    .ch-stat { display: flex; flex-direction: column; align-items: center; }
+    .ch-stat-lbl { font-size: 7px; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
+    .ch-stat-val { font-size: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
+    .ch-stat-val.red { color: #f87171; }
+    .ch-stat-val.green { color: #4ade80; }
+    .ch-stat-val.dim { color: #6b7280; }
+    .ch-stat-val.purple { color: #a78bfa; }
+    .ch-pnl-group { text-align: right; white-space: nowrap; }
+    .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; display: block; }
+    .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; }
+    .ch-pnl-pct.neg { color: #f87171; }
+    .ch-pnl-pct.pos { color: #4ade80; }
+    .ch-sell {
+      padding: 4px 12px; border: 1px solid #f87171; border-radius: 4px;
+      background: rgba(248,113,113,0.08); color: #f87171; font-size: 10px;
+      font-weight: 700; cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .ch-sell:hover:not(:disabled) { background: #f87171; color: #0f1117; }
+    .ch-sell:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ch-sell.selling {
       background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fbbf24;
       animation: pulse 1s ease-in-out infinite;
     }
@@ -702,78 +735,81 @@ Chart.register(...registerables);
     .side-badge.buy { background: rgba(74,222,128,0.12); color: #4ade80; }
     .side-badge.sell { background: rgba(248,113,113,0.12); color: #f87171; }
 
-    /* Strategy Logic panel */
+    /* Strategy Logic panel (compact) */
     .strategy-panel {
-      padding: 14px 20px; border-bottom: 1px solid #2d3148;
+      padding: 10px 20px; border-bottom: 1px solid #2d3148;
       background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
     }
-    .strategy-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    .section-label {
+      font-size: 9px; font-weight: 700; color: #4b5280; text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 6px; margin-top: 10px;
     }
-    @media (max-width: 768px) {
-      .strategy-grid { grid-template-columns: 1fr; }
+    .section-label:first-child { margin-top: 0; }
+
+    /* Tooltip */
+    .tt-wrap { position: relative; cursor: help; }
+    .tt {
+      display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+      transform: translateX(-50%); z-index: 100;
+      background: #1e2130; border: 1px solid #3d4168; border-radius: 6px;
+      padding: 8px 12px; font-size: 11px; color: #c8cdd8; line-height: 1.5;
+      white-space: normal; width: max-content; max-width: 280px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-weight: 400;
     }
-    .strat-item {
-      background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
-      padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;
+    .tt::after {
+      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      border: 5px solid transparent; border-top-color: #3d4168;
     }
-    .strat-label {
-      font-size: 9px; font-weight: 700; color: #6b7280;
-      text-transform: uppercase; letter-spacing: 0.06em;
+    .tt-wrap:hover .tt { display: block; }
+
+    /* Strategy chips */
+    .compact-strategy { display: flex; gap: 8px; flex-wrap: wrap; }
+    .cs-chip {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 10px; background: #1a1d29; border: 1px solid #2d3148;
+      border-radius: 6px; white-space: nowrap;
     }
-    .strat-value {
-      font-size: 12px; font-weight: 600; color: #e2e8f0;
-      font-family: 'JetBrains Mono', monospace;
+    .cs-label { font-size: 8px; font-weight: 700; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; }
+    .cs-value { font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; color: #e2e8f0; }
+    .cs-detail { font-size: 9px; color: #6b7280; font-family: 'JetBrains Mono', monospace; }
+
+    /* Exit condition tags */
+    .compact-exits { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .ce-tag {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 8px; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
     }
-    .strat-explain {
-      font-size: 10px; color: #6b7280; line-height: 1.4;
+    .ce-label { font-size: 8px; font-weight: 600; color: #6b7280; white-space: nowrap; }
+    .ce-bar { width: 24px; height: 3px; background: #1e2130; border-radius: 2px; overflow: hidden; }
+    .ce-fill { height: 100%; border-radius: 2px; }
+    .ce-fill.low { background: #4b5280; }
+    .ce-fill.mid { background: #fbbf24; }
+    .ce-fill.high { background: #f87171; }
+    .ce-val { font-size: 8px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+    .ce-val.dim { color: #6b7280; }
+    .ce-val.warn { color: #fbbf24; }
+    .ce-val.danger { color: #f87171; }
+    .ce-val.safe { color: #4ade80; }
+
+    /* Buy condition tags */
+    .compact-buy { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .cb-tag {
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 8px; border-radius: 5px; border: 1px solid #2d3148; background: #12141e;
+      font-size: 9px;
     }
-    .sell-conditions, .buy-conditions {
-      font-size: 11px; line-height: 1.6; white-space: pre-line;
+    .cb-text { color: #9ca3af; white-space: nowrap; }
+    .cb-text.green { color: #4ade80; }
+    .cb-text.red { color: #f87171; }
+
+    /* Rejection tags */
+    .compact-rejections { display: flex; gap: 5px; flex-wrap: wrap; }
+    .cr-tag {
+      font-size: 9px; padding: 3px 8px; border-radius: 4px;
+      background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.15);
+      color: #fbbf24; font-family: 'JetBrains Mono', monospace;
     }
-    .sell-conditions { color: #f87171; }
-    .buy-conditions { color: #4ade80; }
-    .exit-conditions-item { grid-column: 1 / -1; }
-    .exit-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-    .exit-bar-row { display: flex; flex-direction: column; gap: 3px; }
-    .exit-bar-header { display: flex; justify-content: space-between; align-items: center; }
-    .exit-bar-label { font-size: 10px; font-weight: 600; color: #9ca3af; }
-    .exit-bar-value {
-      font-size: 10px; color: #6b7280;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .exit-bar-value.warning { color: #fbbf24; }
-    .exit-bar-value.danger { color: #f87171; }
-    .exit-bar-track {
-      height: 5px; background: #1e2130; border-radius: 3px; overflow: hidden;
-    }
-    .exit-bar-fill {
-      height: 100%; border-radius: 3px; transition: width 0.5s ease;
-      background: linear-gradient(90deg, #4b5280 0%, #6366f1 100%);
-    }
-    .exit-bar-fill.warning {
-      background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
-    }
-    .exit-bar-fill.danger {
-      background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
-    }
-    .hold-trail-layer {
-      font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
-      display: inline-block; margin-top: 3px; letter-spacing: 0.04em;
-    }
-    .layer-wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
-    .layer-tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
-    .layer-stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .layer-inactive { background: rgba(100,116,139,0.12); color: #64748b; }
-    .rejections-item { grid-column: 1 / -1; }
-    .rejection-list {
-      font-size: 11px; color: #fbbf24; line-height: 1.6;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .rejection-line {
-      padding: 2px 0; border-bottom: 1px solid rgba(251,191,36,0.1);
-    }
-    .rejection-line:last-child { border-bottom: none; }
   `],
 })
 export class MomentumPanelComponent implements OnInit, AfterViewInit {
@@ -1246,24 +1282,20 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return ''; // replaced by exitConditions() progress bars
   }
 
-  exitConditions(): { label: string; detail: string; pct: number }[] {
+  exitConditions(): { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string }[] {
     const s = this.status();
     if (!s?.holdings?.length) return [];
     const h = s.holdings[0];
-    const conds: { label: string; detail: string; pct: number }[] = [];
+    const conds: { label: string; detail: string; pct: number; shortLabel: string; shortDetail: string; tooltip: string }[] = [];
 
     // 1. Trail stop (delayed+stale) — how close price is to stop
     const stopDist = h.stop_distance_pct ?? 0;
-    const trailLabel = h.trail_layer === 'stale' ? 'Trail Stop (STALE — 2.0%)'
-      : h.trail_layer === 'tight' ? 'Trail Stop (tight — 2.5%)'
-      : h.trail_layer === 'wide' ? 'Trail Stop (wide — 5.0%)'
-      : 'Trail Stop (inactive)';
-    // Closer to stop = higher percentage (e.g. 1% away = 80% bar)
     const trailPct = h.stop_price > 0 ? Math.min(100, Math.max(0, (1 - stopDist / 5) * 100)) : 0;
+    const layerName = h.trail_layer === 'stale' ? 'stale 2.0%' : h.trail_layer === 'tight' ? 'tight 2.5%' : h.trail_layer === 'wide' ? 'wide 5.0%' : 'inactive';
     conds.push({
-      label: trailLabel,
-      detail: h.stop_price > 0 ? `${this.formatPrice(h.stop_price)} (${stopDist.toFixed(1)}% away)` : 'not active',
-      pct: trailPct,
+      label: `Trail (${layerName})`, detail: h.stop_price > 0 ? `${stopDist.toFixed(1)}% away` : 'not active', pct: trailPct,
+      shortLabel: 'Trail', shortDetail: h.stop_price > 0 ? `${stopDist.toFixed(1)}%` : '—',
+      tooltip: `Trailing stop at ${h.stop_price > 0 ? this.formatPrice(h.stop_price) : '—'} (${layerName}). Activates at +2% profit with 5% trail, tightens to 2.5% after 30min above +5%, and locks to 2.0% if price stalls for 30min.`,
     });
 
     // 2. ATR stop floor
@@ -1271,43 +1303,43 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       ? ((h.current_price - h.atr_stop_price) / h.current_price) * 100 : 0;
     const atrPct = h.atr_stop_price > 0 ? Math.min(100, Math.max(0, (1 - atrDist / 8) * 100)) : 0;
     conds.push({
-      label: 'ATR Stop Floor',
-      detail: h.atr_stop_price > 0 ? `${this.formatPrice(h.atr_stop_price)} (${atrDist.toFixed(1)}% away)` : 'not set',
-      pct: atrPct,
+      label: 'ATR Floor', detail: h.atr_stop_price > 0 ? `${atrDist.toFixed(1)}% away` : 'not set', pct: atrPct,
+      shortLabel: 'ATR', shortDetail: h.atr_stop_price > 0 ? `${atrDist.toFixed(1)}%` : '—',
+      tooltip: `ATR-based stop floor at ${h.atr_stop_price > 0 ? this.formatPrice(h.atr_stop_price) : '—'}. Set at entry using Average True Range to prevent selling during normal volatility. Acts as a floor — trail stop can only be higher.`,
     });
 
-    // 3. Accel fade — find current accel
+    // 3. Accel fade
     const accel = h.accel ?? 0;
     const accelThresh = 0.05;
     const accelPct = accel > 0 ? Math.min(100, Math.max(0, (1 - (accel - accelThresh) / 0.15) * 100)) : 100;
     const hoursHeld = s.hours_in_position ?? 0;
     conds.push({
-      label: 'Accel Fade (< 5%)',
-      detail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}% accel` : `waiting (${4 - hoursHeld}h until checked)`,
-      pct: hoursHeld >= 4 ? accelPct : (hoursHeld / 4) * 30,
+      label: 'Accel Fade', detail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}%` : `wait ${Math.round(4 - hoursHeld)}h`, pct: hoursHeld >= 4 ? accelPct : (hoursHeld / 4) * 30,
+      shortLabel: 'Accel', shortDetail: hoursHeld >= 4 ? `${(accel * 100).toFixed(1)}%` : `wait ${Math.round(4 - hoursHeld)}h`,
+      tooltip: `Exits if momentum acceleration drops below 5%. Only checked after holding for 4 hours to avoid exiting during initial volatility. Current accel: ${(accel * 100).toFixed(1)}%.`,
     });
 
     // 4. Max hold 72h
     const maxHoldPct = Math.min(100, (hoursHeld / 72) * 100);
     conds.push({
-      label: 'Max Hold (72h)',
-      detail: `${hoursHeld}h held (${h.max_hold_remaining_hours}h left)`,
-      pct: maxHoldPct,
+      label: 'Max Hold', detail: `${h.max_hold_remaining_hours}h left`, pct: maxHoldPct,
+      shortLabel: 'Hold', shortDetail: `${h.max_hold_remaining_hours}h`,
+      tooltip: `Force-exits after 72 hours regardless of profit. Currently held ${hoursHeld}h with ${h.max_hold_remaining_hours}h remaining. Prevents getting stuck in sideways trades.`,
     });
 
-    // 5. Regime flip
-    const regimePct = s.regime_bullish ? 5 : 90;
+    // 5. Regime flip — use negative pct to signal "no bar needed"
+    const regimePct = s.regime_bullish ? -1 : 90;
     conds.push({
-      label: 'BTC Regime Bearish',
-      detail: s.regime_bullish ? 'bullish — safe' : 'BEARISH — will exit',
-      pct: regimePct,
+      label: 'Regime', detail: s.regime_bullish ? 'Bull' : 'BEAR', pct: regimePct,
+      shortLabel: 'Regime', shortDetail: s.regime_bullish ? 'Bull' : 'BEAR!',
+      tooltip: `Exits immediately if BTC drops below its 500h moving average (bearish regime). Currently ${s.regime_bullish ? 'bullish — safe to hold' : 'BEARISH — will trigger exit'}.`,
     });
 
     // 6. Equity drawdown
     conds.push({
-      label: 'Equity Drawdown (15%)',
-      detail: 'emergency backstop',
-      pct: 2,
+      label: 'Equity', detail: 'OK', pct: -1,
+      shortLabel: 'Equity', shortDetail: 'OK',
+      tooltip: 'Emergency backstop: exits all positions if total equity drops 15% below starting balance. Protects against catastrophic losses.',
     });
 
     return conds;
@@ -1327,6 +1359,55 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       case 'inactive': return 'Trail inactive';
       default: return layer;
     }
+  }
+
+  btcVsSmaShort(): string {
+    const s = this.status();
+    if (!s?.btc_price || !s?.btc_ma) return '';
+    const diff = ((s.btc_price - s.btc_ma) / s.btc_ma) * 100;
+    return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}% SMA`;
+  }
+
+  positionExplainShort(): string {
+    const s = this.status();
+    if (!s) return '';
+    if (s.holdings?.length) {
+      const h = s.holdings[0];
+      const short = h.pair.replace('-USD', '');
+      return `${short} ${this.formatHours(s.hours_in_position ?? 0)}`;
+    }
+    if ((s.exit_cooldown_remaining ?? 0) > 0) return `Cash (cd ${s.exit_cooldown_remaining}h)`;
+    return 'Cash — scanning';
+  }
+
+  buyConditionTags(): { text: string; met: boolean | null; tooltip: string }[] {
+    const s = this.status();
+    const tags: { text: string; met: boolean | null; tooltip: string }[] = [];
+    if (s?.holdings?.length) {
+      tags.push({ text: 'Already holding', met: null, tooltip: 'Only one position at a time. Must exit current holding before buying.' });
+      return tags;
+    }
+    tags.push({
+      text: 'Regime bullish', met: s?.regime_bullish ?? false,
+      tooltip: 'BTC must be above its 500h moving average. Prevents buying during market downtrends.',
+    });
+    tags.push({
+      text: 'No cooldown', met: !((s?.exit_cooldown_remaining ?? 0) > 0),
+      tooltip: `1-hour cooldown after each sell to avoid emotional re-entries. ${(s?.exit_cooldown_remaining ?? 0) > 0 ? s!.exit_cooldown_remaining + 'h remaining.' : 'Clear.'}`,
+    });
+    tags.push({
+      text: 'Accel > 10%', met: null,
+      tooltip: 'A coin must show >10% momentum acceleration — meaning the uptrend is getting stronger, not just going up.',
+    });
+    tags.push({
+      text: 'ADX > 25', met: null,
+      tooltip: 'ADX (Average Directional Index) must be above 25, confirming a strong trend is in place rather than random chop.',
+    });
+    tags.push({
+      text: 'RSI > 50', met: null,
+      tooltip: 'RSI must be above 50, confirming upward momentum. Below 50 suggests weakening or downward pressure.',
+    });
+    return tags;
   }
 
   buyConditions(): string {
