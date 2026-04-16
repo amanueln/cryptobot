@@ -401,7 +401,10 @@ Chart.register(...registerables, zoomPlugin);
             @if (trades().length === 0) {
               <tr><td colspan="6" class="empty-row">No trades yet</td></tr>
             }
-            @for (t of trades(); track t.timestamp; let odd = $odd) {
+            @for (t of trades(); track t.timestamp; let i = $index; let odd = $odd) {
+              @if (i === 0 || tradeDate(t.timestamp) !== tradeDate(trades()[i - 1].timestamp)) {
+                <tr class="date-separator-row"><td colspan="6">{{ tradeDateLabel(t.timestamp) }}</td></tr>
+              }
               <tr [class.buy-row]="t.side === 'buy'" [class.sell-row]="t.side === 'sell'" [class.odd]="odd">
                 <td class="left mono time-cell">{{ shortDate(t.timestamp) }}</td>
                 <td class="left">
@@ -880,8 +883,13 @@ Chart.register(...registerables, zoomPlugin);
     tr.buy-row.odd { background: rgba(34,197,94,0.06); }
     tr.sell-row { background: rgba(239,68,68,0.03); }
     tr.sell-row.odd { background: rgba(239,68,68,0.06); }
-    .trades-table tr:hover { background: rgba(255,255,255,0.04) !important; }
+    .trades-table tr:hover:not(.date-separator-row) { background: rgba(255,255,255,0.04) !important; }
     .trades-table tr { transition: background 0.1s; }
+    .date-separator-row td {
+      padding: 6px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: #64748b; background: rgba(30,33,50,0.8);
+      border-bottom: 1px solid rgba(100,116,139,0.2); border-top: 1px solid rgba(100,116,139,0.15);
+    }
     /* Medium screens — stack side-by-side panels */
     @media (max-width: 1024px) {
       .equity-activity-row { flex-direction: column; }
@@ -1389,6 +1397,21 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   shortDate(ts: string): string {
     try {
       return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch { return ts; }
+  }
+
+  tradeDate(ts: string): string {
+    try { return new Date(ts).toISOString().slice(0, 10); } catch { return ''; }
+  }
+
+  tradeDateLabel(ts: string): string {
+    try {
+      const d = new Date(ts);
+      const today = new Date();
+      const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+      if (d.toDateString() === today.toDateString()) return 'Today';
+      if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     } catch { return ts; }
   }
 
