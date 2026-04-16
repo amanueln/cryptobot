@@ -1246,22 +1246,31 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       const tt = wrap.querySelector('.tt') as HTMLElement;
       if (!tt) return;
       const rect = wrap.getBoundingClientRect();
-      const ttW = 280; // approximate max width
-      // Position above the element by default
-      let top = rect.top - 8;
-      let left = rect.left + rect.width / 2;
-      // If too close to top, show below
-      if (rect.top < 120) {
-        top = rect.bottom + 8;
-        tt.style.transform = 'translateX(-50%)';
+      const pad = 20;
+      // Temporarily show to measure actual size
+      tt.style.visibility = 'hidden';
+      tt.style.display = 'block';
+      tt.style.left = '0';
+      tt.style.top = '0';
+      tt.style.transform = 'none';
+      const ttRect = tt.getBoundingClientRect();
+      const ttW = ttRect.width;
+      const ttH = ttRect.height;
+      tt.style.visibility = '';
+      // Position above by default, below if near top
+      let top: number;
+      if (rect.top - ttH - 12 < pad) {
+        top = rect.bottom + 10;
       } else {
-        tt.style.transform = 'translateX(-50%) translateY(-100%)';
+        top = rect.top - ttH - 10;
       }
-      // Clamp horizontally
-      if (left - ttW / 2 < 8) left = ttW / 2 + 8;
-      if (left + ttW / 2 > window.innerWidth - 8) left = window.innerWidth - ttW / 2 - 8;
+      // Center on element, clamp to viewport edges
+      let left = rect.left + rect.width / 2 - ttW / 2;
+      if (left < pad) left = pad;
+      if (left + ttW > window.innerWidth - pad) left = window.innerWidth - pad - ttW;
       tt.style.top = top + 'px';
       tt.style.left = left + 'px';
+      tt.style.transform = 'none';
     }, true);
   }
 
