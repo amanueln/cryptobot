@@ -79,8 +79,8 @@ Chart.register(...registerables, zoomPlugin);
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
           }
         </span>
-        @if (status()?.status === 'cash' && nextEngineTickMin() !== null) {
-          <span class="poll-timer">engine tick in ~{{ nextEngineTickMin() }}min</span>
+        @if (status()?.status === 'cash' && engineTickDisplay()) {
+          <span class="poll-timer">engine tick {{ engineTickDisplay() }}</span>
         } @else {
           <span class="poll-timer">next refresh {{ pollCountdown() }}s</span>
         }
@@ -1210,8 +1210,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
         if (first.includes('lockout')) return `Waiting — coin lockout active`;
         return `Waiting — ${rejections.length} coins checked, none passed filters`;
       }
-      const tick = this.nextEngineTickMin();
-      if (tick !== null && tick > 0) return `Scanning — next engine check in ~${tick}min`;
+      const tick = this.engineTickDisplay();
+      if (tick) return `Scanning — next engine tick in ${tick}`;
       return `Scanning for entries — ${s.trade_count} trades so far`;
     }
     if (s.holdings?.length) {
@@ -1221,14 +1221,18 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return `${s.status} — ${s.trade_count} trades`;
   }
 
-  nextEngineTickMin(): number | null {
+  private _engineTickDisplay = signal('');
+
+  engineTickDisplay(): string { return this._engineTickDisplay(); }
+
+  private _updateEngineTick(): void {
     const s = this.status();
-    if (!s?.last_candle_ts) return null;
+    if (!s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
     const last = new Date(s.last_candle_ts).getTime();
-    const now = Date.now();
-    const elapsed = now - last;
-    const remaining = Math.max(0, 3600000 - elapsed); // 1 hour interval
-    return Math.ceil(remaining / 60000);
+    const remaining = Math.max(0, 3600000 - (Date.now() - last));
+    const min = Math.floor(remaining / 60000);
+    const sec = Math.floor((remaining % 60000) / 1000);
+    this._engineTickDisplay.set(`${min}:${sec.toString().padStart(2, '0')}`);
   }
 
   ngOnInit() {
@@ -1269,6 +1273,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       } else {
         this._pollCountdown.set(v - 1);
       }
+      this._updateEngineTick();
     }, 1000);
   }
 
