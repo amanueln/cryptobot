@@ -691,10 +691,9 @@ Chart.register(...registerables, zoomPlugin);
       text-transform: none; margin-left: auto;
     }
     .accel-cards {
-      display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 6px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding-bottom: 6px;
     }
     .accel-card {
-      flex: 1 1 calc(20% - 7px); min-width: 150px; max-width: 220px;
       background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
       padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
     }
@@ -773,8 +772,8 @@ Chart.register(...registerables, zoomPlugin);
     @media (max-width: 900px) {
       .hold-strat-accel-row { flex-direction: column; }
       .hold-strat-col { border-right: none; border-bottom: 1px solid #2d3148; }
-      .accel-cards { flex-wrap: nowrap; overflow-x: auto; }
-      .accel-card { flex: 0 0 auto; min-width: 190px; max-width: 220px; }
+      .accel-cards { display: flex; flex-wrap: nowrap; overflow-x: auto; }
+      .accel-card { flex: 0 0 auto; min-width: 180px; }
     }
 
     /* Holdings (compact) */
