@@ -225,6 +225,7 @@ class TradeLogger:
                 ("pnl_24h", "REAL"), ("pnl_48h", "REAL"),
                 ("rank", "INTEGER"), ("picked", "INTEGER"),
                 ("reason_not_picked", "TEXT"),
+                ("rsi", "REAL"), ("adx", "REAL"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} {ctype}")
@@ -640,8 +641,8 @@ class TradeLogger:
                    (timestamp, pair, accel, result, blocked_by,
                     green_count, body_ratio, chg3h_atr,
                     ath_dist, mom_age, time_at_level, price, created_at,
-                    rank, picked, reason_not_picked)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rank, picked, reason_not_picked, rsi, adx)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
                     (
                         g.get("timestamp", now), g["pair"], g["accel"],
@@ -650,6 +651,7 @@ class TradeLogger:
                         g.get("ath_dist"), g.get("mom_age"), g.get("time_at_level"),
                         g.get("price"), now,
                         g.get("rank"), g.get("picked", 0), g.get("reason_not_picked"),
+                        g.get("rsi"), g.get("adx"),
                     )
                     for g in gates
                 ],

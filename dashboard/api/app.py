@@ -2242,141 +2242,85 @@ def api_momentum_progress():
 
 @app.route("/api/momentum/accel")
 def api_momentum_accel():
-    """Compute current acceleration scores for all scanned momentum pairs."""
-    # Read scanner pairs
-    scan_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_scan.json")
+    """Return per-pair evaluation from the engine's most recent gate log.
+
+    Single source of truth: the engine writes to momentum_gate_log every tick
+    with rsi, adx, quality gates, and structural gates. This endpoint reads
+    the latest row per pair and formats it for the dashboard. No recomputation —
+    the engine decides, the dashboard displays.
+    """
+    conn = get_db()
     try:
-        with open(scan_path) as f:
-            scan_info = json.load(f)
-        pairs = scan_info.get("pairs", [])
+        # Latest gate log row per pair
+        rows = conn.execute("""
+            SELECT pair, accel, result, blocked_by,
+                   rsi, adx, green_count, body_ratio, chg3h_atr,
+                   ath_dist, mom_age, time_at_level, price, timestamp
+            FROM momentum_gate_log g1
+            WHERE timestamp = (
+                SELECT MAX(timestamp) FROM momentum_gate_log g2
+                WHERE g2.pair = g1.pair
+            )
+        """).fetchall()
     except Exception:
         return jsonify([])
+    finally:
+        conn.close()
 
-    if not pairs:
-        return jsonify([])
-
-    # Compute acceleration from stored candles
-    conn = get_db()
-    SHORT_LB = 336   # 14 days
-    LONG_LB = 720    # 30 days
     scores = []
-
-    for pair in pairs:
-        try:
-            rows = conn.execute(
-                """SELECT open, high, low, close FROM candles
-                   WHERE pair=? AND granularity='ONE_HOUR'
-                   ORDER BY timestamp DESC LIMIT ?""",
-                (pair, LONG_LB + 1),
-            ).fetchall()
-            if len(rows) < LONG_LB + 1:
-                continue
-            rows_chron = list(reversed(rows))
-            closes = [r["close"] for r in rows_chron]
-            cur = closes[-1]
-            # Skip sub-penny coins — too noisy for momentum signals
-            if cur < 0.01:
-                continue
-            short_ago = closes[-SHORT_LB]
-            long_ago = closes[-LONG_LB]
-            if short_ago <= 0 or long_ago <= 0:
-                continue
-            short_mom = cur / short_ago - 1
-            long_mom = cur / long_ago - 1
-            accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
-            if accel > 0:
-                # Entry quality gates
-                opens = [r["open"] for r in rows_chron]
-                highs = [r["high"] for r in rows_chron]
-                lows = [r["low"] for r in rows_chron]
-
-                # Compute ADX and RSI for this coin
-                import pandas as pd
-                h_s = pd.Series(highs)
-                l_s = pd.Series(lows)
-                c_s = pd.Series(closes)
-                try:
-                    adx_val = float(ADXIndicator(h_s, l_s, c_s, window=14).adx().iloc[-1])
-                except Exception:
-                    adx_val = None
-                try:
-                    rsi_val = float(RSIIndicator(c_s, window=14).rsi().iloc[-1])
-                except Exception:
-                    rsi_val = None
-
-                # Gate 1: green count (>= 2 of last 6)
-                green_count = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o)
-                gate_green = green_count >= 2
-
-                # Gate 2: body ratio (>= 0.3 avg of last 3)
-                body_ratios = []
-                for c, o, h, l in zip(closes[-3:], opens[-3:], highs[-3:], lows[-3:]):
-                    rng = h - l
-                    body_ratios.append(abs(c - o) / rng if rng > 0 else 0)
-                avg_body = sum(body_ratios) / len(body_ratios) if body_ratios else 0.5
-                gate_body = avg_body >= 0.3
-
-                # Gate 3: chg_3h not overextended vs ATR
-                gate_ext = True
-                if len(closes) >= 4 and len(highs) >= 12:
-                    chg_3h = (closes[-1] - closes[-4]) / closes[-4] * 100
-                    atr_vals = [h - l for h, l in zip(highs[-12:], lows[-12:])]
-                    avg_atr = sum(atr_vals) / len(atr_vals)
-                    atr_pct = avg_atr / cur * 100 if cur > 0 else 1
-                    chg_3h_atr = chg_3h / atr_pct if atr_pct > 0 else 0
-                    gate_ext = chg_3h_atr < 3.0
-                else:
-                    chg_3h_atr = 0
-
-                # Gate 4: ATH proximity (block if within 5% of all-time high)
-                ath = max(highs)
-                ath_dist = (cur - ath) / ath * 100 if ath > 0 else -100
-                gate_ath = ath_dist < -5
-
-                # Gate 5: freshness (block stale momentum above threshold 100+ hours)
-                ACCEL_ENTRY = 0.20
-                mom_age = 0
-                for j in range(len(closes) - 1, max(LONG_LB, len(closes) - 200), -1):
-                    if j < LONG_LB or j < SHORT_LB:
-                        break
-                    sm_j = closes[j] / closes[j - SHORT_LB] - 1
-                    lm_j = closes[j] / closes[j - LONG_LB] - 1
-                    ac_j = sm_j - (lm_j * SHORT_LB / LONG_LB)
-                    if ac_j >= ACCEL_ENTRY:
-                        mom_age += 1
-                    else:
-                        break
-                gate_fresh = mom_age < 100
-
-                # Gate 6: time at level (block if stuck in 3% band for 30+ of last 100h)
-                time_at_lvl = sum(1 for c in closes[-100:] if abs(c - cur) / cur < 0.03)
-                gate_level = time_at_lvl <= 30
-
-                all_pass = gate_green and gate_body and gate_ext and gate_ath and gate_fresh and gate_level
-
-                scores.append({
-                    "pair": pair, "accel": round(accel, 4), "price": round(cur, 6),
-                    "adx": round(adx_val, 1) if adx_val is not None and not pd.isna(adx_val) else None,
-                    "rsi": round(rsi_val, 1) if rsi_val is not None and not pd.isna(rsi_val) else None,
-                    "quality": {
-                        "green": gate_green, "greenCount": green_count,
-                        "body": gate_body, "bodyRatio": round(avg_body, 2),
-                        "ext": gate_ext, "chg3hAtr": round(chg_3h_atr, 1),
-                        "pass": all_pass,
-                    },
-                    "structural": {
-                        "ath": gate_ath, "athDist": round(ath_dist, 1),
-                        "fresh": gate_fresh, "momAge": mom_age,
-                        "level": gate_level, "timeAtLevel": time_at_lvl,
-                        "pass": gate_ath and gate_fresh and gate_level,
-                    },
-                })
-        except Exception:
+    for r in rows:
+        accel = r["accel"] or 0.0
+        # Skip pairs with no acceleration (downtrend, below zero) — dashboard shows positive-accel candidates
+        if accel <= 0:
             continue
 
-    conn.close()
+        green_count = r["green_count"]
+        body_ratio = r["body_ratio"]
+        chg3h_atr = r["chg3h_atr"]
+        ath_dist = r["ath_dist"]
+        mom_age = r["mom_age"]
+        time_at_level = r["time_at_level"]
+
+        # Gate pass/fail mirrors engine's thresholds
+        gate_green = green_count is not None and green_count >= 2
+        gate_body = body_ratio is not None and body_ratio >= 0.3
+        gate_ext = chg3h_atr is not None and chg3h_atr < 3.0
+        gate_ath = ath_dist is not None and ath_dist < -5
+        gate_fresh = mom_age is not None and mom_age < 100
+        gate_level = time_at_level is not None and time_at_level <= 30
+
+        # Quality + structural pass — only meaningful if all values are present
+        quality_pass = (green_count is not None and body_ratio is not None
+                        and chg3h_atr is not None
+                        and gate_green and gate_body and gate_ext)
+        structural_pass = (ath_dist is not None and mom_age is not None
+                           and time_at_level is not None
+                           and gate_ath and gate_fresh and gate_level)
+
+        scores.append({
+            "pair": r["pair"],
+            "accel": round(accel, 4),
+            "price": round(r["price"], 6) if r["price"] is not None else 0,
+            "adx": round(r["adx"], 1) if r["adx"] is not None else None,
+            "rsi": round(r["rsi"], 1) if r["rsi"] is not None else None,
+            "result": r["result"],
+            "blocked_by": r["blocked_by"],
+            "quality": {
+                "green": gate_green, "greenCount": green_count if green_count is not None else 0,
+                "body": gate_body, "bodyRatio": round(body_ratio, 2) if body_ratio is not None else 0,
+                "ext": gate_ext, "chg3hAtr": round(chg3h_atr, 1) if chg3h_atr is not None else 0,
+                "pass": quality_pass,
+            },
+            "structural": {
+                "ath": gate_ath, "athDist": round(ath_dist, 1) if ath_dist is not None else 0,
+                "fresh": gate_fresh, "momAge": mom_age if mom_age is not None else 0,
+                "level": gate_level, "timeAtLevel": time_at_level if time_at_level is not None else 0,
+                "pass": structural_pass,
+            },
+        })
+
     scores.sort(key=lambda s: s["accel"], reverse=True)
-    return jsonify(scores[:10])  # top 10
+    return jsonify(scores[:10])
 
 
 @app.route("/api/momentum/gate-log")

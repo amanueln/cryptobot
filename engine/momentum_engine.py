@@ -582,22 +582,53 @@ class MomentumEngine:
         return trades
 
     def _compute_scores(self) -> list[AccelScore]:
-        """Compute momentum acceleration scores for all pairs."""
+        """Compute momentum acceleration scores for all pairs.
+
+        Populates self._gate_log with a row per evaluated pair. Pairs that are
+        rejected here (insufficient data, sub-penny, loss lockout, negative
+        momentum, overbought) get a log entry with result=blocked and the
+        reason in blocked_by. Pairs that pass are logged later in
+        _filter_entries with full gate values.
+        """
         scores = []
         now = self._last_candle_ts or datetime.now()
+        now_iso = datetime.now().isoformat()
+        self._gate_log = []  # reset once per evaluation
+
+        def _log_reject(pair: str, reason: str, accel: float = 0.0,
+                        rsi: float | None = None, adx: float | None = None,
+                        price: float | None = None):
+            self._gate_log.append({
+                "timestamp": now_iso, "pair": pair,
+                "accel": round(accel, 4), "result": "blocked",
+                "blocked_by": reason,
+                "rsi": round(rsi, 2) if rsi is not None else None,
+                "adx": round(adx, 2) if adx is not None else None,
+                "green_count": None, "body_ratio": None, "chg3h_atr": None,
+                "ath_dist": None, "mom_age": None, "time_at_level": None,
+                "price": round(price, 6) if price is not None else None,
+            })
+
         for pair in self.pairs:
             closes = self._closes[pair]
+            cur_price = closes[-1] if closes else None
             if len(closes) < LONG_LB + 1:
-                self._entry_rejections.append(f"{pair}: only {len(closes)}/{LONG_LB + 1} candles (needs warmup)")
+                reason = f"only {len(closes)}/{LONG_LB + 1} candles"
+                self._entry_rejections.append(f"{pair}: {reason} (needs warmup)")
+                _log_reject(pair, reason, price=cur_price)
                 continue
             # Skip sub-penny coins — price data too noisy for reliable momentum
             if closes[-1] < MIN_PRICE:
-                self._entry_rejections.append(f"{pair}: price ${closes[-1]:.4f} < ${MIN_PRICE} (sub-penny)")
+                reason = f"price ${closes[-1]:.4f} < ${MIN_PRICE}"
+                self._entry_rejections.append(f"{pair}: {reason} (sub-penny)")
+                _log_reject(pair, reason, price=cur_price)
                 continue
             # Skip coins in loss lockout (lost money recently, don't re-enter)
             if pair in self._loss_lockouts:
                 if now < self._loss_lockouts[pair]:
-                    self._entry_rejections.append(f"{pair}: loss lockout (lost money recently)")
+                    reason = "loss lockout"
+                    self._entry_rejections.append(f"{pair}: {reason} (lost money recently)")
+                    _log_reject(pair, reason, price=cur_price)
                     continue
                 else:
                     del self._loss_lockouts[pair]
@@ -605,14 +636,19 @@ class MomentumEngine:
             long_mom = closes[-1] / closes[-LONG_LB] - 1
             accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
             if long_mom <= 0:
-                self._entry_rejections.append(f"{pair}: 30-day momentum negative (downtrend)")
+                reason = "30-day momentum negative"
+                self._entry_rejections.append(f"{pair}: {reason} (downtrend)")
+                _log_reject(pair, reason, accel=accel, price=cur_price)
                 continue
             if accel <= 0:
+                _log_reject(pair, "accel <= 0", accel=accel, price=cur_price)
                 continue
             # RSI filter: skip overbought coins
             rsi = _rsi(closes, RSI_PERIOD)
             if rsi is not None and rsi > RSI_MAX:
-                self._entry_rejections.append(f"{pair}: RSI {rsi:.0f} > {RSI_MAX} (overbought)")
+                reason = f"RSI {rsi:.0f} > {RSI_MAX}"
+                self._entry_rejections.append(f"{pair}: {reason} (overbought)")
+                _log_reject(pair, reason, accel=accel, rsi=rsi, price=cur_price)
                 continue
             scores.append(AccelScore(pair=pair, accel=accel, short_mom=short_mom, long_mom=long_mom))
         scores.sort(key=lambda s: s.accel, reverse=True)
@@ -634,7 +670,8 @@ class MomentumEngine:
         if not qualifying:
             return []
         filtered = []
-        self._gate_log = []
+        # NOTE: _gate_log is populated by _compute_scores for rejected pairs; here
+        # we only append entries for pairs that made it past the accel/RSI-overbought filters.
         now_iso = datetime.now().isoformat() if qualifying else ""
 
         for s in qualifying:
@@ -682,21 +719,22 @@ class MomentumEngine:
                 cur_price = closes[-1]
                 time_at_lvl = sum(1 for c in closes[-100:] if abs(c - cur_price) / cur_price < 0.03)
 
+            # Pre-compute RSI and ADX — always store values, even if another gate blocks first
+            adx = _adx(highs, lows, closes)
+            rsi = _rsi(closes, RSI_PERIOD) if len(closes) >= RSI_PERIOD + 1 else None
+
             # Run gate checks — track first failure
             blocked_by = None
 
             # ADX filter
-            adx = _adx(highs, lows, closes)
             if adx is not None and adx < ADX_FILTER_THRESH:
                 blocked_by = f"ADX {adx:.1f} < {ADX_FILTER_THRESH}"
                 self._entry_rejections.append(f"{pair}: {blocked_by} (weak trend)")
 
             # RSI > 50 filter
-            if not blocked_by and len(closes) >= RSI_PERIOD + 1:
-                rsi = _rsi(closes, RSI_PERIOD)
-                if rsi is not None and rsi < RSI_TREND_THRESH:
-                    blocked_by = f"RSI {rsi:.1f} < {RSI_TREND_THRESH}"
-                    self._entry_rejections.append(f"{pair}: {blocked_by} (not in uptrend)")
+            if not blocked_by and rsi is not None and rsi < RSI_TREND_THRESH:
+                blocked_by = f"RSI {rsi:.1f} < {RSI_TREND_THRESH}"
+                self._entry_rejections.append(f"{pair}: {blocked_by} (not in uptrend)")
 
             # Quality: green count
             if not blocked_by and green_count is not None and green_count < 2:
@@ -735,6 +773,8 @@ class MomentumEngine:
                 "accel": round(s.accel, 4),
                 "result": "pass" if not blocked_by else "blocked",
                 "blocked_by": blocked_by,
+                "rsi": round(rsi, 2) if rsi is not None else None,
+                "adx": round(adx, 2) if adx is not None else None,
                 "green_count": green_count,
                 "body_ratio": avg_body,
                 "chg3h_atr": chg_3h_atr,
