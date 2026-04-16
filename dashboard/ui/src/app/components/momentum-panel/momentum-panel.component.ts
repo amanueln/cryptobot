@@ -1967,35 +1967,56 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     });
 
     if (coin) {
+      // Check engine's actual rejection list for this coin — engine RSI/ADX may differ from scanner
+      const rejections = s?.entry_rejections ?? [];
+      const coinRejection = rejections.find((r: string) => r.startsWith(coin.pair + ':'));
+      const engineRejected = !!coinRejection;
+
       tags.push({
         text: `Target: ${name} +${(coin.accel * 100).toFixed(0)}%`,
-        met: bestReason === 'would buy' ? true : null,
-        tooltip: bestReason === 'would buy'
-          ? `${name} passes all filters — engine would buy this on next tick`
-          : `Best candidate. ${summaryLines}`,
+        met: bestReason === 'would buy' && !engineRejected ? true : null,
+        tooltip: engineRejected
+          ? `Engine rejected: ${coinRejection}`
+          : bestReason === 'would buy'
+            ? `${name} passes all filters — engine would buy this on next tick`
+            : `Best candidate. ${summaryLines}`,
       });
+
+      // For ADX/RSI: if engine rejected this coin for that reason, show the engine's value
+      const adxReject = rejections.find((r: string) => r.startsWith(coin.pair + ':') && r.includes('ADX'));
+      const rsiReject = rejections.find((r: string) => r.startsWith(coin.pair + ':') && r.includes('RSI'));
+
+      const adxMatch = adxReject?.match(/ADX\s+([\d.]+)/);
+      const adxVal = adxMatch ? parseFloat(adxMatch[1]) : (coin.adx ?? null);
       tags.push({
-        text: `ADX > 25 (${coin.adx != null ? coin.adx.toFixed(0) : '?'})`,
-        met: coin.adx != null ? coin.adx > 25 : null,
-        tooltip: `${name}'s ADX. All candidates: ${summaryLines}`,
+        text: `ADX > 25 (${adxVal != null ? adxVal.toFixed(0) : '?'})`,
+        met: adxReject ? false : (adxVal != null ? adxVal > 25 : null),
+        tooltip: adxReject ? `Engine: ${adxReject}` : `${name}'s ADX. All candidates: ${summaryLines}`,
       });
+
+      const rsiMatch = rsiReject?.match(/RSI\s+([\d.]+)/);
+      const rsiVal = rsiMatch ? parseFloat(rsiMatch[1]) : (coin.rsi ?? null);
       tags.push({
-        text: `RSI 50–65 (${coin.rsi != null ? coin.rsi.toFixed(0) : '?'})`,
-        met: coin.rsi != null ? (coin.rsi > 50 && coin.rsi <= 65) : null,
-        tooltip: `${name}'s RSI. All candidates: ${summaryLines}`,
+        text: `RSI 50–65 (${rsiVal != null ? rsiVal.toFixed(0) : '?'})`,
+        met: rsiReject ? false : (rsiVal != null ? (rsiVal > 50 && rsiVal <= 65) : null),
+        tooltip: rsiReject ? `Engine: ${rsiReject}` : `${name}'s RSI. All candidates: ${summaryLines}`,
       });
+
+      const qualityReject = rejections.find((r: string) => r.startsWith(coin.pair + ':') && (r.includes('green') || r.includes('body') || r.includes('ATR')));
       if (coin.quality) {
         tags.push({
           text: 'Candle quality',
-          met: coin.quality.pass !== false,
-          tooltip: `${name}: ${coin.quality.greenCount}/6 green, body ${coin.quality.bodyRatio}, ${coin.quality.chg3hAtr}x ATR`,
+          met: qualityReject ? false : coin.quality.pass !== false,
+          tooltip: qualityReject ? `Engine: ${qualityReject}` : `${name}: ${coin.quality.greenCount}/6 green, body ${coin.quality.bodyRatio}, ${coin.quality.chg3hAtr}x ATR`,
         });
       }
+
+      const structReject = rejections.find((r: string) => r.startsWith(coin.pair + ':') && (r.includes('ATH') || r.includes('stuck') || r.includes('age')));
       if (coin.structural) {
         tags.push({
           text: 'Structure',
-          met: coin.structural.pass !== false,
-          tooltip: `${name}: ATH ${coin.structural.athDist}%, age ${coin.structural.momAge}h, stuck ${coin.structural.timeAtLevel}/100`,
+          met: structReject ? false : coin.structural.pass !== false,
+          tooltip: structReject ? `Engine: ${structReject}` : `${name}: ATH ${coin.structural.athDist}%, age ${coin.structural.momAge}h, stuck ${coin.structural.timeAtLevel}/100`,
         });
       }
     } else {
