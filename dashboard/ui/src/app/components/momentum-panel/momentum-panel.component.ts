@@ -79,7 +79,7 @@ Chart.register(...registerables, zoomPlugin);
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
           }
           @if (status()?.ws_recorder?.active) {
-            <span class="ws-badge" title="WebSocket recording ticks for stop comparison analysis">WS ● {{ status()!.ws_recorder.tick_count }} ticks</span>
+            <span class="ws-badge" title="WebSocket recording ticks for stop comparison analysis">WS ● {{ status()!.ws_recorder!.tick_count }} ticks</span>
           }
         </span>
         @if (status()?.status === 'warming_up') {
