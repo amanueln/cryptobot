@@ -343,6 +343,8 @@ class SimRunner:
                     peak_price=h.get("peak_price", h.get("current_price", 0)),
                     atr_stop_price=saved_stop,
                     trail_stop_price=h.get("trail_stop_price", 0.0),
+                    ticks_above_tighten=h.get("ticks_above_tighten", 0),
+                    ticks_since_new_peak=h.get("ticks_since_new_peak", 0),
                 )
                 self.momentum_engine.holdings[pair] = holding
 

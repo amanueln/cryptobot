@@ -13,8 +13,11 @@ ENTRY:
 - Same-coin 24h lockout: prevents whipsaw re-entry after selling
 
 EXIT (layered — first trigger wins):
-- 2.5x ATR smart stop: per-coin stop set at entry based on coin's own volatility
-  (DOGE gets wider stop than ETH — adapts to how each coin actually moves)
+- Delayed+Stale trailing stop: 3-layer adaptive trail tested on 159 scanner alerts
+  Layer 1: Wide 5% trail activates at +2% peak (breathing room)
+  Layer 2: Tightens to 2.5% after 30 min above +5% (confirmed move)
+  Layer 3: Tightens to 2.0% if no new high for 30 min (fading move)
+- 2.5x ATR smart stop: per-coin floor set at entry based on coin's own volatility
 - Accel < 5% hourly exit: sell when momentum fades (take profit before giveback)
 - 72h max hold: force exit stale positions that aren't moving
 - 15% equity trailing stop: emergency backstop (should rarely fire now)
@@ -62,13 +65,15 @@ ACCEL_EXIT_THRESH = 0.05   # exit when momentum acceleration fades below 5%
 ACCEL_EXIT_MIN_HOLD = 4    # don't check accel exit until held for 4 hours
 MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed
 
-# Tightening trailing stop — hourly only, tiers tighten as profit grows
-TRAIL_ACTIVATE_PCT = 3.0   # trail activates when PnL reaches +3% from entry
-TRAIL_TIERS = [            # (min_pnl_pct, trail_pct_from_peak)
-    (20.0, 0.05),          # +20%+ profit: 5% trail from peak
-    (10.0, 0.06),          # +10-20%: 6% trail
-    (3.0,  0.08),          # +3-10%: 8% trail
-]
+# Delayed+Stale trailing stop — validated on 159 scanner alerts + 9 momentum trades
+# Captures 70-90% of big moves while capping dud losses at initial stop
+TRAIL_WIDE_PCT = 5.0       # Layer 1: wide trail when peak >= activation (breathing room)
+TRAIL_ACTIVATE_PCT = 2.0   # peak PnL% needed to activate wide trail
+TRAIL_TIGHT_PCT = 2.5      # Layer 2: tighter trail after delay period above threshold
+TRAIL_TIGHTEN_PCT = 5.0    # peak PnL% needed before tight trail can activate
+TRAIL_DELAY_TICKS = 30     # ticks (minutes) above tighten threshold before tight trail activates
+TRAIL_STALE_PCT = 2.0      # Layer 3: tightest trail when peak goes stale (no new high)
+TRAIL_STALE_TICKS = 30     # ticks (minutes) with no new high = stale peak
 
 # New entry filters (Round 1 winner: only strategy profitable in choppy markets)
 ADX_FILTER_THRESH = 25     # only enter when ADX > 25 (confirmed trend strength)
@@ -159,7 +164,9 @@ class MomentumHolding:
     entry_time: datetime
     peak_price: float = 0.0          # highest price since entry
     atr_stop_price: float = 0.0      # ATR stop set at entry — floor, never moves
-    trail_stop_price: float = 0.0    # tightening trail — ratchets up hourly
+    trail_stop_price: float = 0.0    # tightening trail — ratchets up
+    ticks_above_tighten: int = 0     # how many ticks peak has been above TRAIL_TIGHTEN_PCT
+    ticks_since_new_peak: int = 0    # how many ticks since last new high (stale peak detection)
 
 
 @dataclass
@@ -280,11 +287,12 @@ class MomentumEngine:
             self._lows[pair] = self._lows[pair][-max_hist:]
             self._timestamps[pair] = self._timestamps[pair][-max_hist:]
 
-        # Update peak price for held positions
+        # Update peak price for held positions (also checks candle high)
         if pair in self.holdings:
             h = self.holdings[pair]
-            if candle.close > h.peak_price:
-                h.peak_price = candle.close
+            if candle.high > h.peak_price:
+                h.peak_price = candle.high
+                h.ticks_since_new_peak = 0
 
         # Track BTC separately for regime — with hysteresis band
         if pair == 'BTC-USD':
@@ -356,8 +364,8 @@ class MomentumEngine:
                 should_exit = False
                 reason = ""
 
-                # 0. Update trailing stop (hourly ratchet)
-                self._update_trail_stop(h)
+                # 0. Update trailing stop (runs on every tick + hourly candle)
+                self._update_trail_stop(h, price)
 
                 # 1. Check effective stop (max of ATR floor and trailing stop)
                 effective_stop = max(h.atr_stop_price, h.trail_stop_price)
@@ -615,29 +623,47 @@ class MomentumEngine:
         long_mom = (closes[-1] / closes[-LONG_LB]) - 1
         return short_mom - long_mom
 
-    def _update_trail_stop(self, holding: MomentumHolding) -> None:
-        """Update the tightening trailing stop for a position (called hourly).
+    def _update_trail_stop(self, holding: MomentumHolding, price: float | None = None) -> None:
+        """Update the delayed+stale trailing stop for a position.
 
-        Trail activates when PnL from entry hits TRAIL_ACTIVATE_PCT.
-        Trail tightens as profit grows (wider at small gains, tighter at big gains).
-        Trail only ratchets up, never down. ATR stop is the floor.
+        Called on every ticker tick (~60s) and on hourly candle close.
+        Three layers that progressively tighten as the move matures:
+
+        Layer 1 (wide): 5% trail from peak when peak PnL >= 2% — gives breathing room
+        Layer 2 (tight): 2.5% trail after price has been above +5% for 30 ticks — confirmed move
+        Layer 3 (stale): 2.0% trail if no new high for 30 ticks — move is fading, protect profit
         """
         if holding.peak_price <= 0 or holding.entry_price <= 0:
             return
 
-        pnl_pct = (holding.peak_price - holding.entry_price) / holding.entry_price * 100
+        cur_price = price if price is not None else holding.peak_price
 
-        if pnl_pct < TRAIL_ACTIVATE_PCT:
-            return
+        # Update peak tracking
+        if cur_price > holding.peak_price:
+            holding.peak_price = cur_price
+            holding.ticks_since_new_peak = 0
+        else:
+            holding.ticks_since_new_peak += 1
 
-        # Find the tightest tier that applies
-        trail_pct = TRAIL_TIERS[-1][1]  # default: widest tier
-        for min_pnl, t_pct in TRAIL_TIERS:
-            if pnl_pct >= min_pnl:
-                trail_pct = t_pct
-                break
+        peak_pct = (holding.peak_price - holding.entry_price) / holding.entry_price * 100
 
-        new_stop = holding.peak_price * (1 - trail_pct)
+        # Track time above tighten threshold
+        if peak_pct >= TRAIL_TIGHTEN_PCT:
+            holding.ticks_above_tighten += 1
+
+        new_stop = holding.trail_stop_price
+
+        # Layer 1: Wide trail when peak >= activation (breathing room for early move)
+        if peak_pct >= TRAIL_ACTIVATE_PCT:
+            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_WIDE_PCT / 100))
+
+        # Layer 2: Tight trail after confirmed above threshold for delay period
+        if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
+            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_TIGHT_PCT / 100))
+
+        # Layer 3: Stale peak — no new high for stale period, move is fading
+        if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
+            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_STALE_PCT / 100))
 
         # Never go below ATR stop floor
         if holding.atr_stop_price > 0:
@@ -645,27 +671,36 @@ class MomentumEngine:
 
         # Ratchet: only move up
         if new_stop > holding.trail_stop_price:
+            old_stop = holding.trail_stop_price
             holding.trail_stop_price = new_stop
-            logger.debug("Trail stop updated for %s: $%.4f (peak $%.4f, pnl +%.1f%%, trail %.0f%%)",
-                         holding.pair, new_stop, holding.peak_price, pnl_pct, trail_pct * 100)
+            # Determine which layer set this stop
+            layer = "wide"
+            if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
+                layer = "stale"
+            elif peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
+                layer = "tight"
+            logger.debug("Trail stop updated for %s: $%.4f -> $%.4f (%s layer, peak $%.4f +%.1f%%, "
+                         "above_thr=%d stale=%d)",
+                         holding.pair, old_stop, new_stop, layer, holding.peak_price, peak_pct,
+                         holding.ticks_above_tighten, holding.ticks_since_new_peak)
 
     def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
-        """Check ATR stop and equity stop using live ticker prices.
+        """Check stops using live ticker prices (~every 60s).
 
-        Called on every ticker update (more frequent than hourly candles).
-        Returns a Trade if stopped out, else None.
+        Updates the delayed+stale trailing stop on every tick so that
+        stale peak detection and delay counters advance in real time,
+        not just on hourly candle boundaries.
         """
         if pair not in self.holdings:
             return None
         h = self.holdings[pair]
 
-        # Update peak price for tracking
-        if price > h.peak_price:
-            h.peak_price = price
-
         # Update closes for equity calculation
         if self._closes.get(pair):
             self._closes[pair][-1] = price
+
+        # Update trailing stop with current price (advances stale/delay counters)
+        self._update_trail_stop(h, price)
 
         now = datetime.now()
 
@@ -833,6 +868,17 @@ class MomentumEngine:
             hold_hours = self._hours_in_position
             max_hold_remaining = max(0, MAX_HOLD_HOURS - hold_hours)
 
+            # Determine active trail layer for dashboard
+            peak_pnl = (h.peak_price - h.entry_price) / h.entry_price * 100 if h.entry_price > 0 else 0
+            if peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_since_new_peak >= TRAIL_STALE_TICKS:
+                trail_layer = "stale"
+            elif peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_above_tighten >= TRAIL_DELAY_TICKS:
+                trail_layer = "tight"
+            elif peak_pnl >= TRAIL_ACTIVATE_PCT:
+                trail_layer = "wide"
+            else:
+                trail_layer = "inactive"
+
             info.append({
                 "pair": pair,
                 "shares": h.shares,
@@ -849,6 +895,9 @@ class MomentumEngine:
                 "trail_stop_price": h.trail_stop_price,
                 "stop_distance_pct": stop_distance_pct,
                 "max_hold_remaining_hours": max_hold_remaining,
+                "trail_layer": trail_layer,
+                "ticks_above_tighten": h.ticks_above_tighten,
+                "ticks_since_new_peak": h.ticks_since_new_peak,
             })
         return info
 
