@@ -111,21 +111,27 @@ Chart.register(...registerables);
           </div>
         </div>
         <div class="activity-col">
-          <div class="section-header">What's Happening</div>
-          <div class="event-list">
-            @for (evt of events(); track evt.timestamp) {
-              <div class="log-entry">
-                <span class="log-time">{{ shortTime(evt.timestamp) }}</span>
-                <span class="log-dot" [class.buy]="evt.event_type === 'momentum_buy'"
-                      [class.sell]="evt.event_type === 'momentum_sell'"
-                      [class.info]="evt.event_type !== 'momentum_buy' && evt.event_type !== 'momentum_sell'"></span>
-                <span class="log-msg">{{ evt.title }}</span>
-              </div>
-            }
-            @if (events().length === 0) {
-              <div class="no-data">No events yet</div>
-            }
+          <div class="section-header activity-toggle" (click)="activityOpen.set(!activityOpen())">
+            What's Happening
+            <span class="toggle-count">{{ events().length }}</span>
+            <span class="toggle-arrow" [class.open]="activityOpen()">▾</span>
           </div>
+          @if (activityOpen()) {
+            <div class="event-list">
+              @for (evt of events(); track evt.timestamp) {
+                <div class="log-entry">
+                  <span class="log-time">{{ shortTime(evt.timestamp) }}</span>
+                  <span class="log-dot" [class.buy]="evt.event_type === 'momentum_buy'"
+                        [class.sell]="evt.event_type === 'momentum_sell'"
+                        [class.info]="evt.event_type !== 'momentum_buy' && evt.event_type !== 'momentum_sell'"></span>
+                  <span class="log-msg">{{ evt.title }}</span>
+                </div>
+              }
+              @if (events().length === 0) {
+                <div class="no-data">No events yet</div>
+              }
+            </div>
+          }
         </div>
       </div>
 
@@ -544,6 +550,23 @@ Chart.register(...registerables);
     .pos { color: #4ade80; }
     .neg { color: #f87171; }
 
+    /* Activity toggle */
+    .activity-toggle {
+      cursor: pointer; user-select: none; display: flex; align-items: center; gap: 0.4rem;
+    }
+    .activity-toggle:hover { color: #a78bfa; }
+    .toggle-count {
+      font-size: 0.6rem; font-weight: 600; padding: 0.1em 0.4em; border-radius: 3px;
+      background: rgba(167,139,250,0.12); color: #a78bfa;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .toggle-arrow {
+      font-size: 0.7rem; color: #4b5280; transition: transform 0.2s;
+      margin-left: auto;
+    }
+    .toggle-arrow.open { transform: rotate(0deg); }
+    .toggle-arrow:not(.open) { transform: rotate(-90deg); }
+
     /* Event log */
     .event-list { display: flex; flex-direction: column; }
     .log-entry {
@@ -903,6 +926,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   equityData = signal<MomentumEquityData[]>([]);
   accelScores = signal<{ pair: string; accel: number; price: number }[]>([]);
   warmupProgress = signal<{ step: string; pair?: string; done?: number; total?: number; pct?: number; estimated_remaining?: number }>({ step: 'unknown', pct: 0 });
+  activityOpen = signal(window.innerWidth > 768);
   skippingCooldown = signal(false);
   sellingPair = signal<string | null>(null);
   sellNotification = signal<{ type: string; message: string } | null>(null);
