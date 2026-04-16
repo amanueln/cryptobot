@@ -191,6 +191,24 @@ class TradeLogger:
                     created_at TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS momentum_gate_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    accel REAL NOT NULL,
+                    result TEXT NOT NULL,
+                    blocked_by TEXT,
+                    green_count INTEGER,
+                    body_ratio REAL,
+                    chg3h_atr REAL,
+                    ath_dist REAL,
+                    mom_age INTEGER,
+                    time_at_level INTEGER,
+                    price REAL,
+                    created_at TEXT NOT NULL
+                )
+            """)
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -467,6 +485,34 @@ class TradeLogger:
                    (timestamp, equity, cash, positions_value, status, holdings)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (timestamp.isoformat(), equity, cash, positions_value, status, holdings),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_momentum_gates(self, gates: list[dict]) -> None:
+        """Log gate evaluation results for every candidate each scan cycle."""
+        if not gates:
+            return
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.executemany(
+                """INSERT INTO momentum_gate_log
+                   (timestamp, pair, accel, result, blocked_by,
+                    green_count, body_ratio, chg3h_atr,
+                    ath_dist, mom_age, time_at_level, price, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        g.get("timestamp", now), g["pair"], g["accel"],
+                        g["result"], g.get("blocked_by"),
+                        g.get("green_count"), g.get("body_ratio"), g.get("chg3h_atr"),
+                        g.get("ath_dist"), g.get("mom_age"), g.get("time_at_level"),
+                        g.get("price"), now,
+                    )
+                    for g in gates
+                ],
             )
             conn.commit()
         finally:

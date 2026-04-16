@@ -212,6 +212,7 @@ class MomentumEngine:
         self._last_sold_time: datetime | None = None
         self._loss_lockouts: dict[str, datetime] = {}  # pair -> lockout expiry after a loss
         self._entry_rejections: list[str] = []  # why coins were rejected this tick
+        self._gate_log: list[dict] = []  # gate values for every candidate each scan
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -606,6 +607,9 @@ class MomentumEngine:
         if not qualifying:
             return []
         filtered = []
+        self._gate_log = []
+        now_iso = datetime.now().isoformat() if qualifying else ""
+
         for s in qualifying:
             pair = s.pair
             closes = self._closes.get(pair, [])
@@ -613,63 +617,27 @@ class MomentumEngine:
             highs = self._highs.get(pair, [])
             lows = self._lows.get(pair, [])
 
-            # ADX filter: only enter when trend is strong
-            adx = _adx(highs, lows, closes)
-            if adx is not None and adx < ADX_FILTER_THRESH:
-                logger.debug("Entry filter: %s rejected — ADX %.1f < %d", pair, adx, ADX_FILTER_THRESH)
-                self._entry_rejections.append(f"{pair}: ADX {adx:.1f} < {ADX_FILTER_THRESH} (weak trend)")
-                continue
-
-            # RSI > 50 filter: confirm uptrend
-            if len(closes) >= RSI_PERIOD + 1:
-                rsi = _rsi(closes, RSI_PERIOD)
-                if rsi is not None and rsi < RSI_TREND_THRESH:
-                    logger.debug("Entry filter: %s rejected — RSI %.1f < %d", pair, rsi, RSI_TREND_THRESH)
-                    self._entry_rejections.append(f"{pair}: RSI {rsi:.1f} < {RSI_TREND_THRESH} (not in uptrend)")
-                    continue
-
-            # --- Entry quality: green count >= 2 of last 6 candles ---
-            if len(closes) >= 6 and len(opens) >= 6:
-                green_count = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o)
-                if green_count < 2:
-                    logger.debug("Entry filter: %s rejected — green_count %d < 2 (dead candles)", pair, green_count)
-                    self._entry_rejections.append(f"{pair}: only {green_count}/6 green candles (dead entry)")
-                    continue
-
-            # --- Entry quality: body ratio >= 0.3 (last 3 candles) ---
+            # Pre-compute all gate values for logging
+            green_count = sum(1 for c, o in zip(closes[-6:], opens[-6:]) if c >= o) if len(closes) >= 6 and len(opens) >= 6 else None
+            avg_body = None
             if len(closes) >= 3 and len(opens) >= 3 and len(highs) >= 3 and len(lows) >= 3:
-                body_ratios = []
+                brs = []
                 for c, o, h, l in zip(closes[-3:], opens[-3:], highs[-3:], lows[-3:]):
                     rng = h - l
-                    body_ratios.append(abs(c - o) / rng if rng > 0 else 0)
-                avg_body = sum(body_ratios) / len(body_ratios)
-                if avg_body < 0.3:
-                    logger.debug("Entry filter: %s rejected — body_ratio %.2f < 0.3 (indecision)", pair, avg_body)
-                    self._entry_rejections.append(f"{pair}: body ratio {avg_body:.2f} < 0.3 (indecision candles)")
-                    continue
-
-            # --- Entry quality: chg_3h not overextended vs ATR ---
+                    brs.append(abs(c - o) / rng if rng > 0 else 0)
+                avg_body = round(sum(brs) / len(brs), 3)
+            chg_3h_atr = None
             if len(closes) >= 4 and len(highs) >= 12 and len(lows) >= 12:
                 chg_3h = (closes[-1] - closes[-4]) / closes[-4] * 100
-                atrs = [h - l for h, l in zip(highs[-12:], lows[-12:])]
-                avg_atr = sum(atrs) / len(atrs)
+                atrs_v = [h - l for h, l in zip(highs[-12:], lows[-12:])]
+                avg_atr = sum(atrs_v) / len(atrs_v)
                 atr_pct = avg_atr / closes[-1] * 100 if closes[-1] > 0 else 1
-                chg_3h_atr = chg_3h / atr_pct if atr_pct > 0 else 0
-                if chg_3h_atr > 3.0:
-                    logger.debug("Entry filter: %s rejected — chg_3h_atr %.1f > 3.0 (overextended)", pair, chg_3h_atr)
-                    self._entry_rejections.append(f"{pair}: 3h move {chg_3h:+.1f}% = {chg_3h_atr:.1f}x ATR (overextended)")
-                    continue
-
-            # --- Structural: ATH proximity (block if within 5% of all-time high) ---
+                chg_3h_atr = round(chg_3h / atr_pct if atr_pct > 0 else 0, 2)
+            ath_dist = None
             if len(highs) >= 100:
                 ath = max(highs)
-                ath_dist = (closes[-1] - ath) / ath * 100
-                if ath_dist >= -5:
-                    logger.debug("Entry filter: %s rejected — %.1f%% from ATH (ceiling)", pair, ath_dist)
-                    self._entry_rejections.append(f"{pair}: {ath_dist:+.1f}% from ATH (at ceiling)")
-                    continue
-
-            # --- Structural: freshness (block stale momentum above threshold 100+ hours) ---
+                ath_dist = round((closes[-1] - ath) / ath * 100, 2)
+            mom_age = None
             if len(closes) > SHORT_LB + 100:
                 mom_age = 0
                 for j in range(len(closes) - 1, max(LONG_LB, len(closes) - 200), -1):
@@ -682,21 +650,78 @@ class MomentumEngine:
                         mom_age += 1
                     else:
                         break
-                if mom_age >= 100:
-                    logger.debug("Entry filter: %s rejected — momentum age %dh (stale)", pair, mom_age)
-                    self._entry_rejections.append(f"{pair}: momentum age {mom_age}h (stale signal)")
-                    continue
-
-            # --- Structural: time at level (block if stuck in 3% band for 30+ of last 100h) ---
+            time_at_lvl = None
             if len(closes) >= 100:
                 cur_price = closes[-1]
                 time_at_lvl = sum(1 for c in closes[-100:] if abs(c - cur_price) / cur_price < 0.03)
-                if time_at_lvl > 30:
-                    logger.debug("Entry filter: %s rejected — time_at_level %d/100 (stuck)", pair, time_at_lvl)
-                    self._entry_rejections.append(f"{pair}: price stuck {time_at_lvl}/100h in 3% band")
-                    continue
 
-            filtered.append(s)
+            # Run gate checks — track first failure
+            blocked_by = None
+
+            # ADX filter
+            adx = _adx(highs, lows, closes)
+            if adx is not None and adx < ADX_FILTER_THRESH:
+                blocked_by = f"ADX {adx:.1f} < {ADX_FILTER_THRESH}"
+                self._entry_rejections.append(f"{pair}: {blocked_by} (weak trend)")
+
+            # RSI > 50 filter
+            if not blocked_by and len(closes) >= RSI_PERIOD + 1:
+                rsi = _rsi(closes, RSI_PERIOD)
+                if rsi is not None and rsi < RSI_TREND_THRESH:
+                    blocked_by = f"RSI {rsi:.1f} < {RSI_TREND_THRESH}"
+                    self._entry_rejections.append(f"{pair}: {blocked_by} (not in uptrend)")
+
+            # Quality: green count
+            if not blocked_by and green_count is not None and green_count < 2:
+                blocked_by = f"green {green_count}/6"
+                self._entry_rejections.append(f"{pair}: only {green_count}/6 green candles (dead entry)")
+
+            # Quality: body ratio
+            if not blocked_by and avg_body is not None and avg_body < 0.3:
+                blocked_by = f"body {avg_body:.2f} < 0.3"
+                self._entry_rejections.append(f"{pair}: body ratio {avg_body:.2f} < 0.3 (indecision candles)")
+
+            # Quality: overextended
+            if not blocked_by and chg_3h_atr is not None and chg_3h_atr > 3.0:
+                blocked_by = f"chg3h {chg_3h_atr:.1f}x ATR"
+                self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (overextended)")
+
+            # Structural: ATH proximity
+            if not blocked_by and ath_dist is not None and ath_dist >= -5:
+                blocked_by = f"ATH {ath_dist:+.1f}%"
+                self._entry_rejections.append(f"{pair}: {ath_dist:+.1f}% from ATH (at ceiling)")
+
+            # Structural: freshness
+            if not blocked_by and mom_age is not None and mom_age >= 100:
+                blocked_by = f"stale {mom_age}h"
+                self._entry_rejections.append(f"{pair}: momentum age {mom_age}h (stale signal)")
+
+            # Structural: time at level
+            if not blocked_by and time_at_lvl is not None and time_at_lvl > 30:
+                blocked_by = f"stuck {time_at_lvl}/100h"
+                self._entry_rejections.append(f"{pair}: price stuck {time_at_lvl}/100h in 3% band")
+
+            # Log gate values for this candidate
+            self._gate_log.append({
+                "timestamp": now_iso,
+                "pair": pair,
+                "accel": round(s.accel, 4),
+                "result": "pass" if not blocked_by else "blocked",
+                "blocked_by": blocked_by,
+                "green_count": green_count,
+                "body_ratio": avg_body,
+                "chg3h_atr": chg_3h_atr,
+                "ath_dist": ath_dist,
+                "mom_age": mom_age,
+                "time_at_level": time_at_lvl,
+                "price": round(closes[-1], 6) if closes else None,
+            })
+
+            if blocked_by:
+                logger.debug("Entry filter: %s rejected — %s", pair, blocked_by)
+            else:
+                filtered.append(s)
+
         return filtered
 
     def _get_accel(self, pair: str) -> float | None:

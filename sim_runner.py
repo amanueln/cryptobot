@@ -505,6 +505,12 @@ class SimRunner:
                         logger.error(f"[MOMENTUM] Failed to log trade: {e}")
                 if trades:
                     print(f"  Momentum engine: immediate entry — {len(trades)} trades executed")
+                # Log gate evaluations from warmup entry check
+                if hasattr(self.momentum_engine, '_gate_log') and self.momentum_engine._gate_log:
+                    try:
+                        self.trade_logger.log_momentum_gates(self.momentum_engine._gate_log)
+                    except Exception as e:
+                        logger.error(f"[MOMENTUM] Failed to log gates: {e}")
 
     def _poll_momentum(self):
         """Poll candles for all momentum pairs and feed to momentum engine."""
@@ -634,6 +640,13 @@ class SimRunner:
             now, mom.get_equity(), mom.cash, mom.get_positions_value(),
             mom.status, holdings_json
         )
+
+        # Log gate evaluations for every candidate this cycle
+        if hasattr(mom, '_gate_log') and mom._gate_log:
+            try:
+                self.trade_logger.log_momentum_gates(mom._gate_log)
+            except Exception as e:
+                logger.error(f"[MOMENTUM] Failed to log gates: {e}")
 
         # Persist engine status for dashboard API
         try:
