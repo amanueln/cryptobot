@@ -2321,6 +2321,87 @@ def api_momentum_accel():
     return jsonify(scores[:10])  # top 10
 
 
+@app.route("/api/momentum/gate-log")
+def api_momentum_gate_log():
+    """Return recent gate evaluations with follow-up outcomes."""
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT timestamp, pair, accel, result, blocked_by,
+                   green_count, body_ratio, chg3h_atr,
+                   ath_dist, mom_age, time_at_level, price,
+                   pnl_6h, pnl_12h, pnl_24h, pnl_48h
+            FROM momentum_gate_log
+            ORDER BY timestamp DESC LIMIT 200
+        """).fetchall()
+        return jsonify([dict(r) for r in rows])
+    except Exception:
+        return jsonify([])
+    finally:
+        conn.close()
+
+
+@app.route("/api/momentum/gate-stats")
+def api_momentum_gate_stats():
+    """Aggregate gate performance: did blocking actually save money?"""
+    conn = get_db()
+    try:
+        # Only look at rows with follow-up data
+        rows = conn.execute("""
+            SELECT result, blocked_by, pnl_24h FROM momentum_gate_log
+            WHERE pnl_24h IS NOT NULL
+        """).fetchall()
+
+        if not rows:
+            return jsonify({"message": "No outcome data yet — need 25+ hours of gate logging"})
+
+        passed = [r for r in rows if r["result"] == "pass"]
+        blocked = [r for r in rows if r["result"] == "blocked"]
+
+        def stats(group):
+            if not group:
+                return {"count": 0}
+            pnls = [r["pnl_24h"] for r in group]
+            wins = sum(1 for p in pnls if p > 0)
+            return {
+                "count": len(group),
+                "wins": wins,
+                "winRate": round(wins / len(group) * 100, 1),
+                "avgPnl": round(sum(pnls) / len(pnls), 2),
+                "totalPnl": round(sum(pnls), 2),
+            }
+
+        # Breakdown by which gate blocked
+        by_gate = {}
+        for r in blocked:
+            gate = (r["blocked_by"] or "unknown").split(" ")[0]
+            if gate not in by_gate:
+                by_gate[gate] = []
+            by_gate[gate].append(r)
+
+        gate_breakdown = {}
+        for gate, group in by_gate.items():
+            pnls = [r["pnl_24h"] for r in group]
+            wins = sum(1 for p in pnls if p > 0)
+            gate_breakdown[gate] = {
+                "count": len(group),
+                "wins": wins,
+                "losses": len(group) - wins,
+                "avgPnl": round(sum(pnls) / len(pnls), 2),
+                "savedPnl": round(-sum(p for p in pnls if p < 0), 2),
+            }
+
+        return jsonify({
+            "passed": stats(passed),
+            "blocked": stats(blocked),
+            "byGate": gate_breakdown,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+    finally:
+        conn.close()
+
+
 # ---------- Early Momentum Scanner ----------
 
 import threading

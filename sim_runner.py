@@ -648,6 +648,14 @@ class SimRunner:
             except Exception as e:
                 logger.error(f"[MOMENTUM] Failed to log gates: {e}")
 
+        # Backfill follow-up prices for old gate log entries
+        try:
+            filled = self.trade_logger.backfill_gate_outcomes()
+            if filled > 0:
+                logger.info(f"[MOMENTUM] Backfilled {filled} gate log outcomes")
+        except Exception as e:
+            logger.error(f"[MOMENTUM] Failed to backfill gate outcomes: {e}")
+
         # Persist engine status for dashboard API
         try:
             status_path = os.path.join(os.path.dirname(__file__), "data", "momentum_status.json")

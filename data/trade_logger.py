@@ -206,9 +206,24 @@ class TradeLogger:
                     mom_age INTEGER,
                     time_at_level INTEGER,
                     price REAL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    price_6h REAL,
+                    price_12h REAL,
+                    price_24h REAL,
+                    price_48h REAL,
+                    pnl_6h REAL,
+                    pnl_12h REAL,
+                    pnl_24h REAL,
+                    pnl_48h REAL
                 )
             """)
+            # Migrate: add follow-up columns to existing momentum_gate_log
+            for col in ["price_6h", "price_12h", "price_24h", "price_48h",
+                         "pnl_6h", "pnl_12h", "pnl_24h", "pnl_48h"]:
+                try:
+                    conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} REAL")
+                except Exception:
+                    pass  # column already exists
             # Migrate: add new columns for regression predictions
             for col, ctype in [
                 ("predicted_change_pct", "REAL"),
@@ -489,6 +504,60 @@ class TradeLogger:
             conn.commit()
         finally:
             conn.close()
+
+    def backfill_gate_outcomes(self) -> int:
+        """Fill in follow-up prices for gate log entries that are old enough.
+
+        Looks up candle prices at +6h, +12h, +24h, +48h after each evaluation
+        and computes the PnL% if we had bought at evaluation time.
+        Returns number of rows updated.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        updated = 0
+        try:
+            # Find rows that need backfilling (have price but missing follow-up)
+            rows = conn.execute("""
+                SELECT id, timestamp, pair, price FROM momentum_gate_log
+                WHERE price IS NOT NULL AND pnl_24h IS NULL
+                AND created_at < datetime('now', '-25 hours')
+            """).fetchall()
+
+            for row in rows:
+                pair = row["pair"]
+                eval_ts = row["timestamp"]
+                entry_price = row["price"]
+                if not entry_price or entry_price <= 0:
+                    continue
+
+                # Get candles after the evaluation timestamp
+                candles = conn.execute("""
+                    SELECT timestamp, close FROM candles
+                    WHERE pair = ? AND timestamp > ?
+                    ORDER BY timestamp ASC LIMIT 49
+                """, (pair, eval_ts)).fetchall()
+
+                if len(candles) < 6:
+                    continue
+
+                prices = {}
+                for target_h, col in [(6, "6h"), (12, "12h"), (24, "24h"), (48, "48h")]:
+                    if len(candles) >= target_h:
+                        p = candles[target_h - 1]["close"]
+                        pnl = (p - entry_price) / entry_price * 100
+                        prices[f"price_{col}"] = round(p, 6)
+                        prices[f"pnl_{col}"] = round(pnl, 2)
+
+                if prices:
+                    sets = ", ".join(f"{k} = ?" for k in prices.keys())
+                    vals = list(prices.values()) + [row["id"]]
+                    conn.execute(f"UPDATE momentum_gate_log SET {sets} WHERE id = ?", vals)
+                    updated += 1
+
+            conn.commit()
+        finally:
+            conn.close()
+        return updated
 
     def log_momentum_gates(self, gates: list[dict]) -> None:
         """Log gate evaluation results for every candidate each scan cycle."""
