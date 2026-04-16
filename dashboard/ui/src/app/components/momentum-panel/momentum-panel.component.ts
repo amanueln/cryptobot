@@ -849,12 +849,12 @@ Chart.register(...registerables, zoomPlugin);
 
     /* Trades table */
     .trades-section { padding: 14px 20px; }
-    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll { overflow-x: auto; overflow-y: auto; max-height: 400px; -webkit-overflow-scrolling: touch; }
     .trades-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 600px; }
     .trades-table th {
       padding: 8px 12px; font-size: 10px; font-weight: 700; color: #6b7280;
       text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #2d3148;
-      white-space: nowrap;
+      white-space: nowrap; position: sticky; top: 0; background: #1a1d2e; z-index: 1;
     }
     .trades-table td { padding: 8px 12px; border-bottom: 1px solid rgba(45,49,72,0.5); white-space: nowrap; color: #e2e8f0; }
     .left { text-align: left; }
