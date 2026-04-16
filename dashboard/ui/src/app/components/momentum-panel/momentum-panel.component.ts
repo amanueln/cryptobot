@@ -390,7 +390,21 @@ Chart.register(...registerables, zoomPlugin);
 
       <!-- Recent trades table -->
       <div class="trades-section">
-        <div class="section-header">Recent Trades</div>
+        <div class="trades-header-row">
+          <div class="section-header">Recent Trades</div>
+          <div class="trade-stats-bar">
+            <span class="ts-mood">{{ botMoodEmoji() }}</span>
+            <span class="ts-record">
+              <span class="ts-wins">{{ winCount() }}W</span>
+              <span class="ts-sep">-</span>
+              <span class="ts-losses">{{ lossCount() }}L</span>
+            </span>
+            <span class="ts-winrate" [class.good]="winRate() >= 50" [class.bad]="winRate() < 50">
+              {{ winRate() }}% win rate
+            </span>
+            <span class="ts-mood-text">{{ botMoodText() }}</span>
+          </div>
+        </div>
         <div class="table-scroll">
         <table class="trades-table">
           <thead>
@@ -900,6 +914,25 @@ Chart.register(...registerables, zoomPlugin);
       letter-spacing: 0.5px; color: #64748b; background: rgba(30,33,50,0.8);
       border-bottom: 1px solid rgba(100,116,139,0.2); border-top: 1px solid rgba(100,116,139,0.15);
     }
+    /* Trade stats bar */
+    .trades-header-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 0 0.5rem 0;
+    }
+    .trade-stats-bar {
+      display: flex; align-items: center; gap: 0.6rem;
+      font-size: 0.8rem; color: #94a3b8;
+    }
+    .ts-mood { font-size: 1.2rem; line-height: 1; }
+    .ts-record { font-weight: 600; letter-spacing: 0.02em; }
+    .ts-wins { color: #4ade80; }
+    .ts-losses { color: #f87171; }
+    .ts-sep { color: #4b5280; margin: 0 0.15rem; }
+    .ts-winrate { font-weight: 600; }
+    .ts-winrate.good { color: #4ade80; }
+    .ts-winrate.bad { color: #f87171; }
+    .ts-mood-text { color: #64748b; font-size: 0.7rem; font-style: italic; }
+
     /* Medium screens — stack side-by-side panels */
     @media (max-width: 1024px) {
       .equity-activity-row { flex-direction: column; }
@@ -1735,6 +1768,43 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       case 'stale': return 'No new price peak for 12+ hours. Trail gets aggressive — if momentum is dying, it exits faster.';
       default: return '';
     }
+  }
+
+  winCount(): number {
+    return this.trades().filter(t => t.side === 'sell' && t.net_pnl != null && t.net_pnl >= 0).length;
+  }
+
+  lossCount(): number {
+    return this.trades().filter(t => t.side === 'sell' && t.net_pnl != null && t.net_pnl < 0).length;
+  }
+
+  winRate(): number {
+    const w = this.winCount();
+    const l = this.lossCount();
+    if (w + l === 0) return 0;
+    return Math.round((w / (w + l)) * 100);
+  }
+
+  botMoodEmoji(): string {
+    const rate = this.winRate();
+    const total = this.winCount() + this.lossCount();
+    if (total === 0) return '🤖';
+    if (rate >= 70) return '🔥';
+    if (rate >= 55) return '😎';
+    if (rate >= 45) return '🙂';
+    if (rate >= 30) return '😤';
+    return '😵';
+  }
+
+  botMoodText(): string {
+    const rate = this.winRate();
+    const total = this.winCount() + this.lossCount();
+    if (total === 0) return 'No trades yet';
+    if (rate >= 70) return 'On fire!';
+    if (rate >= 55) return 'Feeling good';
+    if (rate >= 45) return 'Grinding';
+    if (rate >= 30) return 'Tough stretch';
+    return 'Pain';
   }
 
   btcVsSmaShort(): string {
