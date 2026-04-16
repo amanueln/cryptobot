@@ -694,7 +694,7 @@ Chart.register(...registerables, zoomPlugin);
       display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 6px;
     }
     .accel-card {
-      flex: 1 1 calc(50% - 4px); min-width: 170px; max-width: none;
+      flex: 1 1 calc(20% - 7px); min-width: 150px; max-width: 220px;
       background: #1a1d29; border: 1px solid #2d3148; border-radius: 8px;
       padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
     }
