@@ -1227,9 +1227,20 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   private _updateEngineTick(): void {
     const s = this.status();
-    if (!s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
-    const last = new Date(s.last_candle_ts).getTime();
-    const remaining = Math.max(0, 3600000 - (Date.now() - last));
+    if (s?.status !== 'cash') { this._engineTickDisplay.set(''); return; }
+    // Use last_candle_ts if available, otherwise estimate from clock (candles arrive on the hour)
+    let remaining: number;
+    if (s.last_candle_ts) {
+      const last = new Date(s.last_candle_ts).getTime();
+      remaining = Math.max(0, 3600000 - (Date.now() - last));
+    } else {
+      // Estimate: next hour mark
+      const now = new Date();
+      const nextHour = new Date(now);
+      nextHour.setMinutes(0, 0, 0);
+      nextHour.setHours(nextHour.getHours() + 1);
+      remaining = nextHour.getTime() - now.getTime();
+    }
     const min = Math.floor(remaining / 60000);
     const sec = Math.floor((remaining % 60000) / 1000);
     this._engineTickDisplay.set(`${min}:${sec.toString().padStart(2, '0')}`);
