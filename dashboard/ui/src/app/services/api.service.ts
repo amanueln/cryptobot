@@ -319,6 +319,9 @@ export interface MomentumStatusData {
   entry_rejections?: string[];
   last_candle_ts?: string;
   ws_recorder?: { active: boolean; pair: string | null; tick_count: number };
+  lockout_pair?: string | null;
+  lockout_until?: string | null;
+  loss_lockouts?: Record<string, string>;
   error?: string;
 }
 
