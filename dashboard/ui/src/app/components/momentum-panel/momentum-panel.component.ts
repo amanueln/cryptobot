@@ -53,11 +53,11 @@ Chart.register(...registerables, zoomPlugin);
           <span class="hero-value" [class.pos]="(status()?.pnl ?? 0) >= 0" [class.neg]="(status()?.pnl ?? 0) < 0">
             {{ (status()?.pnl ?? 0) >= 0 ? '+' : '' }}{{ formatCurrency(status()?.pnl ?? 0) }}
           </span>
-        </div>
-        <div class="pnl-breakdown">
-          <span class="pnl-detail fee-detail">Fees: -{{ formatCurrency(totalFeesPaid()) }}</span>
-          <span class="pnl-detail" [class.pos]="priceChange() >= 0" [class.neg]="priceChange() < 0">
-            Price: {{ priceChange() >= 0 ? '+' : '' }}{{ formatCurrency(priceChange()) }}
+          <span class="hero-pnl-fees">
+            <span class="pnl-detail fee-detail">Fees: -{{ formatCurrency(totalFeesPaid()) }}</span>
+            <span class="pnl-detail" [class.pos]="priceChange() >= 0" [class.neg]="priceChange() < 0">
+              Price: {{ priceChange() >= 0 ? '+' : '' }}{{ formatCurrency(priceChange()) }}
+            </span>
           </span>
         </div>
       </div>
@@ -459,7 +459,7 @@ Chart.register(...registerables, zoomPlugin);
       display: flex; align-items: center; justify-content: center;
       gap: 0; padding: 0.75rem 1rem;
       background: linear-gradient(180deg, #141621 0%, #0f1117 100%);
-      border-bottom: 1px solid #2d3148; flex-wrap: wrap;
+      border-bottom: 1px solid #2d3148;
     }
     .hero-item { display: flex; align-items: baseline; gap: 0.4em; padding: 0 1.1em; }
     .hero-value {
@@ -471,10 +471,7 @@ Chart.register(...registerables, zoomPlugin);
     .hero-value.pos { color: #4ade80; }
     .hero-value.neg { color: #f87171; }
     .hero-label { font-size: 0.65rem; font-weight: 500; color: #6b7280; white-space: nowrap; }
-    .pnl-breakdown {
-      display: flex; gap: 0.6em; justify-content: center; width: 100%;
-      padding: 0.15rem 0 0;
-    }
+    .hero-pnl-fees { display: flex; gap: 0.6em; margin-left: 0.5em; }
     .pnl-detail {
       font-size: 0.55rem; font-weight: 600; color: #6b7280;
       font-family: 'JetBrains Mono', monospace;
@@ -821,14 +818,16 @@ Chart.register(...registerables, zoomPlugin);
       .engine-alloc { font-size: 0.6rem; }
       .export-btn, .reset-btn { font-size: 0.55rem; padding: 0.1rem 0.4rem; margin-left: 0; }
 
-      /* Hero bar — compact horizontal row */
-      .hero-bar { padding: 0.5rem 0.5rem; gap: 0; }
-      .hero-item { padding: 0 0.5em; gap: 0.25em; }
-      .hero-divider { height: 1rem; }
-      .hero-value { font-size: 0.85rem; }
+      /* Hero bar — 2x2 grid on mobile */
+      .hero-bar {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 0.25rem 0; padding: 0.5rem 0.75rem;
+      }
+      .hero-item { justify-content: center; padding: 0.2rem 0; gap: 0.3em; }
+      .hero-divider { display: none; }
+      .hero-value { font-size: 0.9rem; }
       .hero-label { font-size: 0.55rem; }
-      .pnl-breakdown { padding: 0; }
-      .pnl-detail { font-size: 0.5rem; }
+      .hero-pnl-fees { display: none; }
 
       /* Status banner — compact inline */
       .status-banner { flex-wrap: wrap; padding: 0.4rem 0.75rem; gap: 0.3rem 0.5rem; }
@@ -856,8 +855,7 @@ Chart.register(...registerables, zoomPlugin);
 
     /* Extra small — phone portrait */
     @media (max-width: 480px) {
-      .hero-item { padding: 0 0.3em; gap: 0.15em; flex-direction: column; align-items: center; }
-      .hero-value { font-size: 0.75rem; }
+      .hero-value { font-size: 0.8rem; }
       .hero-label { font-size: 0.5rem; }
       .compact-holding { padding: 0.4rem 0.5rem; }
       .ch-coin { font-size: 0.9rem; }
