@@ -318,6 +318,8 @@ class MomentumEngine:
                         self.regime_bullish = False
 
         if warmup:
+            if pair == 'BTC-USD':
+                self._last_candle_ts = candle.timestamp
             return []
 
         # Check if BTC has enough data (required for regime)
