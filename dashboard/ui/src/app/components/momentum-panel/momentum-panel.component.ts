@@ -678,7 +678,7 @@ Chart.register(...registerables, zoomPlugin);
       display: flex; border-bottom: 1px solid #2d3148;
     }
     .hold-strat-col {
-      flex: 1; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
+      flex: 0 0 38%; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
     }
     .accel-col {
       flex: 1; padding: 14px 16px; background: #12141e; min-width: 0;
@@ -1111,7 +1111,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   }
 
   topAccelScores() {
-    return this.accelScores();
+    const all = this.accelScores();
+    const qualifying = all.filter(s => s.accel > 0.20);
+    if (qualifying.length > 0) return qualifying;
+    // If none qualifying, show top 4 so panel isn't empty
+    return all.slice(0, 4);
   }
 
   accelBarWidth(accel: number): number {
