@@ -177,141 +177,142 @@ Chart.register(...registerables);
         }
       </div>
 
-      <!-- Holdings / Cash state -->
-      <div class="holdings-section">
-        @if (isHolding()) {
-          <div class="section-label">Holdings</div>
-          @for (h of status()?.holdings ?? []; track h.pair) {
-            <div class="compact-holding">
-              <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
-              @if (h.trail_layer) {
-                <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
-                      [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
-                      [class.stale]="h.trail_layer === 'stale'">
-                  {{ trailLayerLabel(h.trail_layer) }}
-                </span>
-              }
-              <div class="ch-stats">
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Entry</span>
-                  <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
-                  <span class="tt">Entry price when position was opened</span>
+      <!-- Holdings + Strategy side-by-side row -->
+      <div class="hold-strat-row">
+        <!-- Holdings column -->
+        <div class="hold-col">
+          @if (isHolding()) {
+            <div class="section-label">Holdings</div>
+            @for (h of status()?.holdings ?? []; track h.pair) {
+              <div class="compact-holding">
+                <div class="ch-top">
+                  <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
+                  @if (h.trail_layer) {
+                    <span class="ch-layer" [class.inactive]="h.trail_layer === 'inactive'"
+                          [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
+                          [class.stale]="h.trail_layer === 'stale'">
+                      {{ trailLayerLabel(h.trail_layer) }}
+                    </span>
+                  }
+                  <div class="ch-pnl-group">
+                    <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
+                    <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
+                      {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
+                    </span>
+                  </div>
+                  <button class="ch-sell"
+                          [class.selling]="sellingPair() === h.pair"
+                          [disabled]="sellingPair() !== null"
+                          (click)="manualSell(h.pair)">
+                    {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
+                  </button>
                 </div>
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Now</span>
-                  <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
-                  <span class="tt">Current market price (updated every ~60s)</span>
-                </div>
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Stop</span>
-                  <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
-                  <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
-                </div>
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Dist</span>
-                  <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
-                  <span class="tt">How far current price is from the stop — lower = closer to selling</span>
-                </div>
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Hold</span>
-                  <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
-                  <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
-                </div>
-                <div class="ch-stat tt-wrap">
-                  <span class="ch-stat-lbl">Accel</span>
-                  <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
-                  <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
+                <div class="ch-stats">
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Entry</span>
+                    <span class="ch-stat-val dim">{{ formatPrice(h.entry_price) }}</span>
+                    <span class="tt">Entry price when position was opened</span>
+                  </div>
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Now</span>
+                    <span class="ch-stat-val">{{ formatPrice(h.current_price) }}</span>
+                    <span class="tt">Current market price (updated every ~60s)</span>
+                  </div>
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Stop</span>
+                    <span class="ch-stat-val red">{{ h.stop_price > 0 ? formatPrice(h.stop_price) : '—' }}</span>
+                    <span class="tt">Trailing stop price — position sells if price drops to this level. Trail tightens as profit grows.</span>
+                  </div>
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Dist</span>
+                    <span class="ch-stat-val dim">{{ h.stop_distance_pct > 0 ? h.stop_distance_pct.toFixed(1) + '%' : '—' }}</span>
+                    <span class="tt">How far current price is from the stop — lower = closer to selling</span>
+                  </div>
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Hold</span>
+                    <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
+                    <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
+                  </div>
+                  <div class="ch-stat tt-wrap">
+                    <span class="ch-stat-lbl">Accel</span>
+                    <span class="ch-stat-val purple">{{ (h.accel * 100).toFixed(1) }}%</span>
+                    <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
+                  </div>
                 </div>
               </div>
-              <div class="ch-pnl-group">
-                <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
-                <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
-                  {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
-                </span>
-              </div>
-              <button class="ch-sell"
-                      [class.selling]="sellingPair() === h.pair"
-                      [disabled]="sellingPair() !== null"
-                      (click)="manualSell(h.pair)">
-                {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
-              </button>
+            }
+          }
+
+          <!-- Sell notification banner -->
+          @if (sellNotification()) {
+            <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
+              {{ sellNotification()!.message }}
             </div>
           }
-        }
-      </div>
-
-      <!-- Sell notification banner -->
-      @if (sellNotification()) {
-        <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
-          {{ sellNotification()!.message }}
         </div>
-      }
 
-      <!-- Strategy Logic panel (compact) -->
-      @if (status()?.warmup_done) {
-        <div class="strategy-panel">
-          <!-- Strategy chips -->
-          <div class="section-label">Strategy</div>
-          <div class="compact-strategy">
-            <div class="cs-chip tt-wrap">
-              <span class="cs-label">Regime</span>
-              <span class="cs-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
-                {{ status()?.regime_bullish ? 'Bull' : 'Bear' }}
-              </span>
-              <span class="cs-detail">BTC {{ btcVsSmaShort() }}</span>
-              <span class="tt">{{ regimeExplain() }}</span>
+        <!-- Strategy column -->
+        @if (status()?.warmup_done) {
+          <div class="strat-col">
+            <div class="section-label">Strategy</div>
+            <div class="compact-strategy">
+              <div class="cs-chip tt-wrap">
+                <span class="cs-label">Regime</span>
+                <span class="cs-value" [class.pos]="status()?.regime_bullish" [class.neg]="!status()?.regime_bullish">
+                  {{ status()?.regime_bullish ? 'Bull' : 'Bear' }}
+                </span>
+                <span class="cs-detail">BTC {{ btcVsSmaShort() }}</span>
+                <span class="tt">{{ regimeExplain() }}</span>
+              </div>
+              <div class="cs-chip tt-wrap">
+                <span class="cs-label">Rebalance</span>
+                <span class="cs-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
+                <span class="tt">Weekly rotation — engine compares your holding to the top acceleration coin and swaps if a better one is found</span>
+              </div>
+              <div class="cs-chip tt-wrap">
+                <span class="cs-label">Position</span>
+                <span class="cs-value">{{ positionExplainShort() }}</span>
+                <span class="tt">{{ positionDetail() }}</span>
+              </div>
             </div>
-            <div class="cs-chip tt-wrap">
-              <span class="cs-label">Rebalance</span>
-              <span class="cs-value">{{ formatHours(status()?.next_rebal_hours ?? 0) }}</span>
-              <span class="tt">Weekly rotation — engine compares your holding to the top acceleration coin and swaps if a better one is found</span>
-            </div>
-            <div class="cs-chip tt-wrap">
-              <span class="cs-label">Position</span>
-              <span class="cs-value">{{ positionExplainShort() }}</span>
-              <span class="tt">{{ positionDetail() }}</span>
-            </div>
-          </div>
 
-          <!-- Exit conditions (compact inline tags) -->
-          @if (isHolding()) {
-            <div class="section-label">Would Sell If</div>
-            <div class="compact-exits">
-              @for (cond of exitConditions(); track cond.label) {
-                <div class="ce-tag tt-wrap">
-                  <span class="ce-label">{{ cond.shortLabel }}</span>
-                  @if (cond.pct >= 0) {
-                    <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
-                  }
-                  <span class="ce-val" [class.dim]="cond.pct < 50" [class.warn]="cond.pct >= 50 && cond.pct < 80" [class.danger]="cond.pct >= 80" [class.safe]="cond.pct < 0">{{ cond.shortDetail }}</span>
+            @if (isHolding()) {
+              <div class="section-label">Would Sell If</div>
+              <div class="compact-exits">
+                @for (cond of exitConditions(); track cond.label) {
+                  <div class="ce-tag tt-wrap">
+                    <span class="ce-label">{{ cond.shortLabel }}</span>
+                    @if (cond.pct >= 0) {
+                      <div class="ce-bar"><div class="ce-fill" [class.low]="cond.pct < 50" [class.mid]="cond.pct >= 50 && cond.pct < 80" [class.high]="cond.pct >= 80" [style.width.%]="cond.pct"></div></div>
+                    }
+                    <span class="ce-val" [class.dim]="cond.pct < 50" [class.warn]="cond.pct >= 50 && cond.pct < 80" [class.danger]="cond.pct >= 80" [class.safe]="cond.pct < 0">{{ cond.shortDetail }}</span>
+                    <span class="tt">{{ cond.tooltip }}</span>
+                  </div>
+                }
+              </div>
+            }
+
+            <div class="section-label">Would Buy If</div>
+            <div class="compact-buy">
+              @for (cond of buyConditionTags(); track cond.text) {
+                <div class="cb-tag tt-wrap">
+                  <span class="cb-text" [class.green]="cond.met" [class.red]="cond.met === false">{{ cond.met ? '✓' : cond.met === false ? '✗' : '•' }} {{ cond.text }}</span>
                   <span class="tt">{{ cond.tooltip }}</span>
                 </div>
               }
             </div>
-          }
 
-          <!-- Buy conditions (compact tags) -->
-          <div class="section-label">Would Buy If</div>
-          <div class="compact-buy">
-            @for (cond of buyConditionTags(); track cond.text) {
-              <div class="cb-tag tt-wrap">
-                <span class="cb-text" [class.green]="cond.met" [class.red]="cond.met === false">{{ cond.met ? '✓' : cond.met === false ? '✗' : '•' }} {{ cond.text }}</span>
-                <span class="tt">{{ cond.tooltip }}</span>
+            @if (entryRejections().length > 0) {
+              <div class="section-label">Why Not Buying</div>
+              <div class="compact-rejections">
+                @for (r of entryRejections(); track r) {
+                  <span class="cr-tag">{{ r }}</span>
+                }
               </div>
             }
           </div>
-
-          <!-- Rejections (compact tags) -->
-          @if (entryRejections().length > 0) {
-            <div class="section-label">Why Not Buying</div>
-            <div class="compact-rejections">
-              @for (r of entryRejections(); track r) {
-                <span class="cr-tag">{{ r }}</span>
-              }
-            </div>
-          }
-        </div>
-      }
+        }
+      </div>
 
       <!-- Recent trades table -->
       <div class="trades-section">
@@ -615,12 +616,29 @@ Chart.register(...registerables);
     }
     .accel-note.qualifying-note { color: #4ade80; }
 
+    /* Holdings + Strategy side-by-side */
+    .hold-strat-row {
+      display: flex; gap: 0; border-bottom: 1px solid #2d3148;
+    }
+    .hold-col {
+      flex: 1; padding: 10px 16px; border-right: 1px solid #2d3148; min-width: 0;
+    }
+    .strat-col {
+      flex: 1; padding: 10px 16px; min-width: 0;
+      background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
+    }
+    @media (max-width: 900px) {
+      .hold-strat-row { flex-direction: column; }
+      .hold-col { border-right: none; border-bottom: 1px solid #2d3148; }
+    }
+
     /* Holdings (compact) */
-    .holdings-section { padding: 10px 20px; border-bottom: 1px solid #2d3148; }
     .compact-holding {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 14px; background: #1a1d29; border: 1px solid #2d3148;
-      border-radius: 8px; border-left: 3px solid #a78bfa;
+      background: #1a1d29; border: 1px solid #2d3148;
+      border-radius: 8px; border-left: 3px solid #a78bfa; padding: 8px 12px;
+    }
+    .ch-top {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
     }
     .ch-coin { font-weight: 700; font-size: 14px; white-space: nowrap; }
     .ch-layer {
@@ -631,7 +649,7 @@ Chart.register(...registerables);
     .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .ch-stats { display: flex; align-items: center; gap: 14px; flex: 1; }
+    .ch-stats { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .ch-stat { display: flex; flex-direction: column; align-items: center; }
     .ch-stat-lbl { font-size: 7px; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
     .ch-stat-val { font-size: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
@@ -639,9 +657,9 @@ Chart.register(...registerables);
     .ch-stat-val.green { color: #4ade80; }
     .ch-stat-val.dim { color: #6b7280; }
     .ch-stat-val.purple { color: #a78bfa; }
-    .ch-pnl-group { text-align: right; white-space: nowrap; }
-    .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; display: block; }
-    .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; }
+    .ch-pnl-group { margin-left: auto; text-align: right; white-space: nowrap; }
+    .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; }
+    .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; margin-left: 4px; }
     .ch-pnl-pct.neg { color: #f87171; }
     .ch-pnl-pct.pos { color: #4ade80; }
     .ch-sell {
@@ -735,11 +753,7 @@ Chart.register(...registerables);
     .side-badge.buy { background: rgba(74,222,128,0.12); color: #4ade80; }
     .side-badge.sell { background: rgba(248,113,113,0.12); color: #f87171; }
 
-    /* Strategy Logic panel (compact) */
-    .strategy-panel {
-      padding: 10px 20px; border-bottom: 1px solid #2d3148;
-      background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
-    }
+    /* Strategy Logic panel (compact) — layout handled by .strat-col */
     .section-label {
       font-size: 9px; font-weight: 700; color: #4b5280; text-transform: uppercase;
       letter-spacing: 0.06em; margin-bottom: 6px; margin-top: 10px;
