@@ -305,6 +305,12 @@ Chart.register(...registerables, zoomPlugin);
             @if (status()?.scanner) {
               <span class="scanner-meta">{{ status()!.scanner!.pairs_count }} scanned &middot; top {{ topAccelScores().length }} accelerating</span>
             }
+            @if (scannerFreshness().label) {
+              <span class="scanner-freshness" [class.stale]="scannerFreshness().stale"
+                    title="Time since engine last evaluated entry gates for these pairs">
+                last eval {{ scannerFreshness().label }}
+              </span>
+            }
           </div>
           <div class="accel-cards">
             @for (s of topAccelScores(); track s.pair) {
@@ -740,6 +746,11 @@ Chart.register(...registerables, zoomPlugin);
       font-size: 9px; font-weight: 400; color: #4b5280; letter-spacing: 0;
       text-transform: none; margin-left: auto;
     }
+    .scanner-freshness {
+      font-size: 9px; font-weight: 400; color: #6b7280; letter-spacing: 0;
+      text-transform: none; margin-left: 8px;
+    }
+    .scanner-freshness.stale { color: #f59e0b; }
     .accel-cards {
       display: flex; gap: 10px; padding-bottom: 6px;
       overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -1134,7 +1145,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   calendarOpen = signal(false);
   events = signal<MomentumEventData[]>([]);
   equityData = signal<MomentumEquityData[]>([]);
-  accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; result?: string; blocked_by?: string; quality?: {
+  accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; result?: string; blocked_by?: string; timestamp?: string; quality?: {
     green: boolean; greenCount: number;
     body: boolean; bodyRatio: number;
     ext: boolean; chg3hAtr: number;
@@ -1219,6 +1230,34 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   qualifyingCount(): number {
     return this.accelScores().filter(s => s.accel > 0.20).length;
+  }
+
+  lastScannedAgo(timestamp?: string): string {
+    if (!timestamp) return '';
+    const scanned = new Date(timestamp).getTime();
+    if (isNaN(scanned)) return '';
+    const diffMs = Date.now() - scanned;
+    if (diffMs < 0) return 'just now';
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    return `${d}d ago`;
+  }
+
+  scannerFreshness(): { label: string; stale: boolean } {
+    const scores = this.accelScores();
+    if (!scores.length) return { label: '', stale: false };
+    const latest = scores
+      .map(s => (s.timestamp ? new Date(s.timestamp).getTime() : 0))
+      .reduce((a, b) => (b > a ? b : a), 0);
+    if (!latest) return { label: '', stale: false };
+    const diffMs = Date.now() - latest;
+    const stale = diffMs > 30 * 60 * 1000;
+    return { label: this.lastScannedAgo(new Date(latest).toISOString()), stale };
   }
 
   formatEta(seconds: number): string {

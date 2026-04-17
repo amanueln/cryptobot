@@ -214,6 +214,7 @@ class MomentumEngine:
         self._loss_lockouts: dict[str, datetime] = {}  # pair -> lockout expiry after a loss
         self._entry_rejections: list[str] = []  # why coins were rejected this tick
         self._gate_log: list[dict] = []  # gate values for every candidate each scan
+        self._compute_ran_this_tick = False  # prevents double-scan when info-only runs
 
         # Trade history (for logging)
         self.trades: list[Trade] = []
@@ -341,6 +342,11 @@ class MomentumEngine:
         # Only process logic on BTC candle (all pairs should be hourly aligned)
         if pair != 'BTC-USD':
             return []
+
+        # Reset per-tick compute flag — set True by _compute_scores() so the
+        # end-of-tick info scan below can skip if the entry/rebalance path
+        # already ran a fresh evaluation.
+        self._compute_ran_this_tick = False
 
         # === EXIT LOGIC ===
         trades = []
@@ -579,6 +585,23 @@ class MomentumEngine:
         else:
             self.next_rebal_hours = REBAL_HOURS - self._hours_since_rebal
 
+        # === Info-only scan while holding ===
+        # Keeps the scanner UI fresh even when we're not evaluating entries.
+        # No trading impact — decisions above have already been made.
+        # Preserve entry_rejections so the dashboard keeps showing the last
+        # actual entry-eval reasons rather than this info pass.
+        if self.holdings and not self._compute_ran_this_tick:
+            saved_rejections = list(self._entry_rejections)
+            info_scores = self._compute_scores()
+            self.accel_scores = info_scores
+            if info_scores:
+                self._filter_entries(info_scores)
+            for g in self._gate_log:
+                g["picked"] = 0
+                if g.get("result") == "pass":
+                    g["reason_not_picked"] = "already holding"
+            self._entry_rejections = saved_rejections
+
         return trades
 
     def _compute_scores(self) -> list[AccelScore]:
@@ -594,6 +617,7 @@ class MomentumEngine:
         now = self._last_candle_ts or datetime.now()
         now_iso = datetime.now().isoformat()
         self._gate_log = []  # reset once per evaluation
+        self._compute_ran_this_tick = True
 
         def _log_reject(pair: str, reason: str, accel: float = 0.0,
                         rsi: float | None = None, adx: float | None = None,

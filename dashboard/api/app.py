@@ -2391,6 +2391,7 @@ def api_momentum_accel():
             "rsi": round(r["rsi"], 1) if r["rsi"] is not None else None,
             "result": result,
             "blocked_by": blocked_by,
+            "timestamp": r["timestamp"],
             "quality": {
                 "green": gate_green, "greenCount": green_count if green_count is not None else 0,
                 "body": gate_body, "bodyRatio": round(body_ratio, 2) if body_ratio is not None else 0,
