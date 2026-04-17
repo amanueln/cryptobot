@@ -51,10 +51,15 @@ _backup_process: multiprocessing.Process | None = None
 
 def run_bot(use_ml: bool = False):
     """Run the sim_runner polling loop."""
-    from sim_runner import build_runner
-    logger.info("Bot process starting (ML=%s)", use_ml)
-    runner = build_runner(poll_seconds=60, warmup_days=7, use_ml=use_ml)
-    runner.run()
+    try:
+        from sim_runner import build_runner
+        logger.info("Bot process starting (ML=%s)", use_ml)
+        runner = build_runner(poll_seconds=60, warmup_days=7, use_ml=use_ml)
+        runner.run()
+    except Exception:
+        import traceback
+        logger.error("Bot process crashed with exception:\n%s", traceback.format_exc())
+        raise
 
 
 # ---------------------------------------------------------------------------
