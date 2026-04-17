@@ -192,6 +192,41 @@ class TradeLogger:
                 )
             """)
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS wall_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    pair TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    detail TEXT,
+                    current_price REAL,
+                    wall_aware_stop REAL,
+                    entry_price REAL,
+                    peak_price REAL,
+                    wall_price REAL,
+                    wall_usd REAL,
+                    wall_age_ms INTEGER,
+                    book_bids TEXT,
+                    book_asks TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS regime_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    btc_price REAL,
+                    btc_ma REAL,
+                    regime_state TEXT,
+                    regime_bullish INTEGER,
+                    btc_4h_return REAL,
+                    btc_24h_return REAL,
+                    scans_pass INTEGER,
+                    scans_fail INTEGER,
+                    holdings_count INTEGER,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS momentum_gate_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -249,6 +284,9 @@ class TradeLogger:
                 ("exit_ath_dist", "REAL"),
                 ("exit_time_at_level", "INTEGER"),
                 ("ticks_since_new_peak", "INTEGER"),
+                ("max_adverse_pct", "REAL"),
+                ("max_favorable_pct", "REAL"),
+                ("trough_price", "REAL"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE momentum_trades ADD COLUMN {col} {ctype}")
@@ -531,7 +569,8 @@ class TradeLogger:
                        peak_price = ?, peak_pnl_pct = ?, drawdown_from_peak = ?,
                        trail_stop = ?, atr_stop = ?, exit_accel = ?,
                        exit_reason_detail = ?, exit_green_count = ?, exit_body_ratio = ?,
-                       exit_ath_dist = ?, exit_time_at_level = ?, ticks_since_new_peak = ?
+                       exit_ath_dist = ?, exit_time_at_level = ?, ticks_since_new_peak = ?,
+                       max_adverse_pct = ?, max_favorable_pct = ?, trough_price = ?
                    WHERE id = (
                        SELECT id FROM momentum_trades
                        WHERE pair = ? AND side = 'sell'
@@ -554,6 +593,9 @@ class TradeLogger:
                     snapshot.get("exit_ath_dist"),
                     snapshot.get("exit_time_at_level"),
                     snapshot.get("ticks_since_new_peak"),
+                    snapshot.get("max_adverse_pct"),
+                    snapshot.get("max_favorable_pct"),
+                    snapshot.get("trough_price"),
                     snapshot.get("pair"),
                 ),
             )
@@ -655,6 +697,82 @@ class TradeLogger:
                     )
                     for g in gates
                 ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_wall_decisions(self, decisions: list[dict]) -> None:
+        """Persist a batch of wall-aware trail decisions for later analysis.
+
+        Each decision dict may contain: ts, pair, action, detail,
+        current_price, wall_aware_stop, entry_price, peak_price,
+        wall_price, wall_usd, wall_age_ms, book_bids (list), book_asks (list).
+        """
+        if not decisions:
+            return
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.executemany(
+                """INSERT INTO wall_decisions
+                   (timestamp, pair, action, detail,
+                    current_price, wall_aware_stop, entry_price, peak_price,
+                    wall_price, wall_usd, wall_age_ms,
+                    book_bids, book_asks, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        d.get("ts", now),
+                        d.get("pair"),
+                        d.get("action"),
+                        d.get("detail"),
+                        d.get("current_price"),
+                        d.get("wall_aware_stop"),
+                        d.get("entry_price"),
+                        d.get("peak_price"),
+                        d.get("wall_price"),
+                        d.get("wall_usd"),
+                        d.get("wall_age_ms"),
+                        json.dumps(d["book_bids"]) if d.get("book_bids") is not None else None,
+                        json.dumps(d["book_asks"]) if d.get("book_asks") is not None else None,
+                        now,
+                    )
+                    for d in decisions
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def log_regime_snapshot(self, snap: dict) -> None:
+        """Persist a single BTC regime snapshot from a scan cycle.
+
+        Expected keys: btc_price, btc_ma, regime_state, regime_bullish,
+        btc_4h_return, btc_24h_return, scans_pass, scans_fail, holdings_count.
+        """
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """INSERT INTO regime_snapshots
+                   (timestamp, btc_price, btc_ma, regime_state, regime_bullish,
+                    btc_4h_return, btc_24h_return,
+                    scans_pass, scans_fail, holdings_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    snap.get("ts", now),
+                    snap.get("btc_price"),
+                    snap.get("btc_ma"),
+                    snap.get("regime_state"),
+                    1 if snap.get("regime_bullish") else 0,
+                    snap.get("btc_4h_return"),
+                    snap.get("btc_24h_return"),
+                    snap.get("scans_pass"),
+                    snap.get("scans_fail"),
+                    snap.get("holdings_count"),
+                    now,
+                ),
             )
             conn.commit()
         finally:

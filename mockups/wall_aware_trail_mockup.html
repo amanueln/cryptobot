@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Momentum page + Wall-aware trail — full mockup</title>
+<style>
+  :root {
+    --panel: #121821;
+    --panel-2: #182030;
+    --panel-3: #0f1520;
+    --border: #25304a;
+    --text: #e6ecf5;
+    --muted: #8895ad;
+    --dim: #5a6679;
+    --green: #22c55e;
+    --amber: #fbbf24;
+    --red: #ef4444;
+    --accent: #3b82f6;
+    --purple: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0f17; color: var(--text);
+    font-size: 13px;
+  }
+  .wrap { max-width: 1400px; margin: 16px auto; padding: 0 16px; }
+
+  /* ---- Engine tab ---- */
+  .engine-tab {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px 10px 0 0;
+    border-bottom: none;
+  }
+  .engine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .engine-name { font-size: 13px; font-weight: 600; }
+  .engine-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 8px;
+    border-radius: 4px; background: rgba(34,197,94,.15); color: var(--green);
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .engine-alloc, .engine-version { font-size: 11px; color: var(--muted); }
+  .engine-version { margin-left: auto; }
+  .engine-btn {
+    padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--muted); font-size: 11px;
+    cursor: pointer; font-weight: 500;
+  }
+  .engine-btn:hover { color: var(--text); }
+
+  /* Wall-aware toggle inside engine-tab */
+  .wa-toggle-group {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 10px 3px 12px; border-radius: 6px;
+    background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.3);
+  }
+  .wa-label { font-size: 11px; font-weight: 600; color: var(--amber); }
+  .wa-switch {
+    position: relative; width: 38px; height: 20px;
+    background: var(--panel-3); border-radius: 11px; cursor: pointer;
+    border: 1px solid var(--border);
+  }
+  .wa-switch.on { background: rgba(34,197,94,.2); border-color: var(--green); }
+  .wa-switch .knob {
+    position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--muted); transition: all .15s;
+  }
+  .wa-switch.on .knob { left: 20px; background: var(--green); }
+
+  /* ---- Hero bar ---- */
+  .hero-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; padding: 12px 16px;
+    background: linear-gradient(180deg, #141621 0%, #0f1117 100%);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .hero-item { display: flex; align-items: baseline; gap: 0.4em; padding: 0 1.1em; }
+  .hero-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  .hero-value { font-size: 20px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .hero-value.cash-val { color: var(--muted); }
+  .hero-value.positions-val { color: #a78bfa; }
+  .hero-value.pos { color: var(--green); }
+  .hero-value.neg { color: var(--red); }
+  .hero-pnl-fees { display: inline-flex; gap: 8px; margin-left: 6px; font-size: 10px; }
+  .pnl-detail { color: var(--muted); }
+  .pnl-detail.pos { color: var(--green); }
+  @media (max-width: 900px) {
+    .hero-bar { padding: 8px 8px; gap: 4px 8px; }
+    .hero-item { padding: 0.2rem 0.3em; gap: 0.3em; }
+    .hero-value { font-size: 15px; }
+    .hero-label { font-size: 9px; }
+    .hero-pnl-fees { display: none; }
+  }
+  @media (max-width: 520px) {
+    .hero-value { font-size: 13px; }
+    .hero-label { font-size: 8px; }
+  }
+
+  /* ---- Status banner ---- */
+  .status-banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel-2);
+    border: 1px solid var(--border); border-top: none;
+    font-size: 12px;
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-text { color: var(--text); }
+  .regime-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+    background: rgba(34,197,94,.18); color: var(--green);
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .hold-time, .ws-badge { font-size: 11px; color: var(--muted); }
+  .ws-badge { color: var(--accent); }
+  .poll-timer { margin-left: auto; font-size: 11px; color: var(--dim); }
+
+  /* ---- Equity + Activity row ---- */
+  .equity-activity-row {
+    display: grid; grid-template-columns: 1.7fr 1fr; gap: 12px;
+    margin-top: 12px;
+  }
+  @media (max-width: 900px) { .equity-activity-row { grid-template-columns: 1fr; } }
+  .equity-col, .activity-col {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .chart-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .section-header {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+  .chart-range-btns { display: flex; gap: 4px; margin-left: auto; }
+  .range-btn {
+    padding: 2px 7px; font-size: 10px; border-radius: 3px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--muted); cursor: pointer;
+  }
+  .range-btn.active { background: rgba(59,130,246,.18); color: var(--accent); border-color: var(--accent); }
+  .chart-slot {
+    height: 200px;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .chart-slot svg { width: 100%; height: 100%; display: block; }
+  .equity-substats { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .activity-col .section-header { margin-bottom: 8px; }
+  .event-list { display: flex; flex-direction: column; gap: 4px; max-height: 210px; overflow-y: auto; }
+  .log-entry { display: grid; grid-template-columns: 46px 10px 1fr; gap: 6px; align-items: center; font-size: 11px; padding: 2px 0; }
+  .log-time { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 10px; }
+  .log-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .log-dot.buy  { background: var(--green); }
+  .log-dot.sell { background: var(--red); }
+  .log-dot.info { background: var(--accent); }
+
+  /* ---- Main row: Holdings/Strategy + L2 + Accel Scanner ---- */
+  .main-row {
+    display: grid;
+    grid-template-columns: minmax(0,1.3fr) 320px minmax(0,1fr);
+    gap: 12px; margin-top: 12px;
+  }
+  @media (max-width: 1200px) {
+    .main-row { grid-template-columns: minmax(0,1fr) 300px; }
+    .accel-col { grid-column: 1 / -1; }
+  }
+  @media (max-width: 900px) {
+    .main-row { grid-template-columns: 1fr; }
+    .accel-col { grid-column: auto; }
+  }
+  .section-label {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 6px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* ---- Holdings column (contains holdings card + wall-aware blocks + strategy) ---- */
+  .hold-strat-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+  .compact-holding {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .ch-row { display: flex; flex-direction: column; gap: 10px; }
+  .ch-header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    row-gap: 6px; min-width: 0;
+  }
+  .ch-coin { font-size: 16px; font-weight: 600; flex: 0 0 auto; }
+  .ch-layer, .ch-wa-badge {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .3px;
+    white-space: nowrap;
+  }
+  .ch-layer.progressive { background: rgba(34,197,94,.15); color: var(--green); }
+  .ch-wa-badge.wall     { background: rgba(251,191,36,.18); color: var(--amber); }
+  .ch-wa-badge.price    { background: rgba(139,149,173,.15); color: var(--muted); }
+
+  .ch-stats {
+    display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 6px;
+  }
+  @media (max-width: 1200px) { .ch-stats { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 700px)  { .ch-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  @media (max-width: 480px)  { .ch-stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .ch-stat {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px; background: var(--panel-2);
+    border-radius: 5px; min-width: 0;
+  }
+  .ch-stat-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .ch-stat-val {
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ch-stat-val.green  { color: var(--green); }
+  .ch-stat-val.red    { color: var(--red); }
+  .ch-stat-val.amber  { color: var(--amber); }
+  .ch-stat-val.purple { color: var(--purple); }
+  .ch-stat-val.dim    { color: var(--muted); }
+  .ch-pnl-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 8px; border-top: 1px solid var(--border);
+    gap: 10px; flex-wrap: wrap;
+  }
+  .ch-pnl-group { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+  .ch-pnl-val { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ch-pnl-pct { font-size: 12px; color: var(--green); font-weight: 600; }
+  .ch-sell {
+    padding: 5px 16px; font-size: 11px; font-weight: 600;
+    border: 1px solid var(--red); border-radius: 5px;
+    background: rgba(239,68,68,.1); color: var(--red); cursor: pointer;
+  }
+  .ch-sell:hover { background: rgba(239,68,68,.2); }
+
+  /* ---- Wall-aware compare block (new) ---- */
+  .compare {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  .compare-head {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .compare-title { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .compare-active { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; }
+  .compare-active.wall-on { background: rgba(251,191,36,.18); color: var(--amber); }
+  .compare-active.price-on { background: rgba(139,149,173,.15); color: var(--muted); }
+  .compare-body { display: grid; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 540px) { .compare-body { grid-template-columns: 1fr; } }
+  .compare-cell { padding: 10px 12px; border-right: 1px solid var(--border); min-width: 0; }
+  .compare-cell:last-child { border-right: none; }
+  @media (max-width: 540px) {
+    .compare-cell { border-right: none; border-bottom: 1px solid var(--border); }
+    .compare-cell:last-child { border-bottom: none; }
+  }
+  .compare-cell.active { background: linear-gradient(180deg, rgba(251,191,36,.06), transparent); }
+  .compare-cell.dormant { opacity: .55; }
+  .compare-cell-hdr { font-size: 9px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 3px; }
+  .compare-price { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .compare-pct { font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .compare-profit { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 11px; }
+  .compare-profit .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .compare-delta {
+    font-size: 11px; color: var(--green); font-weight: 600;
+    padding: 6px 12px; background: rgba(34,197,94,.08);
+    text-align: center; border-top: 1px solid var(--border);
+  }
+  .compare-delta .dim { color: var(--muted); font-weight: 400; }
+
+  /* ---- Wall-aware config + log ---- */
+  .cfg-log-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  @media (max-width: 720px) { .cfg-log-row { grid-template-columns: 1fr; } }
+  .cfg, .log-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  .cfg.dormant { opacity: .55; }
+  .cfg-head, .log-head {
+    padding: 7px 12px; border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .cfg-body { padding: 8px 12px; }
+  .cfg-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; border-bottom: 1px solid rgba(37,48,74,.35); }
+  .cfg-row:last-child { border-bottom: none; }
+  .cfg-lbl { color: var(--muted); }
+  .cfg-val { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .log-body { max-height: 180px; overflow-y: auto; }
+  .log-row {
+    display: grid; grid-template-columns: 48px 1fr auto;
+    gap: 6px; padding: 5px 12px; border-bottom: 1px solid rgba(37,48,74,.35);
+    font-size: 11px; min-width: 0; align-items: center;
+  }
+  .log-row:last-child { border-bottom: none; }
+  .log-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 520px) {
+    .log-row { grid-template-columns: 42px 1fr; }
+    .log-row .log-val { grid-column: 2; justify-self: start; font-size: 10px; }
+  }
+  .log-ts { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 10px; }
+  .log-tag {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px; letter-spacing: .3px;
+    text-transform: uppercase; margin-right: 4px;
+  }
+  .log-tag.wall { background: rgba(251,191,36,.18); color: var(--amber); }
+  .log-tag.pulled { background: rgba(239,68,68,.18); color: var(--red); }
+  .log-tag.tick { background: rgba(59,130,246,.15); color: var(--accent); }
+  .log-desc .hi { font-weight: 600; }
+  .log-desc .dim { color: var(--muted); }
+  .log-val { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--amber); }
+
+  /* ---- Strategy chips ---- */
+  .compact-strategy { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cs-chip {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 10px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 5px;
+    font-size: 11px; min-width: 0;
+  }
+  .cs-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .cs-value { font-weight: 600; }
+  .cs-value.pos { color: var(--green); }
+  .cs-detail { color: var(--dim); font-size: 10px; }
+
+  /* ---- Exit conditions ---- */
+  .compact-exits { display: flex; flex-direction: column; gap: 4px; }
+  .ce-tag {
+    display: grid; grid-template-columns: 120px 1fr auto;
+    gap: 8px; align-items: center;
+    padding: 5px 8px; background: var(--panel-2);
+    border-radius: 4px; font-size: 11px;
+  }
+  @media (max-width: 480px) { .ce-tag { grid-template-columns: 1fr auto; } .ce-tag .ce-bar { display: none; } }
+  .ce-tag.ce-amber { border-left: 2px solid var(--amber); }
+  .ce-tag.ce-red { border-left: 2px solid var(--red); }
+  .ce-tag.ce-purple { border-left: 2px solid var(--purple); }
+  .ce-tag.ce-blue { border-left: 2px solid var(--accent); }
+  .ce-label { color: var(--muted); }
+  .ce-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; position: relative; }
+  .ce-fill { height: 100%; border-radius: 2px; }
+  .ce-fill.low { background: var(--green); }
+  .ce-fill.mid { background: var(--amber); }
+  .ce-fill.high { background: var(--red); }
+  .ce-val { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 10px; }
+  .ce-val.safe { color: var(--green); }
+  .ce-val.dim { color: var(--muted); }
+  .ce-val.warn { color: var(--amber); }
+  .ce-val.danger { color: var(--red); }
+
+  /* ---- Would Buy If ---- */
+  .compact-buy { display: flex; gap: 5px; flex-wrap: wrap; }
+  .cb-tag {
+    padding: 4px 8px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-size: 11px;
+  }
+  .cb-text.green { color: var(--green); }
+  .cb-text.red   { color: var(--red); }
+
+  /* ---- Acceleration Scanner ---- */
+  .accel-col { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-width: 0; }
+  .accel-col .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .scanner-meta { font-size: 10px; color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: normal; }
+  .scanner-freshness { font-size: 10px; color: var(--muted); margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: normal; }
+  .accel-cards { display: flex; flex-direction: column; gap: 6px; }
+  .accel-card {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+  }
+  .accel-card.qualifying-card { border-color: var(--green); background: linear-gradient(180deg, rgba(34,197,94,.05), var(--panel-2)); }
+  .accel-card.quality-blocked { border-color: rgba(239,68,68,.4); background: linear-gradient(180deg, rgba(239,68,68,.05), var(--panel-2)); }
+  .ac-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .ac-coin { font-size: 13px; font-weight: 600; }
+  .ac-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .ac-badge.holding { background: rgba(59,130,246,.18); color: var(--accent); }
+  .ac-badge.qual    { background: rgba(34,197,94,.18); color: var(--green); }
+  .ac-badge.below   { background: rgba(139,149,173,.15); color: var(--muted); }
+  .ac-badge.blocked { background: rgba(239,68,68,.18); color: var(--red); }
+  .ac-price { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ac-desc { font-size: 11px; color: var(--muted); line-height: 1.4; margin-bottom: 4px; }
+  .ac-gates-label { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .3px; margin-top: 4px; }
+  .ac-gates { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0; }
+  .ac-gate { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--panel-3); }
+  .ac-gate.pass { color: var(--green); }
+  .ac-gate.fail { color: var(--red); }
+  .ac-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .ac-bar-fill { height: 100%; background: var(--muted); }
+  .ac-bar-fill.qualifying { background: var(--green); }
+  .ac-bar-fill.blocked-fill { background: var(--red); }
+  .ac-stats { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px; }
+  .ac-accel { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .ac-accel.pos { color: var(--green); }
+  .ac-stat-label { font-size: 10px; color: var(--dim); }
+  .accel-note { font-size: 11px; color: var(--muted); margin-top: 8px; padding: 6px 8px; background: var(--panel-3); border-radius: 4px; }
+  .accel-note.qualifying-note { color: var(--green); background: rgba(34,197,94,.08); }
+
+  /* ---- L2 ladder ---- */
+  .l2-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; min-width: 0;
+    align-self: start;
+  }
+  .l2-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+  }
+  .l2-title { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .l2-status { display: flex; align-items: center; gap: 5px; font-size: 10px; }
+  .l2-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .l2-dot.off { background: var(--dim); box-shadow: none; }
+  .l2-age { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .l2-body { padding: 6px 0; font-variant-numeric: tabular-nums; }
+  .l2-row {
+    display: grid; align-items: center; height: 17px; padding: 0 10px;
+    font-size: 10.5px; position: relative;
+  }
+  .l2-row.ask { grid-template-columns: 62px 1fr 52px 22px; }
+  .l2-row.bid { grid-template-columns: 22px 52px 1fr 62px; }
+  .l2-row .price { font-weight: 500; }
+  .l2-row.bid .price { color: var(--green); }
+  .l2-row.ask .price { color: var(--red); }
+  .l2-row .bar { height: 11px; border-radius: 2px; margin: 0 5px; opacity: .45; z-index: 0; }
+  .l2-row.bid .bar { background: var(--green); justify-self: end; }
+  .l2-row.ask .bar { background: var(--red); justify-self: start; }
+  .l2-row .size { font-size: 10px; color: var(--muted); z-index: 2; position: relative; }
+  .l2-row.bid .size { text-align: right; }
+  .l2-row.ask .size { text-align: left; }
+  .l2-row .age { font-size: 9px; color: var(--dim); z-index: 2; position: relative; }
+  .l2-row.bid .age { text-align: left; }
+  .l2-row.ask .age { text-align: right; }
+  .l2-row.fresh .age { color: var(--green); font-weight: 600; }
+  .l2-row.wall .bar { opacity: .8; box-shadow: 0 0 6px currentColor; }
+  .l2-row.wall .size { color: var(--amber); font-weight: 600; text-shadow: 0 0 3px #0b0f17, 0 0 3px #0b0f17; }
+  .l2-row.stop-anchor { background: linear-gradient(90deg, rgba(251,191,36,.22), transparent); border-left: 2px solid var(--amber); }
+  .l2-row.stop-anchor .price { color: var(--amber); font-weight: 700; }
+  .l2-mid {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 10px; margin: 3px 0;
+    background: linear-gradient(90deg, rgba(59,130,246,0), rgba(59,130,246,.12) 50%, rgba(59,130,246,0));
+    border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+    font-size: 11px; font-weight: 600;
+  }
+  .l2-mid-label { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .3px; }
+  .l2-mid-val { font-variant-numeric: tabular-nums; }
+  .l2-mid-spread { color: var(--dim); font-size: 10px; }
+  .l2-signals {
+    padding: 8px 12px; border-top: 1px solid var(--border); background: var(--panel-2);
+    font-size: 10.5px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px;
+  }
+  .l2-sig-lbl { color: var(--muted); }
+  .l2-sig-val { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .l2-sig-val.good { color: var(--green); }
+  .l2-sig-val.warn { color: var(--amber); }
+  .l2-sig-val.bad  { color: var(--red); }
+  .l2-read { border-top: 1px solid var(--border); padding: 8px 12px; background: var(--panel-3); }
+  .l2-read-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .l2-read-title { font-size: 9px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .l2-verdict { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 3px; text-transform: uppercase; letter-spacing: .3px; }
+  .l2-verdict.hold { background: rgba(34,197,94,.15); color: var(--green); }
+  .l2-verdict.watch { background: rgba(251,191,36,.15); color: var(--amber); }
+  .l2-verdict.risk { background: rgba(239,68,68,.18); color: var(--red); }
+  .l2-read-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .l2-read-list li { display: grid; grid-template-columns: 12px 1fr; gap: 6px; align-items: start; font-size: 10.5px; line-height: 1.35; }
+  .l2-read-list .ic { text-align: center; font-weight: 700; font-size: 9px; margin-top: 1px; }
+  .l2-read-list .ic.ok { color: var(--green); }
+  .l2-read-list .ic.warn { color: var(--amber); }
+  .l2-read-list .ic.bad { color: var(--red); }
+  .l2-read-list .hi { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ---- Recent trades table ---- */
+  .trades-section {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; margin-top: 12px;
+  }
+  .trades-header-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+  .trades-title-group { display: flex; align-items: center; gap: 10px; }
+  .calendar-btn {
+    padding: 4px 10px; font-size: 11px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .trade-stats-bar { display: flex; gap: 12px; align-items: center; font-size: 11px; flex-wrap: wrap; }
+  .ts-mood { font-size: 16px; }
+  .ts-wins { color: var(--green); font-weight: 600; }
+  .ts-losses { color: var(--red); font-weight: 600; }
+  .ts-sep { color: var(--dim); }
+  .ts-winrate.good { color: var(--green); font-weight: 600; }
+  .ts-winrate.bad { color: var(--red); font-weight: 600; }
+  .ts-mood-text { color: var(--muted); font-size: 10px; }
+  .table-scroll { overflow-x: auto; }
+  .trades-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .trades-table th {
+    padding: 6px 8px; border-bottom: 1px solid var(--border);
+    color: var(--muted); font-weight: 600; text-transform: uppercase;
+    letter-spacing: .3px; font-size: 10px;
+  }
+  .trades-table th.left { text-align: left; }
+  .trades-table th.right { text-align: right; }
+  .trades-table td { padding: 6px 8px; border-bottom: 1px solid rgba(37,48,74,.4); }
+  .trades-table td.right { text-align: right; }
+  .trades-table td.mono { font-variant-numeric: tabular-nums; }
+  .trades-table tr.buy-row { background: rgba(34,197,94,.03); }
+  .trades-table tr.sell-row { background: rgba(239,68,68,.03); }
+  .trades-table tr.date-separator-row td {
+    font-size: 10px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .4px; padding: 8px 8px 3px; border-bottom: none;
+  }
+  .pair-name { font-weight: 600; }
+  .side-tag { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; }
+  .side-tag.buy { background: rgba(34,197,94,.18); color: var(--green); }
+  .side-tag.sell { background: rgba(239,68,68,.18); color: var(--red); }
+  .trade-arrow { color: var(--dim); margin: 0 4px; }
+  .result-breakdown { display: block; font-size: 9.5px; color: var(--dim); margin-top: 2px; }
+
+  @media (max-width: 640px) {
+    .trades-table .hide-sm { display: none; }
+    .trades-table th, .trades-table td { padding: 5px 5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Engine tab -->
+  <div class="engine-tab">
+    <span class="engine-dot"></span>
+    <span class="engine-name">Momentum Rotation</span>
+    <span class="engine-tag">HOLDING</span>
+    <span class="engine-alloc">$3,956 allocated</span>
+    <div class="wa-toggle-group" title="Wall-aware trail stop — hug qualifying bid walls instead of a flat 2% trail">
+      <span class="wa-label">Wall-aware trail</span>
+      <div class="wa-switch on" id="wa-switch"><div class="knob"></div></div>
+    </div>
+    <span class="engine-version">v: 4c6996a</span>
+    <button class="engine-btn">Export DB</button>
+    <button class="engine-btn">Backup</button>
+    <button class="engine-btn">Reset Data</button>
+  </div>
+
+  <!-- Hero bar -->
+  <div class="hero-bar">
+    <div class="hero-item">
+      <span class="hero-label">Total</span>
+      <span class="hero-value">$4,125.35</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">Cash</span>
+      <span class="hero-value cash-val">$0.00</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">Positions</span>
+      <span class="hero-value positions-val">$4,125.35</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">P&L (+6.4%)</span>
+      <span class="hero-value pos">+$249.80</span>
+      <span class="hero-pnl-fees">
+        <span class="pnl-detail">Fees -$12.84</span>
+        <span class="pnl-detail pos">Price +$262.64</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- Status banner -->
+  <div class="status-banner">
+    <span class="status-dot"></span>
+    <span class="status-text">Holding FARTCOIN — wall-aware trail hugging $12.5k bid wall</span>
+    <span class="regime-badge">BULL</span>
+    <span class="hold-time">In position 5h</span>
+    <span class="ws-badge">WS ● <span id="ws-ticks">287</span> ticks</span>
+    <span class="poll-timer">refresh 42s</span>
+  </div>
+
+  <!-- Equity + Activity row -->
+  <div class="equity-activity-row">
+    <div class="equity-col">
+      <div class="chart-header">
+        <span class="section-header">Portfolio Equity</span>
+        <div class="chart-range-btns">
+          <button class="range-btn">1h</button>
+          <button class="range-btn active">24h</button>
+          <button class="range-btn">7d</button>
+          <button class="range-btn">30d</button>
+          <button class="range-btn">All</button>
+        </div>
+      </div>
+      <div class="chart-slot">
+        <svg viewBox="0 0 440 180" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="eqg" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- grid -->
+          <g stroke="#2d3148" stroke-width="0.5">
+            <line x1="40" y1="10"  x2="440" y2="10"/>
+            <line x1="40" y1="45"  x2="440" y2="45"/>
+            <line x1="40" y1="80"  x2="440" y2="80"/>
+            <line x1="40" y1="115" x2="440" y2="115"/>
+            <line x1="40" y1="150" x2="440" y2="150"/>
+            <line x1="40"  y1="10" x2="40"  y2="150"/>
+            <line x1="120" y1="10" x2="120" y2="150"/>
+            <line x1="200" y1="10" x2="200" y2="150"/>
+            <line x1="280" y1="10" x2="280" y2="150"/>
+            <line x1="360" y1="10" x2="360" y2="150"/>
+            <line x1="440" y1="10" x2="440" y2="150"/>
+          </g>
+          <!-- y-axis labels -->
+          <g fill="#8b8fa3" font-size="8" font-family="ui-monospace,monospace" text-anchor="end">
+            <text x="36" y="13">$4,150</text>
+            <text x="36" y="48">$4,080</text>
+            <text x="36" y="83">$4,010</text>
+            <text x="36" y="118">$3,940</text>
+            <text x="36" y="153">$3,870</text>
+          </g>
+          <!-- x-axis labels -->
+          <g fill="#8b8fa3" font-size="8" font-family="ui-monospace,monospace" text-anchor="middle">
+            <text x="40"  y="168">Apr 16, 2p</text>
+            <text x="120" y="168">6p</text>
+            <text x="200" y="168">10p</text>
+            <text x="280" y="168">2a</text>
+            <text x="360" y="168">6a</text>
+            <text x="432" y="168">Now</text>
+          </g>
+          <!-- starting balance dashed ref line (at $3,875.55) -->
+          <line x1="40" y1="147" x2="440" y2="147" stroke="rgba(139,143,163,0.4)" stroke-width="1" stroke-dasharray="6 4"/>
+          <!-- equity area + line (smooth via bezier) -->
+          <path d="M40,145 C80,143 100,141 120,135 C150,130 170,128 200,120 C230,115 250,110 280,98 C310,88 330,75 360,60 C390,48 410,32 440,22 L440,150 L40,150 Z"
+                fill="url(#eqg)"/>
+          <path d="M40,145 C80,143 100,141 120,135 C150,130 170,128 200,120 C230,115 250,110 280,98 C310,88 330,75 360,60 C390,48 410,32 440,22"
+                fill="none" stroke="#a78bfa" stroke-width="2"/>
+        </svg>
+      </div>
+      <div class="equity-substats">
+        <span>Trades 47</span>
+        <span>Scroll to zoom · Drag to pan</span>
+      </div>
+    </div>
+    <div class="activity-col">
+      <div class="section-header">What's Happening <span style="color:var(--dim);font-weight:400;margin-left:6px">7</span></div>
+      <div class="event-list">
+        <div class="log-entry"><span class="log-time">14:28</span><span class="log-dot info"></span><span>Wall anchor shifted to $0.2287 ($12.5k wall, 19s old)</span></div>
+        <div class="log-entry"><span class="log-time">14:26</span><span class="log-dot info"></span><span>Progressive lock engaged at +6.0% peak</span></div>
+        <div class="log-entry"><span class="log-time">13:55</span><span class="log-dot buy"></span><span>Bought FARTCOIN at $0.2172</span></div>
+        <div class="log-entry"><span class="log-time">13:54</span><span class="log-dot info"></span><span>Entry gates passed — accel 24.7%, quality ok</span></div>
+        <div class="log-entry"><span class="log-time">13:00</span><span class="log-dot sell"></span><span>Sold PYTH +$87 WIN</span></div>
+        <div class="log-entry"><span class="log-time">11:10</span><span class="log-dot info"></span><span>BTC regime flip: bullish confirmed</span></div>
+        <div class="log-entry"><span class="log-time">09:45</span><span class="log-dot info"></span><span>Scanner eval: 412 pairs</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main row: Holdings+Strategy | L2 Ladder | Accel Scanner -->
+  <div class="main-row">
+
+    <!-- Left: Holdings + wall-aware blocks + Strategy + Would Sell/Buy -->
+    <div class="hold-strat-col">
+      <div class="section-label">Holdings</div>
+
+      <div class="compact-holding">
+        <div class="ch-row">
+          <div class="ch-header">
+            <span class="ch-coin">FARTCOIN</span>
+            <span class="ch-layer progressive">Progressive lock (2.0%)</span>
+            <span class="ch-wa-badge wall" id="wa-src-badge">Wall-hugging</span>
+          </div>
+          <div class="ch-stats">
+            <div class="ch-stat"><span class="ch-stat-lbl">Entry</span><span class="ch-stat-val dim">$0.217200</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">Now</span><span class="ch-stat-val" id="now-val">$0.231200</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">Stop</span><span class="ch-stat-val amber" id="stop-val">$0.228471</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">Dist</span><span class="ch-stat-val dim" id="dist-val">1.18%</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">If Stop</span><span class="ch-stat-val green" id="ifstop-val">+$201 (5.2%)</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">Hold</span><span class="ch-stat-val dim">5h/72h</span></div>
+            <div class="ch-stat"><span class="ch-stat-lbl">Accel</span><span class="ch-stat-val purple">12.3%</span></div>
+          </div>
+          <div class="ch-pnl-row">
+            <div class="ch-pnl-group">
+              <span class="ch-pnl-val" id="equity-val">$4,125.35</span>
+              <span class="ch-pnl-pct" id="pnl-val">+$249.80 (6.4%)</span>
+            </div>
+            <button class="ch-sell">Sell</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wall-aware compare block -->
+      <div class="compare">
+        <div class="compare-head">
+          <span class="compare-title">Price-only vs Wall-aware</span>
+          <span class="compare-active wall-on" id="compare-active">Wall-aware active</span>
+        </div>
+        <div class="compare-body">
+          <div class="compare-cell dormant" id="cell-price">
+            <div class="compare-cell-hdr">Price-only (fallback)</div>
+            <div class="compare-price" id="price-stop">$0.227115</div>
+            <div class="compare-pct" id="price-dist">2.00% below peak</div>
+            <div class="compare-profit"><span class="dim">Profit locked: </span><span class="val" id="price-profit">+$176.92 (4.56%)</span></div>
+          </div>
+          <div class="compare-cell active" id="cell-wall">
+            <div class="compare-cell-hdr">Wall-aware (active)</div>
+            <div class="compare-price" id="wall-stop">$0.228471</div>
+            <div class="compare-pct" id="wall-dist">1.41% below peak · hugs $12.5k wall</div>
+            <div class="compare-profit"><span class="dim">Profit locked: </span><span class="val" id="wall-profit">+$201.12 (5.19%)</span></div>
+          </div>
+        </div>
+        <div class="compare-delta" id="compare-delta">
+          Wall-aware locks <b>+$24.20 more</b> than price-only <span class="dim">(if price drops to stop)</span>
+        </div>
+      </div>
+
+      <!-- Wall-aware config + log side by side -->
+      <div class="cfg-log-row">
+        <div class="cfg" id="cfg">
+          <div class="cfg-head">Guardrails</div>
+          <div class="cfg-body">
+            <div class="cfg-row"><span class="cfg-lbl">Min wall size vs position</span><span class="cfg-val">≥ 3×</span></div>
+            <div class="cfg-row"><span class="cfg-lbl">Min wall persistence</span><span class="cfg-val">≥ 10s</span></div>
+            <div class="cfg-row"><span class="cfg-lbl">Max dist from peak</span><span class="cfg-val">≤ 1.5%</span></div>
+            <div class="cfg-row"><span class="cfg-lbl">Fallback</span><span class="cfg-val">Progressive 2.0%</span></div>
+          </div>
+        </div>
+        <div class="log-card">
+          <div class="log-head">Stop decision log</div>
+          <div class="log-body" id="log-body"></div>
+        </div>
+      </div>
+
+      <!-- Strategy chips -->
+      <div class="section-label">Strategy</div>
+      <div class="compact-strategy">
+        <div class="cs-chip"><span class="cs-label">Regime</span><span class="cs-value pos">Bull</span><span class="cs-detail">BTC +4.2% vs SMA</span></div>
+        <div class="cs-chip"><span class="cs-label">Rebalance</span><span class="cs-value">18h</span></div>
+        <div class="cs-chip"><span class="cs-label">Position</span><span class="cs-value">1 of 1 open</span></div>
+      </div>
+
+      <!-- Would Sell If -->
+      <div class="section-label">Would Sell If</div>
+      <div class="compact-exits">
+        <div class="ce-tag ce-amber">
+          <span class="ce-label">Trail stop (wall)</span>
+          <div class="ce-bar"><div class="ce-fill low" style="width:15%"></div></div>
+          <span class="ce-val dim" id="ce-trail-val">$0.228471 · 1.18% away</span>
+        </div>
+        <div class="ce-tag ce-purple">
+          <span class="ce-label">Accel fades</span>
+          <div class="ce-bar"><div class="ce-fill low" style="width:30%"></div></div>
+          <span class="ce-val dim">12.3% (>5% min)</span>
+        </div>
+        <div class="ce-tag ce-red">
+          <span class="ce-label">Max hold</span>
+          <div class="ce-bar"><div class="ce-fill low" style="width:7%"></div></div>
+          <span class="ce-val dim">5h / 72h</span>
+        </div>
+        <div class="ce-tag ce-blue">
+          <span class="ce-label">Better coin found</span>
+          <div class="ce-bar"><div class="ce-fill low" style="width:0%"></div></div>
+          <span class="ce-val safe">none beats</span>
+        </div>
+      </div>
+
+      <!-- Would Buy If -->
+      <div class="section-label">Would Buy If</div>
+      <div class="compact-buy">
+        <div class="cb-tag"><span class="cb-text green">✓ Already holding</span></div>
+        <div class="cb-tag"><span class="cb-text">• Cash available</span></div>
+        <div class="cb-tag"><span class="cb-text">• Top accel &gt; 20%</span></div>
+      </div>
+    </div>
+
+    <!-- Middle: L2 ladder -->
+    <div class="l2-card">
+      <div class="l2-head">
+        <span class="l2-title">Order book · FARTCOIN</span>
+        <span class="l2-status">
+          <span class="l2-dot off" id="l2-dot"></span>
+          <span id="l2-status-text">connecting…</span>
+          <span class="l2-age" id="l2-age"></span>
+        </span>
+      </div>
+      <div class="l2-body" id="l2-body"></div>
+      <div class="l2-signals">
+        <span class="l2-sig-lbl">Spread</span><span class="l2-sig-val" id="sig-spread">—</span>
+        <span class="l2-sig-lbl">Bid imbalance</span><span class="l2-sig-val" id="sig-imb">—</span>
+        <span class="l2-sig-lbl">Bids price→stop</span><span class="l2-sig-val" id="sig-stop-depth">—</span>
+        <span class="l2-sig-lbl">Anchor wall</span><span class="l2-sig-val" id="sig-wall">—</span>
+      </div>
+      <div class="l2-read">
+        <div class="l2-read-head"><span class="l2-read-title">What the book is saying</span><span class="l2-verdict" id="verdict">—</span></div>
+        <ul class="l2-read-list" id="read-list"></ul>
+      </div>
+    </div>
+
+    <!-- Right: Acceleration Scanner -->
+    <div class="accel-col">
+      <div class="section-header">
+        Acceleration Scanner
+        <span class="scanner-meta">412 scanned · top 4 accelerating</span>
+        <span class="scanner-freshness">last eval 3m ago</span>
+      </div>
+      <div class="accel-cards">
+        <div class="accel-card qualifying-card">
+          <div class="ac-top">
+            <span class="ac-coin">FARTCOIN</span>
+            <span class="ac-badge holding">HOLDING</span>
+            <span class="ac-price">$0.2312</span>
+          </div>
+          <div class="ac-desc">Already in position — monitoring for exit.</div>
+          <div class="ac-bar-track"><div class="ac-bar-fill qualifying" style="width:62%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+24.7%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card qualifying-card">
+          <div class="ac-top">
+            <span class="ac-coin">PEPE</span>
+            <span class="ac-badge qual">READY</span>
+            <span class="ac-price">$0.00001428</span>
+          </div>
+          <div class="ac-desc">Uptrend accelerating — qualifies for entry.</div>
+          <div class="ac-gates-label">Candle Quality</div>
+          <div class="ac-gates">
+            <span class="ac-gate pass">✓ 4/6 green</span>
+            <span class="ac-gate pass">✓ body 0.48</span>
+            <span class="ac-gate pass">✓ 1.9x ATR</span>
+          </div>
+          <div class="ac-gates-label">Structure</div>
+          <div class="ac-gates">
+            <span class="ac-gate pass">✓ 12.3% ATH</span>
+            <span class="ac-gate pass">✓ 18h age</span>
+            <span class="ac-gate pass">✓ 14/100 stuck</span>
+          </div>
+          <div class="ac-bar-track"><div class="ac-bar-fill qualifying" style="width:58%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+23.1%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card qualifying-card quality-blocked">
+          <div class="ac-top">
+            <span class="ac-coin">WIF</span>
+            <span class="ac-badge blocked">BLOCKED</span>
+            <span class="ac-price">$1.8420</span>
+          </div>
+          <div class="ac-desc">Entry blocked — poor short-term candle action.</div>
+          <div class="ac-gates-label">Candle Quality</div>
+          <div class="ac-gates">
+            <span class="ac-gate fail">✗ 1/6 green</span>
+            <span class="ac-gate fail">✗ body 0.18</span>
+            <span class="ac-gate pass">✓ 2.4x ATR</span>
+          </div>
+          <div class="ac-bar-track"><div class="ac-bar-fill blocked-fill" style="width:54%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+21.5%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card">
+          <div class="ac-top">
+            <span class="ac-coin">SEI</span>
+            <span class="ac-badge below">BELOW 20%</span>
+            <span class="ac-price">$0.4821</span>
+          </div>
+          <div class="ac-desc">Momentum building but below the 20% re-entry threshold.</div>
+          <div class="ac-bar-track"><div class="ac-bar-fill" style="width:45%"></div></div>
+          <div class="ac-stats"><span class="ac-accel">+18.0%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+      </div>
+      <div class="accel-note qualifying-note">1 coin ready (PEPE) — engine will rotate if its accel beats current holding at next rebalance.</div>
+    </div>
+  </div>
+
+  <!-- Recent trades table -->
+  <div class="trades-section">
+    <div class="trades-header-row">
+      <div class="trades-title-group">
+        <div class="section-header">Recent Trades</div>
+        <button class="calendar-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>Calendar
+        </button>
+      </div>
+      <div class="trade-stats-bar">
+        <span class="ts-mood">😊</span>
+        <span class="ts-record"><span class="ts-wins">28W</span><span class="ts-sep">-</span><span class="ts-losses">19L</span></span>
+        <span class="ts-winrate good">60% win rate</span>
+        <span class="ts-mood-text">on a hot streak</span>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="trades-table">
+        <thead>
+          <tr>
+            <th class="left">Date</th>
+            <th class="left">Pair</th>
+            <th class="right">Price</th>
+            <th class="right">Spent / Received</th>
+            <th class="right">Result</th>
+            <th class="left hide-sm">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="date-separator-row"><td colspan="6">Apr 17, 2026</td></tr>
+          <tr class="buy-row">
+            <td class="left mono">13:55</td>
+            <td class="left"><span class="pair-name">FARTCOIN</span><span class="side-tag buy">BUY</span></td>
+            <td class="right mono">$0.21720</td>
+            <td class="right mono" style="color:#f87171">-$3,876.00</td>
+            <td class="right mono" style="color:var(--muted)">Open</td>
+            <td class="left hide-sm" style="color:var(--muted)">accel +24.7%</td>
+          </tr>
+          <tr class="date-separator-row"><td colspan="6">Apr 17, 2026</td></tr>
+          <tr class="sell-row">
+            <td class="left mono">13:00</td>
+            <td class="left"><span class="pair-name">PYTH</span><span class="side-tag sell">SELL</span></td>
+            <td class="right mono">$0.4120 <span class="trade-arrow">→</span> $0.4380</td>
+            <td class="right mono" style="color:#4ade80">+$4,042.00</td>
+            <td class="right mono"><span style="color:#4ade80;font-weight:600">WIN +$87.20</span><span class="result-breakdown">price +$96 / fees -$8.80</span></td>
+            <td class="left hide-sm" style="color:var(--muted)">trail stop hit</td>
+          </tr>
+          <tr class="date-separator-row"><td colspan="6">Apr 16, 2026</td></tr>
+          <tr class="buy-row">
+            <td class="left mono">22:10</td>
+            <td class="left"><span class="pair-name">PYTH</span><span class="side-tag buy">BUY</span></td>
+            <td class="right mono">$0.41200</td>
+            <td class="right mono" style="color:#f87171">-$3,955.00</td>
+            <td class="right mono" style="color:var(--muted)">Closed</td>
+            <td class="left hide-sm" style="color:var(--muted)">accel +22.8%</td>
+          </tr>
+          <tr class="sell-row">
+            <td class="left mono">17:40</td>
+            <td class="left"><span class="pair-name">POPCAT</span><span class="side-tag sell">SELL</span></td>
+            <td class="right mono">$0.9200 <span class="trade-arrow">→</span> $0.8740</td>
+            <td class="right mono" style="color:#4ade80">+$3,818.00</td>
+            <td class="right mono"><span style="color:#f87171;font-weight:600">LOSS -$54.30</span><span class="result-breakdown">price -$46 / fees -$8.30</span></td>
+            <td class="left hide-sm" style="color:var(--muted)">trail stop hit</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- position (mock) ---
+const HOLDING = {
+  pair: "FARTCOIN-USD",
+  entry: 0.2172,
+  shares: 17843.2,
+  peak: 0.23175,
+  progressiveTrail: 0.02,
+};
+HOLDING.fallbackStop = HOLDING.peak * (1 - HOLDING.progressiveTrail);
+
+const WALL_RULES = {
+  minSizeVsPosition: 3.0,
+  minPersistenceMs: 10000,
+  maxDistFromPeakPct: 1.5,
+  stopOffsetPct: 0.001,
+};
+
+// --- state ---
+let wallAware = true;
+let bids = new Map(), asks = new Map();
+let bidUpdates = new Map(), askUpdates = new Map();
+let ws = null, lastEventMs = 0;
+let currentAnchor = null;
+let logs = [];
+
+const fmtUsd = v => v >= 1000 ? `$${Math.round(v).toLocaleString()}` : `$${v.toFixed(2)}`;
+const fmtPrice = p => p >= 1 ? `$${p.toFixed(4)}` : `$${p.toFixed(6)}`;
+const fmtAge = ms => { if (ms == null) return ''; const d = Date.now() - ms;
+  if (d < 1000) return 'now'; if (d < 60000) return `${Math.round(d/1000)}s`; return `${Math.round(d/60000)}m`; };
+function logEvent(tag, desc, val) {
+  const t = new Date();
+  logs.unshift({ ts: `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}`, tag, desc, val });
+  if (logs.length > 30) logs.pop();
+}
+
+function subscribe(pair) {
+  if (ws) try { ws.close(); } catch(e){}
+  bids = new Map(); asks = new Map(); bidUpdates = new Map(); askUpdates = new Map();
+  document.getElementById('l2-dot').classList.add('off');
+  document.getElementById('l2-status-text').textContent = 'connecting…';
+  ws = new WebSocket('wss://advanced-trade-ws.coinbase.com');
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type:'subscribe', product_ids:[pair], channel:'level2'}));
+    document.getElementById('l2-dot').classList.remove('off');
+    document.getElementById('l2-status-text').textContent = 'live';
+  };
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+    if (m.channel !== 'l2_data') return;
+    const nowMs = Date.now();
+    for (const event of m.events || []) {
+      for (const u of event.updates || []) {
+        const side = u.side, price = +u.price_level, qty = +u.new_quantity;
+        const book = side === 'bid' ? bids : asks;
+        const upd = side === 'bid' ? bidUpdates : askUpdates;
+        if (!qty) { book.delete(price); upd.delete(price); }
+        else { if (!book.has(price)) upd.set(price, nowMs); book.set(price, qty); }
+      }
+    }
+    lastEventMs = nowMs;
+  };
+  ws.onclose = () => {
+    document.getElementById('l2-dot').classList.add('off');
+    document.getElementById('l2-status-text').textContent = 'disconnected';
+  };
+}
+const topN = (book, side, n) => [...book.entries()].sort((a,b) => side==='bid' ? b[0]-a[0] : a[0]-b[0]).slice(0, n);
+const bestBid = () => { let m=-Infinity; for (const p of bids.keys()) if (p>m) m=p; return m===-Infinity?null:m; };
+const bestAsk = () => { let m=Infinity; for (const p of asks.keys()) if (p<m) m=p; return m===Infinity?null:m; };
+
+function findWall(mid, peak, equity) {
+  const minPrice = peak - (peak * WALL_RULES.maxDistFromPeakPct/100);
+  let best = null;
+  for (const [price, size] of bids) {
+    if (price < minPrice || price > mid) continue;
+    const usd = size * price;
+    if (usd < equity * WALL_RULES.minSizeVsPosition) continue;
+    const fs = bidUpdates.get(price) || Date.now();
+    if (Date.now() - fs < WALL_RULES.minPersistenceMs) continue;
+    if (!best || usd > best.usd) best = { price, size, usd, firstSeenMs: fs };
+  }
+  return best;
+}
+
+function render() {
+  const bb = bestBid(), ba = bestAsk();
+  if (bb === null || ba === null) return;
+  const mid = (bb + ba) / 2;
+  const spreadBps = (ba - bb) / mid * 10000;
+  const equity = HOLDING.shares * mid;
+  const N = 11;
+  const topBids = topN(bids, 'bid', N);
+  const topAsks = topN(asks, 'ask', N).reverse();
+  const maxSize = Math.max(...topBids.map(([,s])=>s), ...topAsks.map(([,s])=>s), 1);
+  const sizes = [...topBids.map(([,s])=>s), ...topAsks.map(([,s])=>s)].sort((a,b)=>a-b);
+  const wallThresh = (sizes[Math.floor(sizes.length/2)] || 0) * 3;
+
+  const newAnchor = wallAware ? findWall(mid, HOLDING.peak, equity) : null;
+  const prev = currentAnchor ? currentAnchor.price.toFixed(6) : null;
+  const curr = newAnchor ? newAnchor.price.toFixed(6) : null;
+  if (prev !== curr) {
+    if (newAnchor) logEvent('wall', `<span class="hi">Wall anchor</span> at ${fmtPrice(newAnchor.price)} · <span class="dim">${fmtUsd(newAnchor.usd)}, ${((Date.now()-newAnchor.firstSeenMs)/1000).toFixed(0)}s old</span>`, fmtPrice(newAnchor.price * (1 - WALL_RULES.stopOffsetPct)));
+    else if (currentAnchor) logEvent('pulled', `<span class="hi">Wall pulled</span> at ${fmtPrice(currentAnchor.price)} · <span class="dim">reverting to progressive 2.0%</span>`, fmtPrice(HOLDING.fallbackStop));
+    currentAnchor = newAnchor;
+  }
+
+  const priceStop = HOLDING.fallbackStop;
+  const wallStop = newAnchor ? newAnchor.price * (1 - WALL_RULES.stopOffsetPct) : null;
+  const activeStop = wallAware && wallStop !== null ? wallStop : priceStop;
+
+  // --- render ladder ---
+  const body = document.getElementById('l2-body');
+  body.innerHTML = '';
+  const renderNow = Date.now();
+  for (const [p, s] of topAsks) {
+    const row = document.createElement('div');
+    const u = askUpdates.get(p);
+    const fresh = u && renderNow - u < 1500 ? ' fresh' : '';
+    row.className = 'l2-row ask' + (s >= wallThresh ? ' wall' : '') + fresh;
+    row.innerHTML = `<span class="price">${fmtPrice(p)}</span>
+      <span class="bar" style="width:${Math.min(100,s/maxSize*100)}%"></span>
+      <span class="size">${fmtUsd(s*p)}</span>
+      <span class="age">${fmtAge(u)}</span>`;
+    body.appendChild(row);
+  }
+  const midDiv = document.createElement('div');
+  midDiv.className = 'l2-mid';
+  midDiv.innerHTML = `<span class="l2-mid-label">Mid</span><span class="l2-mid-val">${fmtPrice(mid)}</span><span class="l2-mid-spread">${spreadBps.toFixed(1)}bps</span>`;
+  body.appendChild(midDiv);
+  for (const [p, s] of topBids) {
+    const row = document.createElement('div');
+    const u = bidUpdates.get(p);
+    const fresh = u && renderNow - u < 1500 ? ' fresh' : '';
+    const isAnchor = newAnchor && Math.abs(p - newAnchor.price) < 1e-9;
+    row.className = 'l2-row bid' + (s >= wallThresh ? ' wall' : '') + fresh + (isAnchor ? ' stop-anchor' : '');
+    row.innerHTML = `<span class="age">${fmtAge(u)}</span>
+      <span class="size">${fmtUsd(s*p)}</span>
+      <span class="bar" style="width:${Math.min(100,s/maxSize*100)}%"></span>
+      <span class="price">${fmtPrice(p)}</span>`;
+    body.appendChild(row);
+  }
+
+  // --- holdings card ---
+  document.getElementById('now-val').textContent = fmtPrice(mid);
+  document.getElementById('equity-val').textContent = `$${equity.toFixed(2)}`;
+  const pnl = equity - HOLDING.shares * HOLDING.entry;
+  const pnlPct = (mid - HOLDING.entry) / HOLDING.entry * 100;
+  document.getElementById('pnl-val').textContent = `${pnl>=0?'+':''}$${pnl.toFixed(2)} (${pnlPct.toFixed(1)}%)`;
+  document.getElementById('stop-val').textContent = fmtPrice(activeStop);
+  const distPct = (mid - activeStop) / mid * 100;
+  document.getElementById('dist-val').textContent = `${distPct.toFixed(2)}%`;
+  const ifStop = HOLDING.shares * activeStop - HOLDING.shares * HOLDING.entry;
+  const ifStopPct = (activeStop - HOLDING.entry) / HOLDING.entry * 100;
+  document.getElementById('ifstop-val').textContent = `${ifStop>=0?'+':''}$${Math.round(ifStop)} (${ifStopPct.toFixed(1)}%)`;
+
+  const srcBadge = document.getElementById('wa-src-badge');
+  if (wallAware && newAnchor) { srcBadge.className = 'ch-wa-badge wall'; srcBadge.textContent = 'Wall-hugging'; srcBadge.style.display = ''; }
+  else if (wallAware) { srcBadge.className = 'ch-wa-badge price'; srcBadge.textContent = 'No qualifying wall → price trail'; srcBadge.style.display = ''; }
+  else { srcBadge.style.display = 'none'; }
+
+  // --- compare block ---
+  const priceIf = HOLDING.shares * priceStop - HOLDING.shares * HOLDING.entry;
+  const priceIfPct = (priceStop - HOLDING.entry) / HOLDING.entry * 100;
+  document.getElementById('price-stop').textContent = fmtPrice(priceStop);
+  document.getElementById('price-dist').textContent = `${((HOLDING.peak - priceStop)/HOLDING.peak*100).toFixed(2)}% below peak`;
+  document.getElementById('price-profit').textContent = `+$${priceIf.toFixed(2)} (${priceIfPct.toFixed(2)}%)`;
+  if (wallStop !== null) {
+    const wIf = HOLDING.shares * wallStop - HOLDING.shares * HOLDING.entry;
+    const wIfPct = (wallStop - HOLDING.entry) / HOLDING.entry * 100;
+    document.getElementById('wall-stop').textContent = fmtPrice(wallStop);
+    document.getElementById('wall-dist').textContent = `${((HOLDING.peak - wallStop)/HOLDING.peak*100).toFixed(2)}% below peak · hugs ${fmtUsd(newAnchor.usd)} wall`;
+    document.getElementById('wall-profit').textContent = `+$${wIf.toFixed(2)} (${wIfPct.toFixed(2)}%)`;
+    document.getElementById('compare-delta').innerHTML = `Wall-aware locks <b>+$${(wIf - priceIf).toFixed(2)} more</b> than price-only <span class="dim">(if price drops to stop)</span>`;
+  } else {
+    document.getElementById('wall-stop').textContent = '—';
+    document.getElementById('wall-dist').textContent = 'No qualifying wall right now';
+    document.getElementById('wall-profit').textContent = '(falls back to price-only)';
+    document.getElementById('compare-delta').innerHTML = `<span class="dim">No qualifying wall — wall-aware falling back to price-only stop.</span>`;
+  }
+  const ca = document.getElementById('compare-active');
+  const cp = document.getElementById('cell-price'), cw = document.getElementById('cell-wall');
+  if (wallAware && wallStop !== null) {
+    ca.className = 'compare-active wall-on'; ca.textContent = 'Wall-aware active';
+    cp.classList.add('dormant'); cp.classList.remove('active');
+    cw.classList.add('active'); cw.classList.remove('dormant');
+  } else {
+    ca.className = 'compare-active price-on'; ca.textContent = wallAware ? 'Price-only (no wall)' : 'Price-only (toggle off)';
+    cp.classList.add('active'); cp.classList.remove('dormant');
+    cw.classList.add('dormant'); cw.classList.remove('active');
+  }
+  document.getElementById('cfg').classList.toggle('dormant', !wallAware);
+  // Update Would Sell If trail stop row
+  document.getElementById('ce-trail-val').textContent = `${fmtPrice(activeStop)} · ${distPct.toFixed(2)}% away`;
+
+  // --- signals ---
+  document.getElementById('sig-spread').textContent = `${spreadBps.toFixed(1)} bps`;
+  const bid01 = [...bids].filter(([p])=> (mid-p)/mid*100 < 1 && p < mid).reduce((a,[p,s])=>a+s*p,0);
+  const ask01 = [...asks].filter(([p])=> (p-mid)/mid*100 < 1 && p > mid).reduce((a,[p,s])=>a+s*p,0);
+  const imb = (bid01+ask01) ? bid01/(bid01+ask01)*100 : 50;
+  const imbEl = document.getElementById('sig-imb');
+  imbEl.textContent = `${imb.toFixed(0)}% buy`;
+  imbEl.className = 'l2-sig-val ' + (imb>58?'good':imb<42?'bad':'warn');
+  const stopDepth = [...bids].filter(([p]) => p <= mid && p >= activeStop).reduce((a,[p,s]) => a+s*p, 0);
+  const stopEl = document.getElementById('sig-stop-depth');
+  stopEl.textContent = fmtUsd(stopDepth);
+  stopEl.className = 'l2-sig-val ' + (stopDepth > equity*5 ? 'good' : stopDepth > equity ? 'warn' : 'bad');
+  const wEl = document.getElementById('sig-wall');
+  if (newAnchor) { wEl.textContent = `${fmtUsd(newAnchor.usd)} @ ${fmtPrice(newAnchor.price)}`; wEl.className = 'l2-sig-val good'; }
+  else { wEl.textContent = '—'; wEl.className = 'l2-sig-val'; }
+
+  // --- interpretation ---
+  renderInterpretation({imb, spreadBps, stopDepth, wall: newAnchor, equity});
+  renderLog();
+}
+
+function renderInterpretation(ctx) {
+  const { imb, spreadBps, stopDepth, wall, equity } = ctx;
+  const lines = [], scores = [];
+  if (imb >= 60) { lines.push({ic:'ok', html:`<span class="hi">Buyers in control</span> — ${imb.toFixed(0)}% bid near mid.`}); scores.push(1); }
+  else if (imb <= 40) { lines.push({ic:'bad', html:`<span class="hi">Sellers heavy</span> — ${imb.toFixed(0)}% bid.`}); scores.push(-1); }
+  else { lines.push({ic:'warn', html:`<span class="hi">Balanced</span> — ${imb.toFixed(0)}% buy.`}); scores.push(0); }
+  if (wall) {
+    if (wall.usd > equity*3) { lines.push({ic:'ok', html:`<span class="hi">Strong support</span> — ${fmtUsd(wall.usd)} (${(wall.usd/equity).toFixed(1)}× position).`}); scores.push(1); }
+    else { lines.push({ic:'warn', html:`<span class="hi">Moderate wall</span> — ${fmtUsd(wall.usd)}.`}); scores.push(0); }
+  } else { lines.push({ic:'warn', html:`<span class="hi">No qualifying wall</span> — using progressive 2.0%.`}); scores.push(0); }
+  if (stopDepth > equity*5) { lines.push({ic:'ok', html:`<span class="hi">Stop cushioned</span> — ${fmtUsd(stopDepth)}.`}); scores.push(1); }
+  else if (stopDepth > equity) { lines.push({ic:'warn', html:`<span class="hi">Thin cushion</span> — ${fmtUsd(stopDepth)}.`}); scores.push(-1); }
+  else { lines.push({ic:'bad', html:`<span class="hi">Almost no cushion</span>.`}); scores.push(-1); }
+  if (spreadBps <= 5) lines.push({ic:'ok', html:`<span class="hi">Tight spread</span> (${spreadBps.toFixed(1)} bps).`});
+  else if (spreadBps <= 20) lines.push({ic:'warn', html:`<span class="hi">Moderate spread</span> (${spreadBps.toFixed(1)} bps).`});
+  else lines.push({ic:'bad', html:`<span class="hi">Wide spread</span> (${spreadBps.toFixed(1)} bps).`});
+  document.getElementById('read-list').innerHTML = lines.map(l => `<li><span class="ic ${l.ic}">${l.ic==='ok'?'●':l.ic==='warn'?'▲':'✕'}</span><span>${l.html}</span></li>`).join('');
+  const total = scores.reduce((a,b)=>a+b,0);
+  const v = total>=2?'hold':total<=-2?'risk':'watch';
+  const vEl = document.getElementById('verdict');
+  vEl.className = 'l2-verdict ' + v;
+  vEl.textContent = v==='hold'?'Book supports holding':v==='risk'?'Risk rising':'Mixed — watch';
+}
+
+function renderLog() {
+  const el = document.getElementById('log-body');
+  if (!logs.length) { el.innerHTML = '<div class="log-row" style="color:var(--dim);grid-template-columns:1fr;">Waiting for wall events…</div>'; return; }
+  el.innerHTML = logs.map(l => `<div class="log-row"><span class="log-ts">${l.ts}</span><span class="log-desc"><span class="log-tag ${l.tag}">${l.tag}</span>${l.desc}</span><span class="log-val">→ ${l.val}</span></div>`).join('');
+}
+
+// --- toggle ---
+function setWallAware(on) {
+  wallAware = on;
+  const s = document.getElementById('wa-switch');
+  s.classList.toggle('on', on);
+  logEvent(on?'tick':'tick', on ? '<span class="hi">Wall-aware enabled</span> · stop will hug qualifying walls' : '<span class="hi">Wall-aware disabled</span> · stop reverts to progressive 2.0%', on ? 'searching…' : fmtPrice(HOLDING.fallbackStop));
+  if (!on) currentAnchor = null;
+}
+document.getElementById('wa-switch').addEventListener('click', () => setWallAware(!wallAware));
+
+// --- header age ticker ---
+setInterval(() => {
+  const a = document.getElementById('l2-age');
+  if (!lastEventMs) { a.textContent = ''; return; }
+  const ms = Date.now() - lastEventMs;
+  a.textContent = ms < 1000 ? '· 0.0s' : ms < 60000 ? `· ${(ms/1000).toFixed(1)}s` : `· ${Math.round(ms/60000)}m`;
+}, 250);
+
+logEvent('tick', '<span class="hi">Wall-aware enabled</span> on start', 'searching…');
+subscribe('FARTCOIN-USD');
+setInterval(render, 400);
+</script>
+</body>
+</html>

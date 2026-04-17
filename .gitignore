@@ -17,12 +17,23 @@ config/active_pairs.yaml
 data/candles.db
 data/candles_zima.db
 data/cryptobot.db
+data/market_tape.db
+data/market_tape.db-shm
+data/market_tape.db-wal
+data/ws_ticks.db
+data/ws_ticks.db-shm
+data/ws_ticks.db-wal
 data/*.json
 data/.totp_secret
 data/.flask_secret
 
 # Logs
 logs/
+data/*.log
+
+# Throwaway screenshots
+/*.png
+/mockup_*.png
 
 # IDE / tools
 .claude/

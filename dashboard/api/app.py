@@ -1979,11 +1979,40 @@ def api_backup_now():
 
 @app.route("/api/download-db")
 def api_download_db():
-    """Download the SQLite database file."""
-    db = os.path.abspath(DB_PATH)
-    if not os.path.isfile(db):
-        return jsonify({"status": "error", "message": "Database not found"}), 404
-    return send_file(db, as_attachment=True, download_name="candles.db")
+    """Download the SQLite database bundle.
+
+    Zips candles.db + market_tape.db (if present) into a single archive so
+    handoffs carry all datasets needed for analysis. Falls back to a plain
+    candles.db download if market_tape.db hasn't been created yet.
+    """
+    import io
+    import zipfile
+
+    data_dir = os.path.dirname(DB_PATH)
+    candles = os.path.abspath(DB_PATH)
+    tape = os.path.abspath(os.path.join(data_dir, "market_tape.db"))
+    ws_ticks = os.path.abspath(os.path.join(data_dir, "ws_ticks.db"))
+
+    if not os.path.isfile(candles):
+        return jsonify({"status": "error", "message": "candles.db not found"}), 404
+
+    # If only candles exists, preserve the original single-file response.
+    extras = [p for p in (tape, ws_ticks) if os.path.isfile(p)]
+    if not extras:
+        return send_file(candles, as_attachment=True, download_name="candles.db")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(candles, arcname="candles.db")
+        for p in extras:
+            z.write(p, arcname=os.path.basename(p))
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="cryptobot_data.zip",
+        mimetype="application/zip",
+    )
 
 
 @app.route("/api/momentum/reset", methods=["POST"])

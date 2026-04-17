@@ -188,6 +188,10 @@ class SimRunner:
         # WebSocket tick recorder for stop comparison analysis
         self._ws_recorder = WSRecorder()
 
+        # Market tape recorder — separate DB, own thread, fail-silent, kill switch.
+        # Lazy-init in run() so we can read bot_config.yaml; None until then.
+        self._market_tape = None
+
     def add_pair(
         self,
         name: str,
@@ -799,6 +803,29 @@ class SimRunner:
             except Exception as e:
                 logger.error(f"[MOMENTUM] Failed to log gates: {e}")
 
+        # Persist BTC regime snapshot for later regime-filter analysis.
+        try:
+            gate_rows = getattr(mom, "_gate_log", None) or []
+            passes = sum(1 for g in gate_rows if g.get("result") == "pass")
+            fails = len(gate_rows) - passes
+            closes = list(getattr(mom, "_btc_closes", []) or [])
+            last = closes[-1] if closes else 0.0
+            ret_4h = ((last / closes[-5] - 1) * 100) if len(closes) >= 5 and closes[-5] else None
+            ret_24h = ((last / closes[-25] - 1) * 100) if len(closes) >= 25 and closes[-25] else None
+            self.trade_logger.log_regime_snapshot({
+                "btc_price": float(mom.btc_price or 0.0),
+                "btc_ma": float(mom.btc_ma or 0.0),
+                "regime_state": getattr(mom, "_regime_state", "unknown"),
+                "regime_bullish": bool(mom.regime_bullish),
+                "btc_4h_return": ret_4h,
+                "btc_24h_return": ret_24h,
+                "scans_pass": passes,
+                "scans_fail": fails,
+                "holdings_count": len(mom.holdings),
+            })
+        except Exception as e:
+            logger.error(f"[MOMENTUM] Failed to log regime snapshot: {e}")
+
         # Reset per-poll compute flag so next cycle's info_scan runs fresh
         mom._compute_ran_this_tick = False
 
@@ -1085,6 +1112,26 @@ class SimRunner:
         finally:
             conn.close()
 
+    def _drain_wall_decisions(self):
+        """Persist any wall decisions queued by the engine since last drain.
+
+        Safe to call at 1Hz: typically empty (decisions only fire on anchor
+        changes). Runs inside the book writer thread — never blocks the
+        momentum engine thread.
+        """
+        mom = self.momentum_engine
+        if mom is None:
+            return
+        pending = getattr(mom, "_wall_decisions_unwritten", None)
+        if not pending:
+            return
+        try:
+            batch = pending[:]
+            mom._wall_decisions_unwritten = []
+            self.trade_logger.log_wall_decisions(batch)
+        except Exception as e:
+            logger.error("Failed to persist wall decisions: %s", e)
+
     def _book_writer_loop(self):
         """Continuously write the live L2 book snapshot to disk for the dashboard.
 
@@ -1114,6 +1161,9 @@ class SimRunner:
                 mid = snapshot.get("mid")
                 if mom is not None and pair and mid:
                     mom.refresh_live_state({pair: mid})
+
+                # Drain any wall decisions the engine produced this tick.
+                self._drain_wall_decisions()
 
                 # Write status.json on the same tick so the dashboard sees the
                 # live values without waiting for the next 60s poll.
@@ -1158,6 +1208,28 @@ class SimRunner:
         book_writer = threading.Thread(target=self._book_writer_loop, daemon=True)
         book_writer.start()
 
+        # Start market tape recorder (isolated: own DB, own thread, fail-silent).
+        try:
+            import yaml
+            with open("config/bot_config.yaml") as _f:
+                _tape_cfg = (yaml.safe_load(_f) or {}).get("market_tape", {}) or {}
+            if _tape_cfg.get("enabled", True):
+                from exchange.market_tape import MarketTapeRecorder
+                self._market_tape = MarketTapeRecorder(
+                    pairs=_tape_cfg.get("pairs", []) or [],
+                    l2_snapshot_interval_sec=_tape_cfg.get("l2_snapshot_interval_sec", 5),
+                    l2_snapshot_depth=_tape_cfg.get("l2_snapshot_depth", 50),
+                    matches_batch_size=_tape_cfg.get("matches_batch_size", 100),
+                    matches_flush_interval_sec=_tape_cfg.get("matches_flush_interval_sec", 5),
+                )
+                self._market_tape.start()
+                print(f"  Market tape: recording {len(_tape_cfg.get('pairs', []) or [])} pairs -> data/market_tape.db")
+            else:
+                print("  Market tape: disabled (market_tape.enabled=false)")
+        except Exception as e:
+            # Fail-silent: never let tape init break the bot.
+            logger.error("[TAPE] init failed — continuing without tape: %s", e)
+
         try:
             while self.running:
                 self._poll_all()
@@ -1165,6 +1237,12 @@ class SimRunner:
                 time.sleep(self.poll_seconds)
         except KeyboardInterrupt:
             pass
+        finally:
+            try:
+                if self._market_tape is not None:
+                    self._market_tape.stop()
+            except Exception as e:
+                logger.error("[TAPE] stop failed: %s", e)
 
         self._print_summary()
 

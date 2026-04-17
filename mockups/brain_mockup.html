@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CryptoBot Neural Map</title>
+<style>
+  :root {
+    --bg-0: #05070e;
+    --bg-1: #0b1220;
+    --bg-2: #111a30;
+    --accent-cyan: #22d3ee;
+    --accent-cyan-dim: #0e7490;
+    --accent-gold: #fbbf24;
+    --accent-gold-dim: #78350f;
+    --accent-violet: #a78bfa;
+    --accent-violet-dim: #4c1d95;
+    --accent-emerald: #34d399;
+    --accent-rose: #fb7185;
+    --text-1: #e2e8f0;
+    --text-2: #94a3b8;
+    --text-3: #64748b;
+    --grid: rgba(148, 163, 184, 0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: radial-gradient(ellipse at center, var(--bg-1) 0%, var(--bg-0) 70%);
+    color: var(--text-1);
+    font-family: 'SF Mono', 'Monaco', 'Consolas', 'Inter', -apple-system, monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .grid-bg {
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    z-index: 0;
+    pointer-events: none;
+  }
+  header {
+    position: relative; z-index: 2;
+    padding: 32px 48px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  }
+  header h1 {
+    font-size: 22px;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+    color: var(--text-1);
+  }
+  header h1 .pulse {
+    display: inline-block;
+    width: 9px; height: 9px;
+    background: var(--accent-emerald);
+    border-radius: 50%;
+    margin-right: 10px;
+    box-shadow: 0 0 12px var(--accent-emerald);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  header p {
+    color: var(--text-2);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+  .canvas {
+    position: relative; z-index: 1;
+    min-height: 820px;
+    padding: 40px 48px 80px;
+    display: grid;
+    grid-template-columns: 320px 1fr 320px;
+    gap: 24px;
+    align-items: stretch;
+  }
+  .col-title {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    color: var(--text-3);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed rgba(148, 163, 184, 0.14);
+  }
+  .col-left .col-title { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.2); }
+  .col-center .col-title { color: var(--accent-violet); border-color: rgba(167, 139, 250, 0.2); text-align: center; }
+  .col-right .col-title { color: var(--accent-gold); border-color: rgba(251, 191, 36, 0.2); text-align: right; }
+
+  .node {
+    position: relative;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(17,26,48,0.9), rgba(11,18,32,0.9));
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    transition: all 0.3s;
+  }
+  .node .name {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .node .meta {
+    font-size: 10px;
+    color: var(--text-3);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+  .node .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .node.have { border-color: rgba(34, 211, 238, 0.25); }
+  .node.have .dot { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan-dim); }
+  .node.new {
+    border-color: rgba(34, 211, 238, 0.5);
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.08), inset 0 0 20px rgba(34, 211, 238, 0.04);
+    animation: incoming 2.4s ease-in-out infinite;
+  }
+  .node.new .dot {
+    background: var(--accent-cyan);
+    box-shadow: 0 0 14px var(--accent-cyan), 0 0 4px white;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .node.new .name::after {
+    content: 'BUILDING';
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    color: var(--accent-cyan);
+    background: rgba(34, 211, 238, 0.1);
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: auto;
+  }
+  @keyframes incoming {
+    0%, 100% { box-shadow: 0 0 20px rgba(34, 211, 238, 0.08), inset 0 0 20px rgba(34, 211, 238, 0.04); }
+    50% { box-shadow: 0 0 30px rgba(34, 211, 238, 0.2), inset 0 0 30px rgba(34, 211, 238, 0.08); }
+  }
+
+  .node.out {
+    border-color: rgba(251, 191, 36, 0.3);
+    text-align: right;
+  }
+  .node.out .name { justify-content: flex-end; }
+  .node.out .dot { background: var(--accent-gold); box-shadow: 0 0 10px var(--accent-gold-dim); order: 2; }
+
+  /* Center brain */
+  .col-center {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .brain {
+    position: relative;
+    width: 100%;
+    max-width: 500px;
+    aspect-ratio: 1;
+    margin-top: 20px;
+  }
+  .core {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle at center,
+      rgba(167, 139, 250, 0.35) 0%,
+      rgba(167, 139, 250, 0.1) 40%,
+      transparent 70%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+  }
+  .core::before, .core::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    animation: spin 18s linear infinite;
+  }
+  .core::after {
+    inset: -24px;
+    border-color: rgba(167, 139, 250, 0.18);
+    border-style: dashed;
+    animation-direction: reverse;
+    animation-duration: 26s;
+  }
+  .core-inner {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 30% 30%, rgba(251, 191, 36, 0.3), transparent 50%),
+      radial-gradient(circle at 70% 70%, rgba(34, 211, 238, 0.25), transparent 50%),
+      linear-gradient(135deg, rgba(167, 139, 250, 0.6), rgba(76, 29, 149, 0.8));
+    box-shadow:
+      0 0 40px rgba(167, 139, 250, 0.45),
+      inset 0 0 40px rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    animation: breathe 3s ease-in-out infinite;
+  }
+  .core-label {
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+  }
+  .core-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: white;
+    margin-top: 4px;
+    letter-spacing: 0.06em;
+  }
+  .core-sub {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 4px;
+    letter-spacing: 0.15em;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(167, 139, 250, 0.45); }
+    50% { transform: scale(1.04); box-shadow: 0 0 60px rgba(167, 139, 250, 0.65); }
+  }
+
+  .synapse {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  /* Orbiting "process" chips around the core */
+  .process {
+    position: absolute;
+    padding: 7px 12px;
+    border-radius: 20px;
+    background: rgba(11, 18, 32, 0.92);
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    font-size: 10px;
+    color: var(--text-1);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    z-index: 6;
+  }
+  .process .ico { color: var(--accent-violet); margin-right: 6px; }
+  .p1 { top: 6%;  left: 50%; transform: translateX(-50%); }
+  .p2 { top: 25%; right: 2%; }
+  .p3 { bottom: 25%; right: 2%; }
+  .p4 { bottom: 6%; left: 50%; transform: translateX(-50%); }
+  .p5 { bottom: 25%; left: 2%; }
+  .p6 { top: 25%; left: 2%; }
+
+  footer {
+    position: relative; z-index: 2;
+    padding: 24px 48px 36px;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+    display: flex;
+    gap: 48px;
+    flex-wrap: wrap;
+  }
+  .legend {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--text-2);
+    text-transform: uppercase;
+  }
+  .legend .swatch {
+    width: 16px; height: 16px; border-radius: 4px;
+  }
+  .swatch-have { background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan-dim); }
+  .swatch-new { background: var(--accent-cyan); box-shadow: 0 0 14px var(--accent-cyan); animation: pulse 1.2s ease-in-out infinite; }
+  .swatch-brain { background: var(--accent-violet); box-shadow: 0 0 12px var(--accent-violet-dim); }
+  .swatch-out { background: var(--accent-gold); box-shadow: 0 0 10px var(--accent-gold-dim); }
+
+  .stats {
+    position: relative; z-index: 2;
+    padding: 16px 48px;
+    display: flex;
+    gap: 36px;
+    font-size: 11px;
+    color: var(--text-2);
+    letter-spacing: 0.06em;
+    border-top: 1px dashed rgba(148, 163, 184, 0.08);
+  }
+  .stats .stat {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .stats .stat-num {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .stats .stat-num.num-good { color: var(--accent-emerald); }
+  .stats .stat-num.num-bad { color: var(--accent-rose); }
+  .stats .stat-num.num-building { color: var(--accent-cyan); }
+  .stats .stat-num.num-goal { color: var(--accent-gold); }
+
+  @media (max-width: 1100px) {
+    .canvas { grid-template-columns: 1fr; padding: 24px; }
+    .col-left .col-title { text-align: left; }
+    .col-right .col-title { text-align: left; }
+    .node.out { text-align: left; }
+    .node.out .name { justify-content: flex-start; }
+    .node.out .dot { order: 0; }
+    .brain { max-width: 420px; margin: 20px auto; }
+    header { padding: 20px; }
+    footer, .stats { padding-left: 20px; padding-right: 20px; }
+    .stats { overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<header>
+  <h1><span class="pulse"></span>CRYPTOBOT — NEURAL DATA MAP</h1>
+  <p>sensory inputs · cortex processing · trade decisions · 2026-04-17</p>
+</header>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num num-bad">24<span style="color:var(--text-3)"> / </span>98</div>
+    <div>WIN/TOTAL (5YR SIM)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num num-bad">−$2,791</div>
+    <div>BASELINE P&amp;L</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num num-building">6</div>
+    <div>NEW DATASETS</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num num-building">~110 MB</div>
+    <div>PER DAY</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num num-goal">0</div>
+    <div>LIVE TRADES YET</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num num-good">ADVISORY</div>
+    <div>MODE</div>
+  </div>
+</div>
+
+<div class="canvas">
+
+  <!-- LEFT: DATA INPUTS -->
+  <div class="col-left">
+    <div class="col-title">◉ Sensory inputs — data in</div>
+
+    <div class="node have">
+      <div class="name"><span class="dot"></span>Candles 1h / 4h</div>
+      <div class="meta">802,503 rows · 5yr history · granularity gate</div>
+    </div>
+    <div class="node have">
+      <div class="name"><span class="dot"></span>Momentum gate log</div>
+      <div class="meta">3,086 rows · every candidate evaluated</div>
+    </div>
+    <div class="node have">
+      <div class="name"><span class="dot"></span>Ticker WS stream</div>
+      <div class="meta">8,097 ticks · live price on held pair</div>
+    </div>
+    <div class="node have">
+      <div class="name"><span class="dot"></span>L2 book (live only)</div>
+      <div class="meta">wall-aware trail — in-memory, not saved</div>
+    </div>
+    <div class="node have">
+      <div class="name"><span class="dot"></span>Trade history</div>
+      <div class="meta">98 sim · 6 momentum · exit snapshots</div>
+    </div>
+
+    <div style="height: 14px"></div>
+    <div class="col-title" style="color:var(--accent-cyan)">◉ Adding now — 6 new streams</div>
+
+    <div class="node new">
+      <div class="name"><span class="dot"></span>wall_decisions</div>
+      <div class="meta">every trail-stop moment · real vs fake walls</div>
+    </div>
+    <div class="node new">
+      <div class="name"><span class="dot"></span>MAE / MFE per trade</div>
+      <div class="meta">worst &amp; best P&amp;L during hold · stop tuning</div>
+    </div>
+    <div class="node new">
+      <div class="name"><span class="dot"></span>regime_snapshots</div>
+      <div class="meta">BTC 4h/24h + scan counts · per cycle</div>
+    </div>
+    <div class="node new">
+      <div class="name"><span class="dot"></span>ws_matches</div>
+      <div class="meta">every executed trade · side (aggressor)</div>
+    </div>
+    <div class="node new">
+      <div class="name"><span class="dot"></span>l2_snapshots</div>
+      <div class="meta">50-level book · every 5s · 10 pairs</div>
+    </div>
+    <div class="node new">
+      <div class="name"><span class="dot"></span>1-min candles</div>
+      <div class="meta">micro-timing · backfillable via REST</div>
+    </div>
+  </div>
+
+  <!-- CENTER: THE BRAIN -->
+  <div class="col-center">
+    <div class="col-title">◉ Cortex — processing</div>
+    <div class="brain">
+      <svg class="synapse" viewBox="0 0 500 500" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="g-in" x1="0%" y1="50%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.0"/>
+            <stop offset="50%" stop-color="#22d3ee" stop-opacity="0.8"/>
+            <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.8"/>
+          </linearGradient>
+          <linearGradient id="g-out" x1="0%" y1="50%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.8"/>
+            <stop offset="50%" stop-color="#fbbf24" stop-opacity="0.8"/>
+            <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.0"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Input synapses (left → core) -->
+        <g stroke="url(#g-in)" stroke-width="1.5" fill="none" opacity="0.85">
+          <path d="M-20,60 Q120,80 250,250"/>
+          <path d="M-20,140 Q130,170 250,250"/>
+          <path d="M-20,220 Q140,240 250,250"/>
+          <path d="M-20,300 Q140,280 250,250"/>
+          <path d="M-20,380 Q130,330 250,250"/>
+          <path d="M-20,460 Q120,410 250,250"/>
+        </g>
+
+        <!-- Output synapses (core → right) -->
+        <g stroke="url(#g-out)" stroke-width="1.5" fill="none" opacity="0.85">
+          <path d="M250,250 Q370,110 520,60"/>
+          <path d="M250,250 Q380,170 520,160"/>
+          <path d="M250,250 Q380,250 520,260"/>
+          <path d="M250,250 Q380,330 520,360"/>
+          <path d="M250,250 Q370,400 520,460"/>
+        </g>
+
+        <!-- Pulse dots along lines -->
+        <g>
+          <circle r="3" fill="#22d3ee">
+            <animateMotion dur="2.2s" repeatCount="indefinite"
+              path="M-20,140 Q130,170 250,250"/>
+            <animate attributeName="opacity" values="0;1;1;0" dur="2.2s" repeatCount="indefinite"/>
+          </circle>
+          <circle r="3" fill="#22d3ee">
+            <animateMotion dur="2.6s" repeatCount="indefinite" begin="0.4s"
+              path="M-20,300 Q140,280 250,250"/>
+            <animate attributeName="opacity" values="0;1;1;0" dur="2.6s" repeatCount="indefinite" begin="0.4s"/>
+          </circle>
+          <circle r="3" fill="#a78bfa">
+            <animateMotion dur="2.4s" repeatCount="indefinite" begin="0.8s"
+              path="M-20,220 Q140,240 250,250"/>
+            <animate attributeName="opacity" values="0;1;1;0" dur="2.4s" repeatCount="indefinite" begin="0.8s"/>
+          </circle>
+          <circle r="3" fill="#fbbf24">
+            <animateMotion dur="2.0s" repeatCount="indefinite" begin="0.2s"
+              path="M250,250 Q380,170 520,160"/>
+            <animate attributeName="opacity" values="0;1;1;0" dur="2.0s" repeatCount="indefinite" begin="0.2s"/>
+          </circle>
+          <circle r="3" fill="#fbbf24">
+            <animateMotion dur="2.3s" repeatCount="indefinite" begin="0.6s"
+              path="M250,250 Q380,330 520,360"/>
+            <animate attributeName="opacity" values="0;1;1;0" dur="2.3s" repeatCount="indefinite" begin="0.6s"/>
+          </circle>
+        </g>
+      </svg>
+
+      <div class="process p1"><span class="ico">◈</span>Signal persistence</div>
+      <div class="process p2"><span class="ico">◈</span>Wall real/fake</div>
+      <div class="process p3"><span class="ico">◈</span>Flow pressure</div>
+      <div class="process p4"><span class="ico">◈</span>Regime gate</div>
+      <div class="process p5"><span class="ico">◈</span>Stop-tightness</div>
+      <div class="process p6"><span class="ico">◈</span>Cohort self-critic</div>
+
+      <div class="core">
+        <div class="core-inner">
+          <div class="core-label">CORTEX</div>
+          <div class="core-title">DECIDE</div>
+          <div class="core-sub">HOLD · EXIT · SIZE</div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size: 10px; letter-spacing: 0.2em; color: var(--text-3); margin-top: 24px; text-transform: uppercase; text-align: center;">
+      Inputs fuse into 6 analyses · feed a single decision per tick
+    </div>
+  </div>
+
+  <!-- RIGHT: OUTPUTS -->
+  <div class="col-right">
+    <div class="col-title">◉ Behaviors unlocked</div>
+
+    <div class="node out">
+      <div class="name">Don't freak out<span class="dot"></span></div>
+      <div class="meta">signal must persist N sec before exit</div>
+    </div>
+    <div class="node out">
+      <div class="name">Spot fake walls<span class="dot"></span></div>
+      <div class="meta">match flow vs book — skip spoofs</div>
+    </div>
+    <div class="node out">
+      <div class="name">BTC lock<span class="dot"></span></div>
+      <div class="meta">no alt longs when BTC −1.5% in 15m</div>
+    </div>
+    <div class="node out">
+      <div class="name">Right-size stops<span class="dot"></span></div>
+      <div class="meta">tune from MAE — neither too tight nor loose</div>
+    </div>
+    <div class="node out">
+      <div class="name">Self-critic entries<span class="dot"></span></div>
+      <div class="meta">kNN on prior trades · skip losing cohorts</div>
+    </div>
+    <div class="node out">
+      <div class="name">Regime-aware<span class="dot"></span></div>
+      <div class="meta">only trade when our edge historically worked</div>
+    </div>
+
+    <div style="height: 14px"></div>
+    <div class="col-title" style="color:var(--accent-emerald); border-color: rgba(52, 211, 153, 0.2);">◉ North star</div>
+
+    <div class="node out" style="border-color: rgba(52, 211, 153, 0.4); box-shadow: 0 0 20px rgba(52, 211, 153, 0.08);">
+      <div class="name" style="color: var(--accent-emerald);">Flip 24W / 74L<span class="dot" style="background: var(--accent-emerald); box-shadow: 0 0 10px var(--accent-emerald);"></span></div>
+      <div class="meta">from net-loss to profitable before going live</div>
+    </div>
+    <div class="node out" style="border-color: rgba(52, 211, 153, 0.4);">
+      <div class="name" style="color: var(--accent-emerald);">Go live with confidence<span class="dot" style="background: var(--accent-emerald); box-shadow: 0 0 10px var(--accent-emerald);"></span></div>
+      <div class="meta">only after data validates each new rule</div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <div class="legend">
+    <div class="swatch swatch-have"></div>
+    <span>Existing data</span>
+  </div>
+  <div class="legend">
+    <div class="swatch swatch-new"></div>
+    <span>Building now (6 streams)</span>
+  </div>
+  <div class="legend">
+    <div class="swatch swatch-brain"></div>
+    <span>Analysis layer</span>
+  </div>
+  <div class="legend">
+    <div class="swatch swatch-out"></div>
+    <span>New behaviors unlocked</span>
+  </div>
+</footer>
+
+</body>
+</html>

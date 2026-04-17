@@ -34,6 +34,19 @@ wall_aware_trail:
   # has built any cushion. 0.012 = 1.2% = Coinbase round-trip taker fee.
   min_profit_buffer_pct: 0.012
 
+# Market tape recorder — high-frequency WS capture of executed trades + L2 book
+# snapshots on the watched pairs. Writes to data/market_tape.db (separate DB so
+# it can't contend with the engine's own writes). Dedicated thread, fail-silent.
+# Set enabled: false to kill the recorder without touching code.
+market_tape:
+  enabled: true
+  pairs: ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD",
+          "AVAX-USD", "LINK-USD", "ADA-USD", "MATIC-USD", "DOT-USD"]
+  l2_snapshot_interval_sec: 5    # cadence for writing full 50-level book snapshots
+  l2_snapshot_depth: 50          # levels per side per snapshot
+  matches_batch_size: 100        # flush buffered matches every N messages
+  matches_flush_interval_sec: 5  # …or every N seconds, whichever comes first
+
 # Early Momentum Scanner (alerts for manual trading)
 early_scanner:
   enabled: true

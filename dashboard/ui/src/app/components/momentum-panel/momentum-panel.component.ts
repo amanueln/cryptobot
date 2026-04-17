@@ -40,6 +40,7 @@ Chart.register(...registerables, zoomPlugin);
           </button>
         </div>
         <span class="engine-version" title="Running git commit">v: {{ commitSha() || '...' }}</span>
+        <a class="guide-btn" href="/momentum_guide.html" target="_blank" rel="noopener" title="How the bot thinks — interactive guide">Guide</a>
         <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
         <button class="backup-btn" (click)="backupNow()" [disabled]="backupRunning()" title="Backup databases to external drive">{{ backupRunning() ? 'Backing up...' : backupResult() || 'Backup' }}</button>
         <button class="reset-btn" (click)="resetData()" title="Reset momentum data">Reset Data</button>
@@ -721,8 +722,14 @@ Chart.register(...registerables, zoomPlugin);
       margin-left: auto; font-size: 10px; color: #6b7280;
       font-family: 'JetBrains Mono', monospace;
     }
-    .export-btn {
+    .guide-btn {
       margin-left: auto; padding: 3px 10px; font-size: 10px; font-weight: 600;
+      background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3);
+      border-radius: 4px; cursor: pointer; transition: all 0.15s; text-decoration: none;
+    }
+    .guide-btn:hover { background: rgba(167,139,250,0.2); border-color: #a78bfa; }
+    .export-btn {
+      margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
       background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3);
       border-radius: 4px; cursor: pointer; transition: all 0.15s; text-decoration: none;
     }
@@ -1361,7 +1368,7 @@ Chart.register(...registerables, zoomPlugin);
       /* Engine tab — keep inline */
       .engine-tab { flex-wrap: wrap; padding: 0.4rem 0.75rem; gap: 0.3rem; }
       .engine-alloc { font-size: 0.6rem; }
-      .export-btn, .backup-btn, .reset-btn { font-size: 0.55rem; padding: 0.1rem 0.4rem; margin-left: 0; }
+      .guide-btn, .export-btn, .backup-btn, .reset-btn { font-size: 0.55rem; padding: 0.1rem 0.4rem; margin-left: 0; }
 
       /* Hero bar — 2x2 grid on mobile */
       .hero-bar {

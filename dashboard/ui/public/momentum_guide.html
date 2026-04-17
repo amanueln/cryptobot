@@ -1,0 +1,2089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Momentum Page — Interactive Guide</title>
+<style>
+  /* === Palette / typography lifted from momentum-panel.component.ts === */
+  :root {
+    --bg: #0f1117;
+    --bg-2: #12141e;
+    --card: #1a1d29;
+    --line: #2d3148;
+    --text: #e2e8f0;
+    --text-dim: #9ca3af;
+    --text-faint: #6b7280;
+    --text-ghost: #4b5280;
+    --purple: #a78bfa;
+    --purple-deep: #7c3aed;
+    --green: #4ade80;
+    --green-2: #22c55e;
+    --red: #f87171;
+    --red-2: #ef4444;
+    --amber: #fbbf24;
+    --amber-2: #f59e0b;
+    --blue: #60a5fa;
+    --teal: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    overflow-x: hidden;
+  }
+  body { min-height: 100vh; padding-bottom: 80px; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; }
+
+  /* Top topbar for the guide (not part of momentum page) */
+  .guide-topbar {
+    position: sticky; top: 0; z-index: 40;
+    background: linear-gradient(180deg, rgba(15,17,23,0.96), rgba(15,17,23,0.88));
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 22px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+  .guide-topbar h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+  .guide-topbar .sub { color: var(--text-dim); font-size: 13px; }
+  .tour-btn {
+    background: var(--purple-deep); color: white; border: 0;
+    padding: 9px 16px; border-radius: 6px; font-weight: 600;
+    cursor: pointer; font-size: 13px; letter-spacing: 0.2px;
+    transition: transform 0.1s, box-shadow 0.2s;
+  }
+  .tour-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(124,58,237,0.45); }
+  .legend-bar {
+    margin: 20px auto 12px; max-width: 1440px; padding: 0 16px;
+    font-size: 12px; color: var(--text-faint);
+    display: flex; align-items: center; gap: 14px;
+  }
+  .legend-bar .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--purple); display: inline-block;
+    box-shadow: 0 0 0 0 var(--purple);
+    animation: hs-pulse 2s infinite;
+  }
+  @keyframes hs-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.6); }
+    70% { box-shadow: 0 0 0 10px rgba(167,139,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
+  }
+
+  /* ==== REPLICA of the momentum page ==== */
+  .mp-root {
+    max-width: 1440px; margin: 0 auto;
+    background: var(--bg); color: var(--text);
+    min-height: 100%; overflow-x: hidden;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  /* Engine tab */
+  .engine-tab {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 20px; position: relative;
+    background: linear-gradient(90deg, rgba(167,139,250,0.08) 0%, transparent 100%);
+    border-bottom: 1px solid rgba(167,139,250,0.3);
+  }
+  .engine-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px rgba(74,222,128,0.4);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .engine-name {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--purple);
+  }
+  .engine-tag {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+    background: rgba(74,222,128,0.12); color: var(--green);
+  }
+  .engine-alloc {
+    font-size: 10px; color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .wa-toggle-group {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 3px 10px 3px 12px; border-radius: 6px;
+    background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.35);
+    margin-left: 6px;
+  }
+  .wa-label { font-size: 11px; font-weight: 600; color: var(--green); white-space: nowrap; }
+  .wa-switch {
+    position: relative; width: 38px; height: 20px;
+    background: rgba(34,197,94,.2); border-radius: 11px;
+    border: 1px solid var(--green); padding: 0;
+  }
+  .wa-switch .knob {
+    position: absolute; top: 2px; left: 20px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--green);
+  }
+  .engine-version {
+    margin-left: auto; font-size: 10px; color: var(--text-ghost);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .export-btn, .backup-btn, .reset-btn {
+    margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
+    border-radius: 4px; cursor: default; text-decoration: none;
+    border: 1px solid; display: inline-block;
+  }
+  .export-btn { color: var(--blue); background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); }
+  .backup-btn { color: var(--green); background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); }
+  .reset-btn   { color: var(--red);   background: rgba(239,68,68,0.1);  border-color: rgba(239,68,68,0.3); }
+
+  /* Hero */
+  .hero-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; padding: 12px 16px;
+    background: linear-gradient(180deg, #141621 0%, #0f1117 100%);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .hero-item { display: flex; align-items: baseline; gap: 0.4em; padding: 0 1.1em; }
+  .hero-value {
+    font-size: 1.25rem; font-weight: 700; color: #f1f5f9;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em;
+  }
+  .hero-value.cash-val { color: #94a3b8; }
+  .hero-value.positions-val { color: var(--purple); }
+  .hero-value.pos { color: var(--green); }
+  .hero-label { font-size: 0.65rem; font-weight: 500; color: var(--text-faint); white-space: nowrap; }
+  .hero-pnl-fees { display: flex; gap: 0.6em; margin-left: 0.5em; }
+  .pnl-detail { font-size: 0.55rem; font-weight: 600; color: var(--text-faint); font-family: 'JetBrains Mono', monospace; }
+  .pnl-detail.fee-detail { color: var(--amber-2); }
+
+  /* Status banner */
+  .status-banner {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 20px; background: linear-gradient(135deg, #1a1d2e 0%, #242840 100%);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--green); box-shadow: 0 0 8px rgba(74,222,128,0.5); }
+  .status-text { font-size: 12px; color: var(--text-dim); }
+  .regime-info { display: flex; align-items: center; gap: 6px; }
+  .regime-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.05em;
+    background: rgba(74,222,128,0.15); color: var(--green);
+  }
+  .hold-time { font-size: 10px; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+  .ws-badge {
+    font-size: 9px; color: var(--green-2); font-family: 'JetBrains Mono', monospace;
+    background: rgba(34,197,94,0.1); padding: 1px 6px; border-radius: 3px;
+    border: 1px solid rgba(34,197,94,0.25);
+  }
+  .poll-timer {
+    margin-left: auto; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-ghost); letter-spacing: 0.03em;
+  }
+
+  /* Equity + Activity */
+  .equity-activity-row {
+    display: grid; grid-template-columns: 1.7fr 1fr;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .equity-col { padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; position: relative; }
+  .activity-col { padding: 14px 16px; min-width: 0; max-height: 260px; overflow-y: auto; position: relative; }
+  .section-header {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .chart-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .chart-range-btns { display: flex; gap: 2px; margin-left: auto; }
+  .range-btn {
+    font-size: 10px; font-weight: 600; padding: 3px 7px; border-radius: 3px;
+    background: transparent; color: var(--text-ghost); border: 1px solid transparent;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em;
+  }
+  .range-btn.active {
+    color: var(--purple); background: rgba(167,139,250,0.12);
+    border-color: rgba(167,139,250,0.3);
+  }
+  .chart-slot { height: 180px; border-radius: 8px; overflow: hidden; position: relative; }
+  .chart-slot svg { width: 100%; height: 100%; display: block; }
+  .equity-substats { display: flex; gap: 14px; margin-top: 8px; font-size: 10px; }
+  .sub-label { color: var(--text-faint); }
+  .zoom-hint { margin-left: auto; font-style: italic; font-size: 10px; color: var(--text-ghost); }
+
+  /* Activity */
+  .activity-toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .toggle-count {
+    font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+    background: rgba(167,139,250,0.12); color: var(--purple);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .toggle-arrow { font-size: 11px; color: var(--text-ghost); margin-left: auto; }
+  .event-list { display: flex; flex-direction: column; }
+  .log-entry { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 11px; border-bottom: 1px solid rgba(45,49,72,0.5); }
+  .log-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-ghost); min-width: 50px; }
+  .log-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .log-dot.buy { background: var(--green); }
+  .log-dot.sell { background: var(--red); }
+  .log-dot.info { background: var(--blue); }
+  .log-msg { color: var(--text-dim); flex: 1; }
+
+  /* 3-col: Holdings/Strategy | L2 | Scanner */
+  .hold-strat-accel-row {
+    display: grid;
+    grid-template-columns: minmax(0,1.3fr) 320px minmax(0,1fr);
+    gap: 12px; padding: 12px; border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .hold-strat-col { display: flex; flex-direction: column; min-width: 0; }
+  .l2-col { min-width: 0; align-self: start; position: relative; }
+  .accel-col { padding: 0; min-width: 0; overflow: hidden; position: relative; }
+
+  .hold-col { padding: 10px 16px; border-bottom: 1px solid var(--line); min-width: 0; position: relative; }
+  .strat-col { padding: 10px 16px; background: linear-gradient(180deg, #12141e 0%, #0f1117 100%); }
+  .section-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+
+  /* Holding card */
+  .compact-holding {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; border-left: 3px solid var(--purple);
+    padding: 10px 14px; position: relative;
+  }
+  .ch-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 6px; }
+  .ch-coin { font-weight: 700; font-size: 18px; }
+  .ch-layer {
+    font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 3px;
+    letter-spacing: 0.04em; white-space: nowrap;
+    background: rgba(34,197,94,0.15); color: var(--green-2);
+  }
+  .ch-layer.wall-hug { background: rgba(52,211,153,0.18); color: var(--teal); border: 1px solid rgba(52,211,153,0.35); }
+  .ch-pnl-group { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
+  .ch-pnl-val { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: #f1f5f9; }
+  .ch-pnl-pct { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--green); }
+  .ch-sell {
+    font-size: 10px; padding: 4px 10px; font-weight: 600;
+    background: rgba(239,68,68,0.15); color: var(--red);
+    border: 1px solid rgba(239,68,68,0.3); border-radius: 4px;
+  }
+  .ch-stats {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+    margin-top: 10px;
+  }
+  .ch-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .ch-stat-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; }
+  .ch-stat-val { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--text); }
+  .ch-stat-val.dim { color: var(--text-faint); }
+  .ch-stat-val.red { color: var(--red); }
+  .ch-stat-val.purple { color: var(--purple); }
+  .ch-stat-val.green { color: var(--green); }
+
+  /* Compare block */
+  .compare {
+    background: #121821; border: 1px solid #25304a; border-radius: 8px;
+    overflow: hidden; margin-top: 10px;
+  }
+  .compare-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #25304a; }
+  .compare-title { font-size: 11px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; }
+  .compare-active {
+    margin-left: auto; font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 3px;
+    background: rgba(52,211,153,0.15); color: var(--teal);
+  }
+  .compare-body { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #25304a; }
+  .compare-cell { padding: 10px 14px; background: #121821; }
+  .compare-cell.active { background: #162033; }
+  .compare-cell-hdr { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .compare-price { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text); }
+  .compare-pct { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+  .compare-profit { font-size: 10px; margin-top: 4px; }
+  .compare-profit .val.green { color: var(--green); }
+  .compare-profit .val.red { color: var(--red); }
+  .compare-delta { padding: 8px 14px; font-size: 10px; color: var(--text-dim); border-top: 1px solid #25304a; }
+  .compare-delta b { color: var(--teal); }
+
+  /* Guardrails + decision log row */
+  .cfg-log-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
+    position: relative;
+  }
+  .cfg, .log-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  .cfg-head, .log-head {
+    padding: 6px 12px; font-size: 10px; color: var(--text-faint);
+    text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--line);
+  }
+  .cfg-body { padding: 6px 12px; }
+  .cfg-row { display: flex; font-size: 11px; padding: 3px 0; }
+  .cfg-lbl { color: var(--text-dim); }
+  .cfg-val { margin-left: auto; font-family: 'JetBrains Mono', monospace; color: var(--text); }
+  .log-body { padding: 6px 12px; max-height: 120px; overflow-y: auto; }
+  .log-row { display: flex; gap: 8px; font-size: 10px; padding: 2px 0; line-height: 1.5; }
+  .log-ts { font-family: 'JetBrains Mono', monospace; color: var(--text-ghost); flex-shrink: 0; }
+  .log-tag {
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    margin-right: 4px; font-family: 'JetBrains Mono', monospace;
+  }
+  .log-tag.anchor { background: rgba(52,211,153,0.15); color: var(--teal); }
+  .log-tag.cleared { background: rgba(248,113,113,0.15); color: var(--red); }
+  .log-tag.raised { background: rgba(96,165,250,0.15); color: var(--blue); }
+  .log-desc { color: var(--text-dim); }
+
+  /* Strategy chips */
+  .compact-strategy { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .cs-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; font-size: 11px;
+  }
+  .cs-label { color: var(--text-faint); font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .cs-value { font-weight: 700; color: var(--green); }
+  .cs-detail { font-family: 'JetBrains Mono', monospace; color: var(--text-dim); font-size: 10px; }
+
+  .compact-exits, .compact-buy { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .ce-tag, .cb-tag {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 5px; padding: 4px 8px; font-size: 10px;
+  }
+  .ce-tag.ce-amber { border-color: rgba(251,191,36,0.3); }
+  .ce-tag.ce-red { border-color: rgba(248,113,113,0.3); }
+  .ce-label { color: var(--text-dim); font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .ce-bar { width: 32px; height: 4px; background: #1e2130; border-radius: 2px; overflow: hidden; }
+  .ce-fill { height: 100%; border-radius: 2px; }
+  .ce-fill.low { background: var(--green); width: 20%; }
+  .ce-fill.mid { background: var(--amber); width: 60%; }
+  .ce-fill.high { background: var(--red); width: 90%; }
+  .ce-val.dim { color: var(--text-faint); }
+  .ce-val.warn { color: var(--amber); }
+  .cb-text { font-family: 'JetBrains Mono', monospace; }
+  .cb-text.green { color: var(--green); }
+  .cb-text.red { color: var(--red); }
+
+  /* L2 ladder */
+  .l2-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .l2-title { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+  .l2-mid { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text); margin: 4px 0 8px; }
+  .l2-rows { display: flex; flex-direction: column; gap: 1px; }
+  .l2-row {
+    display: grid; grid-template-columns: 50px 1fr 50px 50px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 2px 4px; position: relative; border-radius: 2px;
+  }
+  .l2-row .fill {
+    position: absolute; top: 0; bottom: 0; opacity: 0.14; border-radius: 2px;
+  }
+  .l2-row .price { color: var(--text); position: relative; z-index: 1; }
+  .l2-row.ask .price { color: var(--red); }
+  .l2-row.bid .price { color: var(--green); }
+  .l2-row .size, .l2-row .usd, .l2-row .age { position: relative; z-index: 1; color: var(--text-dim); text-align: right; }
+  .l2-row .age { color: var(--text-ghost); }
+  .l2-row.ask .fill { background: var(--red); right: 0; }
+  .l2-row.bid .fill { background: var(--green); left: 0; }
+  .l2-row.wall { background: rgba(52,211,153,0.14); border: 1px solid rgba(52,211,153,0.35); }
+  .l2-row.wall .fill { background: var(--teal); opacity: 0.22; }
+  .l2-spread {
+    display: flex; justify-content: center; padding: 4px 0;
+    font-size: 10px; color: var(--text-faint); font-family: 'JetBrains Mono', monospace;
+    border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line);
+    margin: 2px 0;
+  }
+
+  /* Accel scanner cards */
+  .scanner-meta { font-size: 9px; color: var(--text-ghost); margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .accel-cards {
+    display: flex; gap: 10px; padding-bottom: 6px;
+    overflow-x: auto;
+  }
+  .accel-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+    min-width: 200px; max-width: 220px; flex-shrink: 0;
+  }
+  .accel-card.qualifying-card {
+    border-color: rgba(74,222,128,0.25);
+    background: linear-gradient(180deg, rgba(74,222,128,0.04) 0%, var(--card) 100%);
+  }
+  .accel-card.quality-blocked {
+    border-color: rgba(239,68,68,0.25);
+    background: linear-gradient(180deg, rgba(239,68,68,0.04) 0%, var(--card) 100%);
+  }
+  .ac-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ac-coin { font-weight: 700; font-size: 14px; }
+  .ac-badge { font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.06em; }
+  .ac-badge.qual { background: rgba(74,222,128,0.12); color: var(--green); }
+  .ac-badge.holding { background: rgba(250,204,21,0.12); color: var(--amber); }
+  .ac-badge.blocked { background: rgba(239,68,68,0.12); color: var(--red-2); }
+  .ac-badge.below { background: rgba(100,116,139,0.12); color: #64748b; }
+  .ac-price { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: var(--text); }
+  .ac-desc { font-size: 10px; color: var(--text-faint); line-height: 1.4; }
+  .ac-gates-label { font-size: 8px; color: var(--text-ghost); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .ac-gates { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ac-gate { font-size: 9px; font-family: 'JetBrains Mono', monospace; padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+  .ac-gate.pass { background: rgba(74,222,128,0.08); color: var(--green); }
+  .ac-gate.fail { background: rgba(239,68,68,0.10); color: var(--red-2); font-weight: 700; }
+  .ac-bar-track { height: 4px; background: #1e2130; border-radius: 2px; overflow: hidden; }
+  .ac-bar-fill { height: 100%; background: linear-gradient(90deg, #4b5280 0%, #6366f1 100%); border-radius: 2px; }
+  .ac-bar-fill.qualifying { background: linear-gradient(90deg, var(--green) 0%, var(--green-2) 100%); }
+  .ac-bar-fill.blocked-fill { background: linear-gradient(90deg, var(--red-2) 0%, #dc2626 100%); }
+  .ac-stats { display: flex; align-items: baseline; gap: 6px; }
+  .ac-accel { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-faint); }
+  .ac-accel.pos { color: var(--green); }
+  .ac-stat-label { font-size: 9px; color: var(--text-ghost); }
+
+  /* Recent Trades */
+  .trades-section { padding: 12px 16px; position: relative; }
+  .trades-header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+  .trades-title-group { display: flex; align-items: center; gap: 10px; }
+  .calendar-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--purple); background: rgba(167,139,250,0.1);
+    border: 1px solid rgba(167,139,250,0.3); padding: 3px 10px; border-radius: 4px;
+  }
+  .trade-stats-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  .ts-mood { font-size: 18px; }
+  .ts-record { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .ts-wins { color: var(--green); }
+  .ts-losses { color: var(--red); }
+  .ts-sep { color: var(--text-ghost); margin: 0 2px; }
+  .ts-winrate { font-size: 10px; color: var(--text-dim); }
+  .ts-winrate.good { color: var(--green); }
+  .ts-winrate.bad { color: var(--red); }
+  .ts-mood-text { font-size: 11px; color: var(--text-faint); }
+
+  .trades-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .trades-table th { text-align: left; color: var(--text-faint); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px; border-bottom: 1px solid var(--line); }
+  .trades-table th.right { text-align: right; }
+  .trades-table td { padding: 8px; border-bottom: 1px solid rgba(45,49,72,0.5); }
+  .trades-table td.right { text-align: right; }
+  .trades-table td.left { text-align: left; }
+  .trades-table td.mono { font-family: 'JetBrains Mono', monospace; }
+  .date-separator-row td {
+    background: #121821; color: var(--text-faint); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 8px;
+  }
+  .side-tag { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .side-tag.buy { background: rgba(74,222,128,0.12); color: var(--green); }
+  .side-tag.sell { background: rgba(248,113,113,0.12); color: var(--red); }
+  .result-breakdown { display: block; font-size: 9px; color: var(--text-ghost); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+  /* ==== HOTSPOTS ==== */
+  .hotspot {
+    position: absolute; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--purple); cursor: pointer;
+    box-shadow: 0 0 0 0 var(--purple);
+    animation: hs-pulse 2s infinite;
+    z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    border: 2px solid var(--bg);
+  }
+  .hotspot:hover {
+    animation: none; transform: scale(1.2);
+    box-shadow: 0 0 20px var(--purple);
+  }
+  .hotspot.active {
+    background: var(--teal); animation: none;
+    box-shadow: 0 0 0 4px rgba(52,211,153,0.3);
+  }
+
+  /* Side drawer */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 50;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 440px;
+    max-width: 92vw; background: var(--card); border-left: 1px solid var(--line);
+    transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+    z-index: 60; overflow-y: auto; box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head {
+    padding: 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; position: sticky; top: 0; background: var(--card); z-index: 1;
+  }
+  .drawer-head .num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(167,139,250,0.18); color: var(--purple);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-family: monospace; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .drawer-title { font-size: 18px; font-weight: 600; margin: 4px 0 2px; }
+  .drawer-sub { color: var(--text-dim); font-size: 12px; }
+  .drawer-close { background: transparent; border: 0; color: var(--text-dim); font-size: 24px; cursor: pointer; line-height: 1; }
+  .drawer-body { padding: 20px; font-size: 14px; line-height: 1.55; color: var(--text); }
+  .drawer-body h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--purple); margin: 18px 0 8px; font-weight: 600;
+  }
+  .drawer-body h3:first-child { margin-top: 0; }
+  .drawer-body p { margin: 0 0 10px; }
+  .drawer-body code { background: var(--bg-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; color: var(--teal); }
+  .drawer-body ul { margin: 6px 0 12px; padding-left: 20px; }
+  .drawer-body li { margin-bottom: 4px; }
+  .drawer-body .hint { background: var(--bg-2); border-left: 3px solid var(--purple); padding: 10px 14px; border-radius: 4px; font-size: 13px; color: var(--text-dim); margin: 12px 0; }
+  .drawer-body .flow { background: var(--bg-2); border: 1px solid var(--line); padding: 12px; border-radius: 6px; margin: 10px 0; font-family: monospace; font-size: 12px; line-height: 1.8; }
+  .drawer-body .flow b { color: var(--teal); }
+
+  .nav-between { display: flex; gap: 8px; margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .nav-between button { flex: 1; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); padding: 9px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .nav-between button:hover { background: rgba(167,139,250,0.14); border-color: var(--purple); }
+  .nav-between button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ================= Brain flow (full interactive walkthrough) ================= */
+  .brain { max-width: 1440px; margin: 60px auto 0; padding: 0 16px; }
+  .brain h2 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.2px; }
+  .brain .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; }
+
+  .brain-controls { display: flex; gap: 10px; margin-bottom: 22px; flex-wrap: wrap; }
+  .brain-btn {
+    background: var(--bg-2); border: 1px solid var(--line); color: var(--text);
+    padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    font-weight: 500; transition: border-color 0.15s, background 0.15s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .brain-btn:hover { border-color: var(--purple); }
+  .brain-btn.primary { background: var(--purple-deep); border-color: var(--purple-deep); color: white; }
+  .brain-btn.primary:hover { background: var(--purple); border-color: var(--purple); }
+  .brain-btn .play-icon { font-size: 10px; }
+
+  /* Pipeline header — the 6 stages with big animated arrows between */
+  .pipeline {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    gap: 0; margin-bottom: 32px; position: relative;
+    transition: all 0.25s;
+  }
+  .pipeline.sticky {
+    position: sticky; top: 66px; z-index: 30;
+    background: linear-gradient(180deg, var(--bg) 85%, rgba(15,17,23,0.95) 100%);
+    padding: 12px 0; margin-bottom: 20px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    border-bottom: 1px solid var(--line);
+  }
+  .pl-stage {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 14px; cursor: pointer;
+    position: relative; transition: all 0.2s;
+    text-align: center;
+  }
+  .pl-stage:not(:last-child) { margin-right: 18px; }
+  .pl-stage:not(:last-child)::after {
+    content: ""; position: absolute; right: -18px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 2px; background: var(--line); z-index: 1;
+  }
+  .pl-stage:not(:last-child)::before {
+    content: ""; position: absolute; right: -6px; top: 50%; transform: translateY(-50%) rotate(45deg);
+    width: 6px; height: 6px; border-top: 2px solid var(--line); border-right: 2px solid var(--line);
+    z-index: 2;
+  }
+  .pl-stage.active-flow::after { background: var(--teal); box-shadow: 0 0 10px var(--teal); }
+  .pl-stage.active-flow::before { border-color: var(--teal); }
+  .pl-stage.active-flow { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal), 0 0 24px rgba(52,211,153,0.15); }
+  .pl-stage:hover { border-color: var(--purple); transform: translateY(-2px); }
+  .pl-stage.active { border-color: var(--teal); background: rgba(52,211,153,0.06); }
+  .pl-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, rgba(167,139,250,0.15), rgba(124,58,237,0.08));
+    border: 1px solid rgba(167,139,250,0.3);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 10px; font-size: 20px;
+  }
+  .pl-stage.active-flow .pl-icon {
+    background: linear-gradient(135deg, rgba(52,211,153,0.2), rgba(34,197,94,0.1));
+    border-color: var(--teal);
+  }
+  .pl-num {
+    position: absolute; top: 6px; left: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--text-ghost); font-weight: 600;
+  }
+  .pl-stage h4 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .pl-stage p { margin: 0; color: var(--text-faint); font-size: 11px; line-height: 1.4; min-height: 30px; }
+  .pl-chip {
+    display: inline-block; margin-top: 8px;
+    padding: 2px 8px; font-size: 10px; font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--text-dim);
+  }
+
+  /* Coin funnel — what actually happens during a scan */
+  .brain-card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; margin-bottom: 22px;
+  }
+  .bc-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .bc-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--purple); background: rgba(167,139,250,0.1);
+    border: 1px solid rgba(167,139,250,0.3);
+    padding: 2px 8px; border-radius: 10px; letter-spacing: 0.5px;
+  }
+  .bc-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .bc-sub { color: var(--text-dim); font-size: 12px; margin: 4px 0 18px; }
+
+  .funnel { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+  .fn-col {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 12px; position: relative; min-height: 290px;
+  }
+  .fn-col h5 {
+    margin: 0 0 4px; font-size: 11px; font-weight: 600;
+    color: var(--text); text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .fn-col .fn-desc { font-size: 10px; color: var(--text-faint); margin: 0 0 12px; line-height: 1.4; }
+  .fn-count {
+    position: absolute; top: 12px; right: 12px;
+    background: var(--purple-deep); color: white;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 3px 9px; border-radius: 10px; font-weight: 700;
+  }
+  .fn-col.winner .fn-count { background: var(--green-2); }
+  .fn-col.winner { border-color: var(--green); box-shadow: 0 0 0 1px rgba(74,222,128,0.25); }
+  .fn-list { display: flex; flex-direction: column; gap: 4px; }
+  .fn-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 8px; border-radius: 4px; font-size: 11px;
+    background: rgba(255,255,255,0.015);
+    border-left: 2px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .fn-row.pass { border-left-color: var(--green); }
+  .fn-row.fail { border-left-color: var(--red); opacity: 0.55; text-decoration: line-through; }
+  .fn-row.winner { border-left-color: var(--green); background: rgba(74,222,128,0.08); font-weight: 700; }
+  .fn-row .pair { color: var(--text); }
+  .fn-row .val { color: var(--text-dim); font-size: 10px; }
+  .fn-row .reason { color: var(--red); font-size: 9px; }
+
+  /* Trail stop + wall animation */
+  .trail-demo { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+  .trail-chart-wrap { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .trail-svg { width: 100%; height: 260px; display: block; }
+  .trail-legend {
+    display: flex; flex-wrap: wrap; gap: 12px; padding-top: 10px;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .trail-legend .sw { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+  .trail-events { display: flex; flex-direction: column; gap: 6px; }
+  .te {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 12px;
+    border-left: 3px solid var(--line);
+    transition: all 0.25s;
+  }
+  .te.active { border-color: var(--teal); border-left-color: var(--teal); background: rgba(52,211,153,0.06); }
+  .te .te-time { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-faint); }
+  .te .te-title { font-size: 12px; font-weight: 600; margin: 2px 0; }
+  .te .te-desc { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
+  /* Data wiring diagram */
+  .wiring { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .wiring-rail {
+    display: grid; grid-template-columns: 180px 1fr; gap: 20px; align-items: center;
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px;
+  }
+  .wr-src {
+    background: rgba(96,165,250,0.08); border: 1px solid rgba(96,165,250,0.3);
+    border-radius: 6px; padding: 10px 12px; text-align: center;
+  }
+  .wr-src .s1 { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--blue); font-weight: 700; }
+  .wr-src .s2 { font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+  .wr-flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+  .wr-arrow { color: var(--text-ghost); font-family: 'JetBrains Mono', monospace; }
+  .wr-box {
+    background: var(--card); border: 1px solid var(--line);
+    padding: 6px 11px; border-radius: 6px; font-size: 11px;
+    color: var(--text);
+  }
+  .wr-box.purple { border-color: rgba(167,139,250,0.4); background: rgba(167,139,250,0.07); color: var(--purple); }
+  .wr-box.green { border-color: rgba(74,222,128,0.4); background: rgba(74,222,128,0.07); color: var(--green); }
+  .wr-box.amber { border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.07); color: var(--amber); }
+  .wr-box.db { border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.07); color: var(--blue); font-family: 'JetBrains Mono', monospace; }
+
+  /* Timeline — a day in the life */
+  .timeline { position: relative; padding-left: 34px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 12px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--line);
+  }
+  .tl-step { position: relative; padding: 10px 0 18px; }
+  .tl-step::before {
+    content: ""; position: absolute; left: -28px; top: 14px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--card); border: 2px solid var(--line);
+  }
+  .tl-step.done::before { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 3px rgba(74,222,128,0.2); }
+  .tl-step.now::before { background: var(--purple); border-color: var(--purple); box-shadow: 0 0 0 3px rgba(167,139,250,0.3); animation: hs-pulse 2s infinite; }
+  .tl-time {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--text-faint); letter-spacing: 0.5px;
+  }
+  .tl-label { font-size: 13px; font-weight: 600; margin: 2px 0 4px; }
+  .tl-body { font-size: 12px; color: var(--text-dim); line-height: 1.5; max-width: 720px; }
+  .tl-body code { background: var(--bg-2); padding: 1px 5px; border-radius: 3px; color: var(--teal); font-size: 11px; }
+  .tl-body .hit { color: var(--green); font-weight: 600; }
+  .tl-body .miss { color: var(--red); font-weight: 600; }
+  .tl-body .key { color: var(--purple); font-weight: 600; }
+
+  @media (max-width: 1100px) {
+    .pipeline { grid-template-columns: repeat(3, 1fr); }
+    .pl-stage:not(:last-child) { margin-right: 0; }
+    .pl-stage:not(:last-child)::after,
+    .pl-stage:not(:last-child)::before { display: none; }
+    .funnel { grid-template-columns: 1fr 1fr; }
+    .trail-demo { grid-template-columns: 1fr; }
+  }
+
+  /* ===== Replica mobile rules — mirror the real momentum panel ===== */
+  @media (max-width: 1024px) {
+    .equity-activity-row { grid-template-columns: 1fr; }
+    .equity-col { border-right: none; border-bottom: 1px solid var(--line); }
+    .activity-col { max-height: 200px; }
+    .hold-strat-accel-row { grid-template-columns: 1fr; }
+    .accel-col, .strat-col, .hold-col { grid-column: auto; min-width: 0; }
+    .cfg-log-row { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 768px) {
+    /* Engine tab — wrap items, shrink buttons */
+    .engine-tab { flex-wrap: wrap; padding: 8px 10px; gap: 6px; }
+    .engine-alloc { font-size: 9px; }
+    .engine-version { font-size: 9px; }
+    .export-btn, .backup-btn, .reset-btn {
+      font-size: 9px; padding: 2px 6px; margin-left: 0;
+    }
+
+    /* Hero bar → 2x2 grid */
+    .hero-bar {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 4px 0; padding: 8px 12px;
+    }
+    .hero-item { justify-content: center; padding: 3px 0; }
+    .hero-value { font-size: 14px; }
+    .hero-label { font-size: 9px; }
+    .hero-pnl-fees { display: none; }
+
+    /* Status banner — compact, wrap */
+    .status-banner { flex-wrap: wrap; padding: 7px 12px; gap: 6px 8px; }
+    .status-text { font-size: 10px; }
+
+    /* Accel cards — smaller */
+    .accel-cards { gap: 8px; }
+    .accel-card { min-width: 140px; max-width: 170px; padding: 8px 10px; }
+    .ac-coin { font-size: 12px; }
+    .ac-price { font-size: 10px; }
+    .ac-desc { font-size: 9px; }
+    .ac-accel { font-size: 11px; }
+
+    /* Holdings row wraps */
+    .ch-row { flex-wrap: wrap; }
+    .ch-stats { gap: 8px; grid-template-columns: repeat(3, 1fr); }
+    .ch-pnl-group { margin-left: 0; }
+
+    /* Trades table tighter */
+    .trades-section { padding: 10px 12px; }
+    .trades-table { font-size: 11px; }
+    .trades-table th, .trades-table td { padding: 6px 8px; }
+
+    /* L2 ladder — full-width if present */
+    .l2-col { min-width: 0; }
+
+    /* Shrink hotspots so they don't overlap tiny elements */
+    .hotspot { width: 18px; height: 18px; font-size: 10px; }
+
+    /* Brain: pipeline stacks to 2-col, then below shrinks stages */
+    .pipeline { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .pl-stage { padding: 12px 10px; }
+    .pl-icon { width: 32px; height: 32px; font-size: 16px; }
+
+    /* Funnel stacks */
+    .funnel { grid-template-columns: 1fr; }
+
+    /* Wiring rails stack vertical */
+    .wiring-rail { grid-template-columns: 1fr; gap: 10px; }
+    .wr-flow { flex-wrap: wrap; }
+
+    /* Guide topbar compact */
+    .guide-topbar { padding: 10px 14px; flex-direction: column; align-items: flex-start; gap: 10px; }
+    .guide-topbar h1 { font-size: 14px; }
+    .tour-btn { padding: 7px 12px; font-size: 11px; }
+    .legend-bar { padding: 0 14px; }
+  }
+  @media (max-width: 480px) {
+    .hero-value { font-size: 12px; }
+    .hero-label { font-size: 8px; }
+    .compact-holding { padding: 8px 10px; }
+    .ch-coin { font-size: 13px; }
+    .ch-stat-val { font-size: 10px; }
+    .cs-chip { padding: 3px 6px; }
+    .cs-value { font-size: 10px; }
+    .ce-tag { padding: 3px 5px; }
+    .accel-card { min-width: 120px; }
+    .brain-controls { flex-direction: column; align-items: stretch; }
+    .brain-btn { justify-content: center; }
+    .pipeline { grid-template-columns: 1fr; }
+    .pl-stage:not(:last-child) { margin-bottom: 0; }
+  }
+
+  @media (max-width: 1200px) {
+    .hold-strat-accel-row { grid-template-columns: minmax(0,1fr) 300px; }
+    .accel-col { grid-column: 1 / -1; }
+  }
+  @media (max-width: 900px) {
+    .hold-strat-accel-row { grid-template-columns: 1fr; }
+    .accel-col { grid-column: auto; }
+    .ch-stats { grid-template-columns: repeat(3, 1fr); }
+    .flow-grid { grid-template-columns: 1fr 1fr; }
+    .equity-activity-row { grid-template-columns: 1fr; }
+    .cfg-log-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="guide-topbar">
+  <div>
+    <h1>Momentum Page · Interactive Guide</h1>
+    <div class="sub">1-to-1 replica — click any pulsing dot to see what it does and how the bot uses it.</div>
+  </div>
+  <button class="tour-btn" id="startTour">▶ Start guided tour</button>
+</div>
+
+<div class="legend-bar"><span class="dot"></span>Click or hover the purple dots. They land on the same spots you see in the real dashboard.</div>
+
+<!-- ============================== MP ROOT ============================== -->
+<div class="mp-root">
+
+  <!-- Engine tab -->
+  <div class="engine-tab">
+    <span class="engine-dot"></span>
+    <span class="engine-name">MOMENTUM ROTATION</span>
+    <span class="engine-tag">HOLDING</span>
+    <span class="engine-alloc">$3,000 allocated</span>
+    <div class="wa-toggle-group">
+      <span class="wa-label">Wall-aware trail</span>
+      <div class="wa-switch"><span class="knob"></span></div>
+      <span class="hotspot" data-id="3" style="position: relative; top: 0;">3</span>
+    </div>
+    <span class="engine-version">v: 645fe77</span>
+    <a class="export-btn">Export DB</a>
+    <button class="backup-btn">Backup</button>
+    <button class="reset-btn">Reset Data</button>
+    <span class="hotspot" data-id="1" style="top: 8px; left: 8px;">1</span>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero-bar">
+    <div class="hero-item">
+      <span class="hero-label">Total</span>
+      <span class="hero-value">$3,174.82</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">Cash</span>
+      <span class="hero-value cash-val">$0.00</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">Positions</span>
+      <span class="hero-value positions-val">$3,174.82</span>
+    </div>
+    <div class="hero-item">
+      <span class="hero-label">P&amp;L (+5.83%)</span>
+      <span class="hero-value pos">+$174.82</span>
+      <span class="hero-pnl-fees">
+        <span class="pnl-detail fee-detail">Fees: -$28.40</span>
+        <span class="pnl-detail" style="color: var(--green)">Price: +$203.22</span>
+      </span>
+    </div>
+    <span class="hotspot" data-id="2" style="top: 14px; right: 20px;">2</span>
+  </div>
+
+  <!-- Status banner -->
+  <div class="status-banner">
+    <span class="status-dot"></span>
+    <span class="status-text">Holding SOL-USD</span>
+    <span class="regime-info">
+      <span class="regime-badge">BULL</span>
+      <span class="hold-time">In position 4h</span>
+      <span class="ws-badge">WS ● 4,389 ticks</span>
+    </span>
+    <span class="poll-timer">refresh 28s</span>
+    <span class="hotspot" data-id="4" style="top: 9px; left: 240px;">4</span>
+  </div>
+
+  <!-- Equity + Activity -->
+  <div class="equity-activity-row">
+    <div class="equity-col">
+      <div class="chart-header">
+        <span class="section-header" style="margin-bottom:0">Portfolio Equity</span>
+        <div class="chart-range-btns">
+          <button class="range-btn">1h</button>
+          <button class="range-btn">6h</button>
+          <button class="range-btn active">24h</button>
+          <button class="range-btn">7d</button>
+        </div>
+        <button class="range-btn" style="font-size: 12px;">↺</button>
+      </div>
+      <div class="chart-slot">
+        <svg viewBox="0 0 600 180" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#4ade80" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,140 L40,135 L80,142 L120,125 L160,130 L200,118 L240,120 L280,104 L320,98 L360,88 L400,95 L440,72 L480,78 L520,58 L560,50 L600,42"
+                stroke="#4ade80" stroke-width="1.8" fill="none"/>
+          <path d="M0,140 L40,135 L80,142 L120,125 L160,130 L200,118 L240,120 L280,104 L320,98 L360,88 L400,95 L440,72 L480,78 L520,58 L560,50 L600,42 L600,180 L0,180 Z"
+                fill="url(#g1)"/>
+        </svg>
+      </div>
+      <div class="equity-substats">
+        <span><span class="sub-label">Trades </span>7</span>
+        <span class="zoom-hint">Scroll to zoom · Drag to pan</span>
+      </div>
+      <span class="hotspot" data-id="5" style="top: 10px; right: 10px;">5</span>
+    </div>
+
+    <div class="activity-col">
+      <div class="section-header activity-toggle">
+        What's Happening
+        <span class="toggle-count">12</span>
+        <span class="toggle-arrow">▾</span>
+      </div>
+      <div class="event-list">
+        <div class="log-entry"><span class="log-time">14:02</span><span class="log-dot buy"></span><span class="log-msg">[MOM] Bought SOL at $182.40</span></div>
+        <div class="log-entry"><span class="log-time">11:48</span><span class="log-dot sell"></span><span class="log-msg">[MOM] Sold XRP at $0.612 (+3.2%)</span></div>
+        <div class="log-entry"><span class="log-time">10:14</span><span class="log-dot info"></span><span class="log-msg">Wall anchor @ $189.70 (48k, 240s)</span></div>
+        <div class="log-entry"><span class="log-time">09:02</span><span class="log-dot info"></span><span class="log-msg">Trail raised to $178.12</span></div>
+        <div class="log-entry"><span class="log-time">07:30</span><span class="log-dot sell"></span><span class="log-msg">[MOM] Sold DOGE at $0.148 (-1.8%)</span></div>
+        <div class="log-entry"><span class="log-time">04:18</span><span class="log-dot buy"></span><span class="log-msg">[MOM] Bought DOGE at $0.1506</span></div>
+      </div>
+      <span class="hotspot" data-id="6" style="top: 10px; right: 10px;">6</span>
+    </div>
+  </div>
+
+  <!-- 3-col row -->
+  <div class="hold-strat-accel-row">
+
+    <!-- LEFT: Holdings + Strategy -->
+    <div class="hold-strat-col">
+      <div class="hold-col">
+        <div class="section-label">Holdings</div>
+        <div class="compact-holding">
+          <span class="hotspot" data-id="7" style="top: 8px; right: -8px;">7</span>
+          <div class="ch-header">
+            <span class="ch-coin">SOL</span>
+            <span class="ch-layer">PROGRESSIVE +6%</span>
+            <span class="ch-layer wall-hug">Wall-hugging</span>
+            <div class="ch-pnl-group">
+              <span class="ch-pnl-val">$3,174.82</span>
+              <span class="ch-pnl-pct">+$174.82 (+5.83%)</span>
+            </div>
+            <button class="ch-sell">Sell</button>
+          </div>
+          <div class="ch-stats">
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Entry</span>
+              <span class="ch-stat-val dim">$182.40</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Now</span>
+              <span class="ch-stat-val">$193.04</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Stop</span>
+              <span class="ch-stat-val red">$189.60</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Dist</span>
+              <span class="ch-stat-val dim">1.8%</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">If Stop</span>
+              <span class="ch-stat-val green">+$118.56 (+3.95%)</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Hold</span>
+              <span class="ch-stat-val dim">4h/72h</span>
+            </div>
+            <div class="ch-stat">
+              <span class="ch-stat-lbl">Accel</span>
+              <span class="ch-stat-val purple">+28.4%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="compare">
+          <div class="compare-head">
+            <span class="compare-title">Price-only vs Wall-aware</span>
+            <span class="compare-active">Wall-aware active</span>
+          </div>
+          <div class="compare-body">
+            <div class="compare-cell">
+              <div class="compare-cell-hdr">Price-only (fallback)</div>
+              <div class="compare-price">$188.10</div>
+              <div class="compare-pct">−2.5% from peak</div>
+              <div class="compare-profit">
+                <span class="dim">Profit locked: </span>
+                <span class="val green">+$94.20 (+3.13%)</span>
+              </div>
+            </div>
+            <div class="compare-cell active">
+              <div class="compare-cell-hdr">Wall-aware (active)</div>
+              <div class="compare-price">$189.60</div>
+              <div class="compare-pct">0.1% below wall @ $189.70</div>
+              <div class="compare-profit">
+                <span class="dim">Profit locked: </span>
+                <span class="val green">+$118.56 (+3.95%)</span>
+              </div>
+            </div>
+          </div>
+          <div class="compare-delta">
+            Wall-aware locks <b>+$24.36 more</b> than price-only
+            <span class="dim">(if price drops to stop)</span>
+          </div>
+        </div>
+
+        <div class="cfg-log-row">
+          <div class="cfg">
+            <div class="cfg-head">Guardrails</div>
+            <div class="cfg-body">
+              <div class="cfg-row"><span class="cfg-lbl">Min wall size vs position</span><span class="cfg-val">≥ 3×</span></div>
+              <div class="cfg-row"><span class="cfg-lbl">Min wall persistence</span><span class="cfg-val">≥ 10s</span></div>
+              <div class="cfg-row"><span class="cfg-lbl">Max dist from peak</span><span class="cfg-val">≤ 1.5%</span></div>
+              <div class="cfg-row"><span class="cfg-lbl">Stop offset below wall</span><span class="cfg-val">0.10%</span></div>
+              <div class="cfg-row"><span class="cfg-lbl">Fallback</span><span class="cfg-val">Progressive 2.0%</span></div>
+            </div>
+          </div>
+          <div class="log-card">
+            <div class="log-head">Stop decision log</div>
+            <div class="log-body">
+              <div class="log-row"><span class="log-ts">14:02:31</span><span class="log-desc"><span class="log-tag anchor">anchor</span>wall $189.70 (48.4k, 240s)</span></div>
+              <div class="log-row"><span class="log-ts">13:58:10</span><span class="log-desc"><span class="log-tag raised">raised</span>stop → $189.60</span></div>
+              <div class="log-row"><span class="log-ts">13:45:02</span><span class="log-desc"><span class="log-tag anchor">anchor</span>wall $188.20 (32k, 15s)</span></div>
+              <div class="log-row"><span class="log-ts">13:32:55</span><span class="log-desc"><span class="log-tag cleared">cleared</span>wall size fell below 3×</span></div>
+            </div>
+          </div>
+          <span class="hotspot" data-id="8" style="top: -8px; right: -8px;">8</span>
+        </div>
+      </div>
+
+      <div class="strat-col">
+        <div class="section-label">Strategy</div>
+        <div class="compact-strategy">
+          <div class="cs-chip">
+            <span class="cs-label">Regime</span>
+            <span class="cs-value">Bull</span>
+            <span class="cs-detail">BTC +2.4% vs SMA</span>
+          </div>
+          <div class="cs-chip">
+            <span class="cs-label">Rebalance</span>
+            <span class="cs-value" style="color: var(--text);">3d 12h</span>
+          </div>
+          <div class="cs-chip">
+            <span class="cs-label">Position</span>
+            <span class="cs-value" style="color: var(--text);">1 of 1 (max)</span>
+          </div>
+        </div>
+
+        <div class="section-label">Would Sell If</div>
+        <div class="compact-exits">
+          <div class="ce-tag ce-amber"><span class="ce-label">stop hit</span><div class="ce-bar"><div class="ce-fill low"></div></div><span class="ce-val dim">−1.8%</span></div>
+          <div class="ce-tag"><span class="ce-label">accel fades</span><div class="ce-bar"><div class="ce-fill mid"></div></div><span class="ce-val warn">+11% / 5%</span></div>
+          <div class="ce-tag"><span class="ce-label">72h max</span><div class="ce-bar"><div class="ce-fill low"></div></div><span class="ce-val dim">4h / 72h</span></div>
+          <div class="ce-tag ce-red"><span class="ce-label">regime flip</span><span class="ce-val dim">bullish</span></div>
+        </div>
+
+        <div class="section-label">Would Buy If</div>
+        <div class="compact-buy">
+          <div class="cb-tag"><span class="cb-text green">✓ regime bullish</span></div>
+          <div class="cb-tag"><span class="cb-text green">✓ not in cooldown</span></div>
+          <div class="cb-tag"><span class="cb-text red">✗ already holding</span></div>
+          <div class="cb-tag"><span class="cb-text red">✗ slot taken</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: L2 ladder -->
+    <div class="l2-col">
+      <div class="l2-card">
+        <div class="l2-title">L2 Ladder · SOL-USD</div>
+        <div class="l2-rows">
+          <div class="l2-row ask"><div class="fill" style="width: 30%"></div><span class="price">193.80</span><span class="size">19.6</span><span class="usd">$3.8k</span><span class="age">4s</span></div>
+          <div class="l2-row ask"><div class="fill" style="width: 38%"></div><span class="price">193.20</span><span class="size">26.9</span><span class="usd">$5.2k</span><span class="age">12s</span></div>
+          <div class="l2-row ask"><div class="fill" style="width: 22%"></div><span class="price">193.06</span><span class="size">12.4</span><span class="usd">$2.4k</span><span class="age">3s</span></div>
+        </div>
+        <div class="l2-spread">spread 0.02 (1.0 bps) · mid $193.04</div>
+        <div class="l2-rows">
+          <div class="l2-row bid"><div class="fill" style="width: 28%"></div><span class="price">193.02</span><span class="size">16.6</span><span class="usd">$3.2k</span><span class="age">2s</span></div>
+          <div class="l2-row bid"><div class="fill" style="width: 42%"></div><span class="price">192.80</span><span class="size">31.6</span><span class="usd">$6.1k</span><span class="age">8s</span></div>
+          <div class="l2-row bid wall"><div class="fill" style="width: 88%"></div><span class="price">189.70</span><span class="size">255</span><span class="usd">$48.4k</span><span class="age">4m</span></div>
+          <div class="l2-row bid"><div class="fill" style="width: 26%"></div><span class="price">188.50</span><span class="size">14.9</span><span class="usd">$2.8k</span><span class="age">6s</span></div>
+          <div class="l2-row bid"><div class="fill" style="width: 18%"></div><span class="price">187.00</span><span class="size">8.6</span><span class="usd">$1.6k</span><span class="age">1s</span></div>
+        </div>
+      </div>
+      <span class="hotspot" data-id="9" style="top: 8px; right: 10px;">9</span>
+    </div>
+
+    <!-- RIGHT: Acceleration Scanner -->
+    <div class="accel-col">
+      <div class="section-header">
+        ACCELERATION SCANNER
+        <span class="scanner-meta">10 scanned · top 4 accelerating · last eval 12s ago</span>
+      </div>
+      <div class="accel-cards">
+        <div class="accel-card qualifying-card">
+          <div class="ac-top">
+            <span class="ac-coin">SOL</span>
+            <span class="ac-badge holding">HOLDING</span>
+            <span class="ac-price">$193.04</span>
+          </div>
+          <div class="ac-desc">Already in position — monitoring for exit.</div>
+          <div class="ac-bar-track"><div class="ac-bar-fill qualifying" style="width: 75%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+28.4%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card qualifying-card">
+          <div class="ac-top">
+            <span class="ac-coin">XRP</span>
+            <span class="ac-badge qual">READY</span>
+            <span class="ac-price">$0.612</span>
+          </div>
+          <div class="ac-desc">Uptrend accelerating — qualifies for entry.</div>
+          <div class="ac-gates-label">Candle Quality</div>
+          <div class="ac-gates">
+            <span class="ac-gate pass">✓ 5/6 green</span>
+            <span class="ac-gate pass">✓ body 0.62</span>
+            <span class="ac-gate pass">✓ 1.8x ATR</span>
+          </div>
+          <div class="ac-gates-label">Structure</div>
+          <div class="ac-gates">
+            <span class="ac-gate pass">✓ 14% ATH</span>
+            <span class="ac-gate pass">✓ 8h age</span>
+            <span class="ac-gate pass">✓ 18/100 stuck</span>
+          </div>
+          <div class="ac-bar-track"><div class="ac-bar-fill qualifying" style="width: 68%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+22.1%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card quality-blocked">
+          <div class="ac-top">
+            <span class="ac-coin">DOGE</span>
+            <span class="ac-badge blocked">BLOCKED</span>
+            <span class="ac-price">$0.148</span>
+          </div>
+          <div class="ac-desc">Entry blocked — structural risk detected.</div>
+          <div class="ac-gates-label">Structure</div>
+          <div class="ac-gates">
+            <span class="ac-gate fail">✗ 3% ATH</span>
+            <span class="ac-gate pass">✓ 12h age</span>
+            <span class="ac-gate pass">✓ 24/100 stuck</span>
+          </div>
+          <div class="ac-bar-track"><div class="ac-bar-fill blocked-fill" style="width: 52%"></div></div>
+          <div class="ac-stats"><span class="ac-accel pos">+21.0%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+        <div class="accel-card">
+          <div class="ac-top">
+            <span class="ac-coin">LINK</span>
+            <span class="ac-badge below">BELOW 20%</span>
+            <span class="ac-price">$14.82</span>
+          </div>
+          <div class="ac-desc">Momentum building but below the 20% re-entry threshold.</div>
+          <div class="ac-bar-track"><div class="ac-bar-fill" style="width: 38%"></div></div>
+          <div class="ac-stats"><span class="ac-accel">+12.6%</span><span class="ac-stat-label">acceleration</span></div>
+        </div>
+      </div>
+      <span class="hotspot" data-id="10" style="top: 4px; right: 10px;">10</span>
+    </div>
+  </div>
+
+  <!-- Recent trades -->
+  <div class="trades-section">
+    <div class="trades-header-row">
+      <div class="trades-title-group">
+        <span class="section-header" style="margin-bottom: 0;">Recent Trades</span>
+        <button class="calendar-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Calendar
+        </button>
+      </div>
+      <div class="trade-stats-bar">
+        <span class="ts-mood">🙂</span>
+        <span class="ts-record"><span class="ts-wins">4W</span><span class="ts-sep">-</span><span class="ts-losses">3L</span></span>
+        <span class="ts-winrate good">57% win rate</span>
+        <span class="ts-mood-text">holding the gains</span>
+      </div>
+    </div>
+    <table class="trades-table">
+      <thead>
+        <tr>
+          <th class="left">Date</th>
+          <th class="left">Pair</th>
+          <th class="right">Price</th>
+          <th class="right">Spent / Received</th>
+          <th class="right">Result</th>
+          <th class="left">Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="date-separator-row"><td colspan="6">Today · Apr 17</td></tr>
+        <tr>
+          <td class="left mono">14:02</td>
+          <td class="left"><span>SOL</span><span class="side-tag buy">BUY</span></td>
+          <td class="right mono">$182.40</td>
+          <td class="right mono" style="color: #f87171;">−$3,000.00</td>
+          <td class="right mono"><span style="color: var(--amber); font-size: 10px; font-weight: 600;">OPEN</span></td>
+          <td class="left">top accel, all gates pass</td>
+        </tr>
+        <tr>
+          <td class="left mono">11:48</td>
+          <td class="left"><span>XRP</span><span class="side-tag sell">SELL</span></td>
+          <td class="right mono">$0.593 → $0.612</td>
+          <td class="right mono" style="color: #4ade80;">+$3,094.80</td>
+          <td class="right mono">
+            <span style="color: #4ade80; font-weight: 600;">WIN +$94.80</span>
+            <span class="result-breakdown">price +$113.20 / fees -$18.40</span>
+          </td>
+          <td class="left">wall cleared, trail trigger</td>
+        </tr>
+        <tr class="date-separator-row"><td colspan="6">Yesterday · Apr 16</td></tr>
+        <tr>
+          <td class="left mono">07:30</td>
+          <td class="left"><span>DOGE</span><span class="side-tag sell">SELL</span></td>
+          <td class="right mono">$0.1506 → $0.148</td>
+          <td class="right mono" style="color: #4ade80;">+$2,946.12</td>
+          <td class="right mono">
+            <span style="color: #f87171; font-weight: 600;">LOSS −$53.88</span>
+            <span class="result-breakdown">price -$49.80 / fees -$18.00</span>
+          </td>
+          <td class="left">accel fade, trail hit</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="hotspot" data-id="11" style="top: 12px; right: 12px;">11</span>
+  </div>
+
+</div>
+
+<!-- ============================ BRAIN FLOW ============================ -->
+<div class="brain">
+  <h2>How the bot thinks — from scan to exit</h2>
+  <div class="sub">The full life of a trade. Hit play to watch it run, or click any stage to dig in.</div>
+
+  <div class="brain-controls">
+    <button class="brain-btn primary" id="playFlow"><span class="play-icon">▶</span> Play the full cycle</button>
+    <button class="brain-btn" id="resetFlow">Reset</button>
+    <span style="color: var(--text-faint); font-size: 11px; align-self: center;">· watch a real scan filter 10 coins down to 1, then follow that coin from buy to exit</span>
+  </div>
+
+  <!-- The pipeline: 6 stages + animated arrows -->
+  <div class="pipeline" id="pipeline">
+    <div class="pl-stage" data-id="f1" data-stage="1">
+      <span class="pl-num">01</span>
+      <div class="pl-icon">🔍</div>
+      <h4>Scan</h4>
+      <p>Rank every pair by momentum acceleration.</p>
+      <span class="pl-chip">once / hour</span>
+    </div>
+    <div class="pl-stage" data-id="f2" data-stage="2">
+      <span class="pl-num">02</span>
+      <div class="pl-icon">🚦</div>
+      <h4>Gate</h4>
+      <p>Quality + structure filters reject the weak.</p>
+      <span class="pl-chip">7 rules</span>
+    </div>
+    <div class="pl-stage" data-id="f3" data-stage="3">
+      <span class="pl-num">03</span>
+      <div class="pl-icon">🌊</div>
+      <h4>Regime</h4>
+      <p>Is BTC bullish? If not, stay in cash.</p>
+      <span class="pl-chip">BTC vs MA</span>
+    </div>
+    <div class="pl-stage" data-id="f4" data-stage="4">
+      <span class="pl-num">04</span>
+      <div class="pl-icon">🎯</div>
+      <h4>Enter</h4>
+      <p>Market-buy the top survivor, arm the tick loop.</p>
+      <span class="pl-chip">$3k allocated</span>
+    </div>
+    <div class="pl-stage" data-id="f5" data-stage="5">
+      <span class="pl-num">05</span>
+      <div class="pl-icon">📈</div>
+      <h4>Hold &amp; trail</h4>
+      <p>Trail stop chases the peak. Walls anchor it.</p>
+      <span class="pl-chip">1 Hz</span>
+    </div>
+    <div class="pl-stage" data-id="f6" data-stage="6">
+      <span class="pl-num">06</span>
+      <div class="pl-icon">🏁</div>
+      <h4>Exit + cooldown</h4>
+      <p>Stop hit, fade, or 72h cap → sell, wait, repeat.</p>
+      <span class="pl-chip">back to 01</span>
+    </div>
+  </div>
+
+  <!-- === Card 1: The coin funnel === -->
+  <div class="brain-card" id="bcFunnel">
+    <div class="bc-head">
+      <span class="bc-tag">STAGES 01 · 02 · 03</span>
+      <h3>The scan funnel — a real hour's work</h3>
+    </div>
+    <div class="bc-sub">10 watched pairs → 4 pass quality → 2 pass structure → regime check → 1 winner. This is exactly what happens every top-of-the-hour.</div>
+
+    <div class="funnel">
+
+      <div class="fn-col">
+        <h5>Scored</h5>
+        <p class="fn-desc">All pairs ranked by acceleration (last-3h pct change ÷ 3h ATR).</p>
+        <span class="fn-count">10</span>
+        <div class="fn-list">
+          <div class="fn-row"><span class="pair">SOL-USD</span><span class="val">+34%</span></div>
+          <div class="fn-row"><span class="pair">AVAX-USD</span><span class="val">+28%</span></div>
+          <div class="fn-row"><span class="pair">LINK-USD</span><span class="val">+24%</span></div>
+          <div class="fn-row"><span class="pair">DOGE-USD</span><span class="val">+22%</span></div>
+          <div class="fn-row"><span class="pair">ADA-USD</span><span class="val">+18%</span></div>
+          <div class="fn-row"><span class="pair">DOT-USD</span><span class="val">+14%</span></div>
+          <div class="fn-row"><span class="pair">XRP-USD</span><span class="val">+11%</span></div>
+          <div class="fn-row"><span class="pair">BTC-USD</span><span class="val">+6%</span></div>
+          <div class="fn-row"><span class="pair">ETH-USD</span><span class="val">+4%</span></div>
+          <div class="fn-row"><span class="pair">MATIC</span><span class="val">−3%</span></div>
+        </div>
+      </div>
+
+      <div class="fn-col">
+        <h5>After quality gate</h5>
+        <p class="fn-desc">Accel ≥ 20%, 2/6 green candles, body ratio ≥ 0.3, 3h &lt; 3× ATR.</p>
+        <span class="fn-count">4</span>
+        <div class="fn-list">
+          <div class="fn-row pass"><span class="pair">SOL-USD</span><span class="val">✓ all</span></div>
+          <div class="fn-row pass"><span class="pair">AVAX-USD</span><span class="val">✓ all</span></div>
+          <div class="fn-row pass"><span class="pair">LINK-USD</span><span class="val">✓ all</span></div>
+          <div class="fn-row pass"><span class="pair">DOGE-USD</span><span class="val">✓ all</span></div>
+          <div class="fn-row fail"><span class="pair">ADA-USD</span><span class="reason">accel &lt; 20</span></div>
+          <div class="fn-row fail"><span class="pair">DOT-USD</span><span class="reason">overextended</span></div>
+          <div class="fn-row fail"><span class="pair">XRP-USD</span><span class="reason">body &lt; 0.3</span></div>
+          <div class="fn-row fail"><span class="pair">BTC-USD</span><span class="reason">accel &lt; 20</span></div>
+          <div class="fn-row fail"><span class="pair">ETH-USD</span><span class="reason">accel &lt; 20</span></div>
+          <div class="fn-row fail"><span class="pair">MATIC</span><span class="reason">negative</span></div>
+        </div>
+      </div>
+
+      <div class="fn-col">
+        <h5>After structure</h5>
+        <p class="fn-desc">Distance from ATH ≥ 5%, age ≤ 100h, not stuck at a level.</p>
+        <span class="fn-count">2</span>
+        <div class="fn-list">
+          <div class="fn-row pass"><span class="pair">SOL-USD</span><span class="val">12% from ATH</span></div>
+          <div class="fn-row pass"><span class="pair">LINK-USD</span><span class="val">8% from ATH</span></div>
+          <div class="fn-row fail"><span class="pair">AVAX-USD</span><span class="reason">at ATH</span></div>
+          <div class="fn-row fail"><span class="pair">DOGE-USD</span><span class="reason">104h old</span></div>
+        </div>
+      </div>
+
+      <div class="fn-col winner">
+        <h5>Regime check → pick</h5>
+        <p class="fn-desc">BTC above its MA by 2.1% → bullish → take top-ranked.</p>
+        <span class="fn-count">1</span>
+        <div class="fn-list">
+          <div class="fn-row winner"><span class="pair">SOL-USD</span><span class="val">BUY</span></div>
+          <div class="fn-row"><span class="pair">LINK-USD</span><span class="val">waitlist</span></div>
+          <div style="margin-top: 10px; padding: 8px 10px; background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.3); border-radius: 4px; font-size: 10px; color: var(--green); font-family: 'JetBrains Mono', monospace;">
+            ENTRY → $142.00<br>
+            size → $3,000 / 21.13 SOL<br>
+            fee → 0.3%
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- === Card 2: Trail stop + walls === -->
+  <div class="brain-card" id="bcTrail">
+    <div class="bc-head">
+      <span class="bc-tag">STAGE 05 — ENGINE ROOM</span>
+      <h3>Holding the coin — how the trail stop actually moves</h3>
+    </div>
+    <div class="bc-sub">Every tick, peak updates. Trail hugs peak at −2%. If a big bid wall appears, the stop jumps up to hug that wall instead. Progressive lock-ins at +6% and +8% refuse to give gains back.</div>
+
+    <div class="trail-demo">
+      <div class="trail-chart-wrap">
+        <svg class="trail-svg" viewBox="0 0 700 260" preserveAspectRatio="none">
+          <!-- grid -->
+          <defs>
+            <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g stroke="#2d3148" stroke-width="0.5" opacity="0.5">
+            <line x1="0" y1="40" x2="700" y2="40"/>
+            <line x1="0" y1="100" x2="700" y2="100"/>
+            <line x1="0" y1="160" x2="700" y2="160"/>
+            <line x1="0" y1="220" x2="700" y2="220"/>
+          </g>
+
+          <!-- entry line -->
+          <line x1="0" y1="200" x2="700" y2="200" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 4"/>
+          <text x="6" y="196" fill="#9ca3af" font-size="10" font-family="JetBrains Mono">entry $142.00</text>
+
+          <!-- price area + line -->
+          <path d="M 20,200 L 90,185 L 150,170 L 210,150 L 260,128 L 310,108 L 360,88 L 410,76 L 470,70 L 530,82 L 580,104 L 640,130 L 700,130 L 700,260 L 20,260 Z"
+                fill="url(#priceGrad)" opacity="0.4"/>
+          <path id="priceLine" d="M 20,200 L 90,185 L 150,170 L 210,150 L 260,128 L 310,108 L 360,88 L 410,76 L 470,70 L 530,82 L 580,104 L 640,130 L 700,130"
+                fill="none" stroke="#a78bfa" stroke-width="2.5"/>
+
+          <!-- peak marker -->
+          <circle cx="470" cy="70" r="4" fill="#4ade80"/>
+          <text x="478" y="66" fill="#4ade80" font-size="10" font-family="JetBrains Mono">peak $156</text>
+
+          <!-- step 1: flat trail (−2%) — goes up in steps -->
+          <path id="trailLine" d="M 20,220 L 90,210 L 150,200 L 210,186 L 260,172 L 310,156 L 360,140 L 410,126 L 470,120 L 530,120 L 580,120 L 640,120 L 700,120"
+                fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="0"/>
+
+          <!-- wall appears at x=530 (after peak) -->
+          <rect x="515" y="132" width="30" height="26" fill="#60a5fa" opacity="0.28" stroke="#60a5fa" stroke-width="1"/>
+          <text x="520" y="128" fill="#60a5fa" font-size="9" font-family="JetBrains Mono">wall $150 · $18k</text>
+
+          <!-- wall-aware stop jumps -->
+          <path id="waLine" d="M 530,150 L 580,150 L 640,150 L 700,150"
+                fill="none" stroke="#34d399" stroke-width="2.5"/>
+          <text x="552" y="145" fill="#34d399" font-size="10" font-family="JetBrains Mono">wall-aware stop</text>
+
+          <!-- exit point -->
+          <circle cx="640" cy="130" r="5" fill="#f87171"/>
+          <text x="595" y="120" fill="#f87171" font-size="10" font-family="JetBrains Mono">stop hit → sell</text>
+
+          <!-- lock-in markers -->
+          <line x1="360" y1="0" x2="360" y2="260" stroke="#4ade80" stroke-width="0.7" stroke-dasharray="2 4" opacity="0.35"/>
+          <text x="364" y="14" fill="#4ade80" font-size="9" font-family="JetBrains Mono">+6% lock</text>
+          <line x1="410" y1="0" x2="410" y2="260" stroke="#4ade80" stroke-width="0.7" stroke-dasharray="2 4" opacity="0.35"/>
+          <text x="414" y="14" fill="#4ade80" font-size="9" font-family="JetBrains Mono">+8% lock</text>
+
+          <!-- animated head -->
+          <circle id="priceHead" cx="20" cy="200" r="5" fill="#fff" stroke="#a78bfa" stroke-width="2">
+            <animate attributeName="cx" values="20;470;640" dur="6s" repeatCount="indefinite"/>
+            <animate attributeName="cy" values="200;70;130" dur="6s" repeatCount="indefinite"/>
+          </circle>
+
+          <!-- x-axis -->
+          <text x="20" y="252" fill="#6b7280" font-size="10" font-family="JetBrains Mono">t+0</text>
+          <text x="340" y="252" fill="#6b7280" font-size="10" font-family="JetBrains Mono">t+90m</text>
+          <text x="660" y="252" fill="#6b7280" font-size="10" font-family="JetBrains Mono">t+150m</text>
+        </svg>
+        <div class="trail-legend">
+          <span><span class="sw" style="background: #a78bfa"></span>price</span>
+          <span><span class="sw" style="background: #fbbf24"></span>trail stop (price-only, −2%)</span>
+          <span><span class="sw" style="background: #34d399"></span>wall-aware stop</span>
+          <span><span class="sw" style="background: #60a5fa"></span>qualifying wall on L2</span>
+          <span><span class="sw" style="background: #4ade80"></span>+6% / +8% lock-in</span>
+        </div>
+      </div>
+
+      <div class="trail-events" id="trailEvents">
+        <div class="te" data-t="1">
+          <div class="te-time">t+0m</div>
+          <div class="te-title">Buy at $142.00</div>
+          <div class="te-desc">Peak = trough = entry. Trail armed at $139.16 (−2%).</div>
+        </div>
+        <div class="te" data-t="2">
+          <div class="te-time">t+40m</div>
+          <div class="te-title">+6% lock-in fires</div>
+          <div class="te-desc">Price hits $150.52. Floor raised to entry + 1.2% — no matter what, exit is now green.</div>
+        </div>
+        <div class="te" data-t="3">
+          <div class="te-time">t+70m</div>
+          <div class="te-title">+8% lock-in fires</div>
+          <div class="te-desc">Price at $153.36. Floor raised again to +4% above entry.</div>
+        </div>
+        <div class="te" data-t="4">
+          <div class="te-time">t+90m</div>
+          <div class="te-title">Peak: $156.30</div>
+          <div class="te-desc">Price rolls over. Trail frozen at peak × 0.98 = $153.17.</div>
+        </div>
+        <div class="te" data-t="5">
+          <div class="te-time">t+110m</div>
+          <div class="te-title">Wall detected on L2</div>
+          <div class="te-desc">$18k bid wall at $150, aged 12s — qualifies. Stop <span class="key">snaps up</span> to $149.85 (wall × 0.999), tighter than trail.</div>
+        </div>
+        <div class="te" data-t="6">
+          <div class="te-time">t+150m</div>
+          <div class="te-title">Stop hit → SELL</div>
+          <div class="te-desc">Price slips to $149.80. Market sell. P&L <span class="hit">+5.5% net</span>. Cooldown starts.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === Card 3: Data wiring === -->
+  <div class="brain-card" id="bcWiring">
+    <div class="bc-head">
+      <span class="bc-tag">UNDER THE HOOD</span>
+      <h3>Where the data comes from, where it lands</h3>
+    </div>
+    <div class="bc-sub">Three live feeds from Coinbase power the whole thing. Every decision is written back to disk for later analysis — that's how we know if a trade was a real signal or just noise.</div>
+
+    <div class="wiring">
+      <div class="wiring-rail">
+        <div class="wr-src">
+          <div class="s1">Hourly candles</div>
+          <div class="s2">REST poll at :00</div>
+        </div>
+        <div class="wr-flow">
+          <span class="wr-arrow">→</span>
+          <span class="wr-box purple">momentum score</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box">gate log</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box db">regime_snapshots</span>
+          <span class="wr-arrow">+</span>
+          <span class="wr-box db">candles</span>
+        </div>
+      </div>
+      <div class="wiring-rail">
+        <div class="wr-src">
+          <div class="s1">WS ticker</div>
+          <div class="s2">per-trade feed</div>
+        </div>
+        <div class="wr-flow">
+          <span class="wr-arrow">→</span>
+          <span class="wr-box green">peak / trough</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box amber">trail stop</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box db">momentum_trades (MAE/MFE)</span>
+        </div>
+      </div>
+      <div class="wiring-rail">
+        <div class="wr-src">
+          <div class="s1">WS L2 book</div>
+          <div class="s2">50 levels, 5s snap</div>
+        </div>
+        <div class="wr-flow">
+          <span class="wr-arrow">→</span>
+          <span class="wr-box">top-5 bids</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box green">wall detector</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box amber">wall-aware trail</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box db">wall_decisions</span>
+          <span class="wr-arrow">+</span>
+          <span class="wr-box db">l2_snapshots</span>
+        </div>
+      </div>
+      <div class="wiring-rail">
+        <div class="wr-src">
+          <div class="s1">WS matches</div>
+          <div class="s2">every fill on watched pairs</div>
+        </div>
+        <div class="wr-flow">
+          <span class="wr-arrow">→</span>
+          <span class="wr-box">flow pressure</span>
+          <span class="wr-arrow">→</span>
+          <span class="wr-box db">ws_matches</span>
+          <span class="wr-arrow" style="color: var(--text-faint); font-style: italic;">(for post-trade analysis — was the wall real flow or spoofing?)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === Card 4: Day in the life timeline === -->
+  <div class="brain-card" id="bcTimeline">
+    <div class="bc-head">
+      <span class="bc-tag">A FULL TRADE, MINUTE BY MINUTE</span>
+      <h3>One day. One trade. Start to finish.</h3>
+    </div>
+    <div class="bc-sub">This is what the last Friday's SOL trade actually looked like — synthesized from the real logs.</div>
+
+    <div class="timeline">
+      <div class="tl-step done">
+        <div class="tl-time">10:00:00 — HOURLY CLOSE</div>
+        <div class="tl-label">Scanner wakes up</div>
+        <div class="tl-body">New hourly candle closes. Engine recomputes momentum for all 10 pairs. Candidates ranked by acceleration. <span class="key">SOL-USD leads at +34%</span>.</div>
+      </div>
+      <div class="tl-step done">
+        <div class="tl-time">10:00:02 — GATES</div>
+        <div class="tl-label">Quality + structure filters</div>
+        <div class="tl-body">6 of 10 coins fail on accel. 2 more fail structure (AVAX at ATH, DOGE too old). <span class="hit">SOL and LINK survive.</span> Reasons logged to <code>_gate_log</code>.</div>
+      </div>
+      <div class="tl-step done">
+        <div class="tl-time">10:00:03 — REGIME</div>
+        <div class="tl-label">BTC meta-check</div>
+        <div class="tl-body">BTC at $68,420. Regime MA at $67,015. Above by <span class="hit">2.1%</span>, well past the 0.5% hysteresis band. <span class="key">Regime = bullish → proceed.</span> Snapshot saved to <code>regime_snapshots</code>.</div>
+      </div>
+      <div class="tl-step done" id="tlEntry">
+        <div class="tl-time">10:00:04 — ENTRY</div>
+        <div class="tl-label">Market buy SOL-USD @ $142.00</div>
+        <div class="tl-body">$3,000 allocation → 21.13 SOL. Fee: $9. Entry row written to <code>momentum_trades</code>. WS subscribes to SOL ticker + L2. Book-writer thread starts pushing live state at 1 Hz. Peak = trough = $142.00.</div>
+      </div>
+      <div class="tl-step done">
+        <div class="tl-time">10:40 — LOCK-IN #1</div>
+        <div class="tl-label">+6% hit → hard floor</div>
+        <div class="tl-body">Price at $150.52. Progressive lock activates. Floor raised to entry × 1.012 = $143.70. <span class="hit">Exit now guaranteed green</span>, even if it reverses.</div>
+      </div>
+      <div class="tl-step done">
+        <div class="tl-time">11:10 — LOCK-IN #2 + WALL</div>
+        <div class="tl-label">+8% fires, L2 wall spotted</div>
+        <div class="tl-body">Price at $153.36. Floor jumps to $147.70 (+4%). Meanwhile L2 shows an $18k bid wall at $150 — size is 6× our position, aged 12s. <span class="key">Wall qualifies → stop snaps up to $149.85.</span> <code>wall_decisions</code> row written.</div>
+      </div>
+      <div class="tl-step done">
+        <div class="tl-time">11:30 — PEAK</div>
+        <div class="tl-label">High-water at $156.30</div>
+        <div class="tl-body">MFE (max favorable excursion): <span class="hit">+3.03%</span>. Stored on the trade row. Price starts to fade.</div>
+      </div>
+      <div class="tl-step now" id="tlExit">
+        <div class="tl-time">12:30 — EXIT</div>
+        <div class="tl-label">Price drops through wall-aware stop</div>
+        <div class="tl-body">Price prints $149.80, one tick below the stop. <span class="miss">Market sell.</span> 21.13 SOL → $3,165. Net P&L after both-side fees: <span class="hit">+$147 (+4.9%)</span>. Exit reason: <code>wall_aware_stop</code>. Full snapshot (peak, trough, ticks_since_peak, MAE/MFE) finalized.</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-time">12:30–13:00 — COOLDOWN</div>
+        <div class="tl-label">30-minute timeout</div>
+        <div class="tl-body">Engine refuses new entries for 30m to avoid whipsaw. Hero bar shows cash only. Status banner displays <span class="key">"Cooldown · 28m left"</span>.</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-time">13:00 — LOOP</div>
+        <div class="tl-label">Next hourly close</div>
+        <div class="tl-body">Scanner wakes up again. Back to step 1. Over a week, this loop runs ~168 times — of those, maybe 3–6 trigger actual entries.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================ DRAWER ============================ -->
+<div class="drawer-overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div style="display: flex; gap: 12px;">
+      <div class="num" id="dNum">1</div>
+      <div>
+        <div class="drawer-title" id="dTitle">Engine status bar</div>
+        <div class="drawer-sub" id="dSub">What it shows · where it comes from</div>
+      </div>
+    </div>
+    <button class="drawer-close" id="dClose" aria-label="close">×</button>
+  </div>
+  <div class="drawer-body" id="dBody"></div>
+</aside>
+
+<script>
+const CONTENT = {
+  "1": {
+    title: "Engine tab",
+    sub: "Purple header row — the engine's identity",
+    body: `
+      <h3>What the dot means</h3>
+      <ul>
+        <li><b>Green pulse</b> — position open, wall-aware trail evaluating every tick.</li>
+        <li><b>Amber pulse</b> — engine running in cash (cooldown or no candidate passed).</li>
+        <li><b>Grey</b> — engine disabled in <code>bot_config.yaml</code>.</li>
+      </ul>
+      <h3>The HOLDING / IDLE tag</h3>
+      <p>Mirrors the dot color. The <code>$3,000 allocated</code> on the right is momentum's earmark — grid trading runs on a separate pool.</p>
+      <h3>Buttons</h3>
+      <ul>
+        <li><b>Export DB</b> — downloads <code>candles.db</code> (now also zips <code>market_tape.db</code> when present).</li>
+        <li><b>Backup</b> — copies DBs to the external drive mapped in config.</li>
+        <li><b>Reset Data</b> — wipes momentum tables and starts fresh. Candles stay.</li>
+      </ul>
+    `
+  },
+  "2": {
+    title: "Hero bar — Total / Cash / Positions / P&L",
+    sub: "Live equity, broken out",
+    body: `
+      <h3>What the numbers mean</h3>
+      <ul>
+        <li><b>Total</b> = cash + positions. The headline.</li>
+        <li><b>Cash</b> (muted grey) — free USD between trades.</li>
+        <li><b>Positions</b> (purple) — current market value of open holdings.</li>
+        <li><b>P&L</b> — total − starting balance, with percent. Broken down below into <span style="color:#f59e0b">Fees</span> paid and <span style="color:#4ade80">Price</span> gains.</li>
+      </ul>
+      <h3>How fast it updates</h3>
+      <p>Pushed 1/second by the <code>book_writer</code> thread — the same thread that runs <code>refresh_live_state</code> through every holding. That's why you can watch it breathe.</p>
+      <div class="hint">P&L is <b>net of fees</b>. Unrealized on open positions assumes a 0.6% round-trip hasn't been paid yet.</div>
+    `
+  },
+  "3": {
+    title: "Wall-aware trail toggle",
+    sub: "Flips the stop logic on the current holding",
+    body: `
+      <h3>What ON does</h3>
+      <p>Instead of a flat % trail, the bot looks at the L2 book and anchors the stop <b>just below the biggest qualifying bid wall</b>.</p>
+      <h3>A wall has to clear four gates</h3>
+      <ul>
+        <li>Size ≥ <b>3× position equity</b></li>
+        <li>Has sat at that price for ≥ <b>10 seconds</b> (anti-spoof)</li>
+        <li>Within <b>1.5% below the running peak</b></li>
+        <li>Resulting stop must sit <b>≥ 1.2% above entry</b> (fee-clearing buffer)</li>
+      </ul>
+      <h3>If nothing qualifies</h3>
+      <p>It falls back to the progressive price-only trail. You'll see the <span style="color:#d97706;">"No wall → price trail"</span> chip on the holding card.</p>
+      <div class="hint">Every anchor / cleared / raised event is now logged to <code>wall_decisions</code> with the full top-5 book snapshot — that's what lets us audit "was this exit real?"</div>
+    `
+  },
+  "4": {
+    title: "Status banner · BULL · WS ticks",
+    sub: "Live state the bot is operating under",
+    body: `
+      <h3>BULL / BEAR</h3>
+      <p>Computed from BTC vs. its regime MA with hysteresis:</p>
+      <div class="flow">
+        <b>bullish</b> = BTC ≥ MA × (1 + 0.5%)<br>
+        <b>bearish</b> = BTC ≤ MA × (1 − 0.5%)<br>
+        (hysteresis prevents chatter near the line)
+      </div>
+      <h3>What the banner also shows</h3>
+      <ul>
+        <li><b>Cooldown</b> badge appears after an exit — prevents immediate re-entry.</li>
+        <li><b>"In position Xh"</b> — hours since the current buy.</li>
+        <li><b>WS ● N ticks</b> — websocket ticker feed is alive and this many ticks have been captured for the current position.</li>
+        <li><b>refresh Xs</b> (right side) — next 60s poll countdown.</li>
+      </ul>
+    `
+  },
+  "5": {
+    title: "Portfolio equity chart",
+    sub: "Every 1s equity snapshot, plotted",
+    body: `
+      <h3>Ranges</h3>
+      <p>1h / 6h / 24h / 7d toggle. Mouse scroll to zoom, drag to pan, ↺ resets.</p>
+      <h3>What to look for</h3>
+      <ul>
+        <li><b>Sharp step up/down on entry</b> — fees, not a bug.</li>
+        <li><b>Smooth slope while holding</b> — the position breathing 1/second.</li>
+        <li><b>Flat line</b> — in cash, waiting for a setup.</li>
+      </ul>
+      <div class="hint">The whole series is stored in <code>momentum_equity</code>. When you export the DB, this table comes with it.</div>
+    `
+  },
+  "6": {
+    title: "What's Happening · activity feed",
+    sub: "Every decision, in order",
+    body: `
+      <h3>Dot colors</h3>
+      <ul>
+        <li><span style="color:#4ade80">●</span> green — buys</li>
+        <li><span style="color:#f87171">●</span> red — sells</li>
+        <li><span style="color:#60a5fa">●</span> blue — info (trail raised, wall anchored, cooldown skipped, etc.)</li>
+      </ul>
+      <h3>Where it's stored</h3>
+      <p>Every row is an <code>momentum_events</code> insert — persisted across restarts. The in-memory buffer you see is the rolling 50 most recent.</p>
+      <div class="hint">When in-depth analysis is needed, query this table joined to <code>momentum_trades</code> — one hour of activity tells the story.</div>
+    `
+  },
+  "7": {
+    title: "Holding card",
+    sub: "Everything about the open position at a glance",
+    body: `
+      <h3>Header badges</h3>
+      <ul>
+        <li><b>PROGRESSIVE +6%</b> — the trail has locked in at the +6% floor. Jumps to +8% once peak crosses that.</li>
+        <li><b>Wall-hugging</b> (teal) — stop is currently anchored to a qualifying bid wall.</li>
+        <li><b>No wall → price trail</b> — wall-aware on but no wall currently qualifies.</li>
+        <li><b>Sell</b> button forces an immediate market-sell with full cooldown applied.</li>
+      </ul>
+      <h3>The seven stats</h3>
+      <ul>
+        <li><b>Entry</b> — fill price. Everything is relative to this.</li>
+        <li><b>Now</b> — live mid.</li>
+        <li><b>Stop</b> (red) — active trail stop.</li>
+        <li><b>Dist</b> — % distance from Now to Stop; tight = about to exit.</li>
+        <li><b>If Stop</b> — dollars + % you'd lock in if the stop hit right now. This is the <i>minimum</i> you're walking away with.</li>
+        <li><b>Hold</b> — time held / 72h max.</li>
+        <li><b>Accel</b> (purple) — current acceleration. If this drops below 5% after 4h, the exit-on-fade rule triggers.</li>
+      </ul>
+    `
+  },
+  "8": {
+    title: "Guardrails · Stop decision log",
+    sub: "Wall-aware audit trail",
+    body: `
+      <h3>Guardrails (left)</h3>
+      <p>The four thresholds that decide which walls qualify. These come from <code>wall_aware_trail</code> in <code>bot_config.yaml</code>.</p>
+      <h3>Decision log (right)</h3>
+      <p>Live feed of every wall-aware evaluation:</p>
+      <ul>
+        <li><b style="color:#34d399">anchor</b> — a qualifying wall was found, stop snapped to it.</li>
+        <li><b style="color:#60a5fa">raised</b> — stop moved up (new peak or larger wall).</li>
+        <li><b style="color:#f87171">cleared</b> — the wall shrank, moved, or aged out; stop fell back to price-only.</li>
+      </ul>
+      <div class="hint">Now also persisted to <code>wall_decisions</code> with the top-5 book snapshot per event — so you can replay "was this exit signal real?"</div>
+    `
+  },
+  "9": {
+    title: "L2 ladder",
+    sub: "Live order book for the held pair",
+    body: `
+      <h3>Layout</h3>
+      <p>Asks on top (red), spread in the middle, bids on bottom (green). Each row: price · size (base) · USD · age.</p>
+      <h3>Reading walls</h3>
+      <ul>
+        <li>The <b>teal-highlighted row</b> is the currently anchored wall.</li>
+        <li>Big <b>age</b> (minutes) = persistent order — more likely real flow.</li>
+        <li>Big size + tiny age = probable spoofing — bot will not anchor.</li>
+      </ul>
+      <div class="hint">All 50 levels per side (not just these 5) are now snapshotted every 5s into <code>l2_snapshots</code> on the 10 watched pairs — that's the backtest fuel for future wall-aware tuning.</div>
+    `
+  },
+  "10": {
+    title: "Acceleration Scanner",
+    sub: "Top candidates, ranked live",
+    body: `
+      <h3>The three card states</h3>
+      <ul>
+        <li><span style="color:#fbbf24">HOLDING</span> — the pair we're in.</li>
+        <li><span style="color:#4ade80">READY</span> — passes accel ≥ 20% and all quality/structure gates.</li>
+        <li><span style="color:#ef4444">BLOCKED</span> — above accel threshold but failed a quality or structure gate.</li>
+        <li><span style="color:#64748b">BELOW 20%</span> — momentum too weak to consider.</li>
+      </ul>
+      <h3>Quality gates (candle shape)</h3>
+      <ul>
+        <li><b>green</b> — at least 2 of last 6 candles closed up.</li>
+        <li><b>body</b> — candle body ratio (not all wick).</li>
+        <li><b>ATR</b> — 3h price move vs normal volatility; above 3× = overextended.</li>
+      </ul>
+      <h3>Structure gates</h3>
+      <ul>
+        <li><b>ATH</b> — room to run; within 5% of all-time high = ceiling risk.</li>
+        <li><b>age</b> — how fresh; accel active &gt; 100h = late to the party.</li>
+        <li><b>stuck</b> — hours in the last 100 where price stayed within 3% of level.</li>
+      </ul>
+    `
+  },
+  "11": {
+    title: "Recent trades · mood + calendar",
+    sub: "History with verdicts",
+    body: `
+      <h3>Mood + record</h3>
+      <p>Emoji + W-L + win rate. Mood text ("holding the gains", "cooling off", etc.) is computed from the last N exits.</p>
+      <h3>Result column</h3>
+      <ul>
+        <li><b>WIN / LOSS</b> + net dollars.</li>
+        <li>Below: <b>price</b> gain/loss and <b>fees</b> paid — so you can see if a "loss" was actually a slow price move that fees ate.</li>
+      </ul>
+      <h3>Calendar</h3>
+      <p>Opens a day grid with cumulative daily P&L — useful for spotting streaks and regime effects before we have the formal analysis tooling.</p>
+    `
+  },
+  "f1": { title: "Step 1 · Scan", sub: "Top of the hour", body: `
+    <h3>What happens</h3>
+    <p>Every new hourly candle close triggers a full recompute: momentum metrics for all configured pairs, sorted by acceleration.</p>
+    <h3>Inputs</h3>
+    <ul>
+      <li>Hourly candles from Coinbase (warmed up from DB on boot).</li>
+      <li>ATR, RSI, ADX, 3h/6h/12h/24h change.</li>
+    </ul>
+    <div class="hint">The scan runs on the main engine thread — cheap enough not to need its own worker. Results populate <code>_gate_log</code>, written to SQLite each cycle.</div>
+  `},
+  "f2": { title: "Step 2 · Gate", sub: "Hard filters", body: `
+    <h3>Quality gates</h3>
+    <ul>
+      <li>Acceleration ≥ 20%</li>
+      <li>2+ of last 6 candles green</li>
+      <li>Body ratio ≥ 0.3 (decisive candles)</li>
+      <li>3h change ≤ 3× ATR (not overextended)</li>
+    </ul>
+    <h3>Structure gates</h3>
+    <ul>
+      <li>Distance from ATH ≥ 5% (room to run)</li>
+      <li>Momentum age ≤ 100h (fresh)</li>
+      <li>Time-at-level ≤ 30 / last 100 hours (not stuck)</li>
+    </ul>
+    <div class="hint">Fail any one and the coin is rejected this cycle. The "Why Not Buying" tags surface the specific failure so you see it instantly.</div>
+  `},
+  "f3": { title: "Step 3 · Regime", sub: "BTC meta-filter", body: `
+    <h3>Check</h3>
+    <p>Is BTC above its regime MA (hourly) with 0.5% hysteresis? If bearish, abort — no new entries, but existing positions keep trailing.</p>
+    <h3>Why</h3>
+    <p>Momentum strategies work when the tide is rising. In chop, individual coins can pass quality gates but get cut down by BTC pulling the market back. The regime filter is the cheapest single rule to sidestep those periods.</p>
+  `},
+  "f4": { title: "Step 4 · Enter", sub: "Buy the top survivor", body: `
+    <h3>What happens</h3>
+    <p>Top-ranked passing coin gets a market buy. Entry, pair, size, fee → <code>momentum_trades</code>.</p>
+    <h3>What starts immediately</h3>
+    <ul>
+      <li><b>WS recorder</b> subscribes to ticker+L2 for the held pair (for stop-diff analysis).</li>
+      <li><b>Peak and trough</b> initialized to entry price — every tick updates these, feeding MFE and MAE.</li>
+      <li><b>1Hz book-writer thread</b> starts pushing live state; the hero bar and holding card start breathing.</li>
+    </ul>
+  `},
+  "f5": { title: "Step 5 · Hold & trail", sub: "Every tick", body: `
+    <h3>Per-tick logic</h3>
+    <div class="flow">
+      if mid &gt; peak: peak = mid<br>
+      if mid &lt; trough: trough = mid<br>
+      trail = max(trail, peak × (1 − 2%))<br>
+      if wall_aware AND wall_qualifies:<br>
+      &nbsp;&nbsp;&nbsp;trail = max(trail, wall_price × (1 − 0.1%))
+    </div>
+    <h3>Progressive lock-in</h3>
+    <p>At peak +6% and +8%, the floor jumps. Once you've earned the gain, the bot refuses to give it all back.</p>
+    <h3>What's being logged for analysis</h3>
+    <p>Every wall decision → <code>wall_decisions</code>. Peak + trough → MFE/MAE columns on <code>momentum_trades</code>.</p>
+  `},
+  "f6": { title: "Step 6 · Exit", sub: "Sell + cooldown", body: `
+    <h3>Exit triggers</h3>
+    <ul>
+      <li><b>Stop hit</b> — trail (or wall-based) stop crossed.</li>
+      <li><b>Accel fade</b> — acceleration drops below 5% after 4h held.</li>
+      <li><b>72h max</b> — hard ceiling on hold time.</li>
+      <li><b>Regime flip</b> — BTC turns bearish (optional).</li>
+      <li><b>Manual</b> — you clicked Sell.</li>
+    </ul>
+    <h3>What's logged</h3>
+    <p>Exit snapshot with peak_pnl, drawdown_from_peak, ticks_since_new_peak, MAE, MFE — everything needed to answer "should we have exited?"</p>
+    <div class="hint">After every exit, a cooldown kicks in to prevent whipsawing. Skip it from the status banner if conviction is high.</div>
+  `},
+};
+
+const ORDER = ["1","2","3","4","5","6","7","8","9","10","11","f1","f2","f3","f4","f5","f6"];
+
+const drawer = document.getElementById("drawer");
+const overlay = document.getElementById("overlay");
+const dTitle = document.getElementById("dTitle");
+const dSub = document.getElementById("dSub");
+const dNum = document.getElementById("dNum");
+const dBody = document.getElementById("dBody");
+
+let currentId = null;
+
+function openItem(id) {
+  const c = CONTENT[id];
+  if (!c) return;
+  currentId = id;
+  dTitle.textContent = c.title;
+  dSub.textContent = c.sub;
+  dNum.textContent = id.startsWith("f") ? id.slice(1) : id;
+  dBody.innerHTML = c.body + navButtons(id);
+  drawer.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+  overlay.classList.add("open");
+  document.querySelectorAll(".hotspot, .flow-step, .pl-stage").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === id));
+  wireNav();
+}
+function navButtons(id) {
+  const idx = ORDER.indexOf(id);
+  const prev = idx > 0 ? ORDER[idx - 1] : null;
+  const next = idx < ORDER.length - 1 ? ORDER[idx + 1] : null;
+  const pl = prev ? (CONTENT[prev].title.split(" ")[0]) : "Start";
+  const nl = next ? (CONTENT[next].title.split(" ")[0]) : "End";
+  return `<div class="nav-between">
+    <button id="navPrev" ${prev ? "" : "disabled"}>← ${pl}</button>
+    <button id="navNext" ${next ? "" : "disabled"}>${nl} →</button>
+  </div>`;
+}
+function wireNav() {
+  const p = document.getElementById("navPrev");
+  const n = document.getElementById("navNext");
+  const idx = ORDER.indexOf(currentId);
+  if (p && idx > 0) p.onclick = () => openItem(ORDER[idx - 1]);
+  if (n && idx < ORDER.length - 1) n.onclick = () => openItem(ORDER[idx + 1]);
+}
+function closeDrawer() {
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+  overlay.classList.remove("open");
+  document.querySelectorAll(".hotspot, .flow-step, .pl-stage").forEach(el => el.classList.remove("active"));
+  currentId = null;
+}
+document.querySelectorAll(".hotspot").forEach(el => {
+  el.addEventListener("click", e => { e.stopPropagation(); openItem(el.dataset.id); });
+});
+document.querySelectorAll(".flow-step, .pl-stage").forEach(el => {
+  el.addEventListener("click", () => openItem(el.dataset.id));
+});
+
+/* ===== Play-the-full-cycle animation ===== */
+const stages = Array.from(document.querySelectorAll(".pl-stage"));
+const tlSteps = Array.from(document.querySelectorAll(".tl-step"));
+const teItems = Array.from(document.querySelectorAll(".te"));
+const playBtn = document.getElementById("playFlow");
+const resetBtn = document.getElementById("resetFlow");
+let playTimer = null;
+let playIdx = 0;
+
+function clearFlow() {
+  stages.forEach(s => s.classList.remove("active-flow"));
+  tlSteps.forEach(s => s.classList.remove("done", "now"));
+  teItems.forEach(s => s.classList.remove("active"));
+}
+function scrollToAnchor(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const y = el.getBoundingClientRect().top + window.pageYOffset - 80;
+  window.scrollTo({ top: y, behavior: "smooth" });
+}
+
+function setStage(i) {
+  stages.forEach((s, idx) => s.classList.toggle("active-flow", idx === i));
+  // map 6 pipeline stages to the 10 timeline steps roughly
+  const tlMap = [ [0], [1], [2], [3], [4,5,6], [7,8,9] ];
+  const teMap = [ [], [], [], [0], [1,2,3], [4,5] ];
+  // scroll anchor per stage
+  const scrollMap = [ "bcFunnel", "bcFunnel", "bcFunnel", "tlEntry", "bcTrail", "tlExit" ];
+  scrollToAnchor(scrollMap[i]);
+  tlSteps.forEach((s, idx) => {
+    s.classList.remove("done", "now");
+  });
+  for (let k = 0; k <= i; k++) {
+    (tlMap[k] || []).forEach((tlIdx, j) => {
+      if (k === i && j === tlMap[k].length - 1) {
+        tlSteps[tlIdx].classList.add("now");
+      } else {
+        tlSteps[tlIdx].classList.add("done");
+      }
+    });
+  }
+  teItems.forEach(s => s.classList.remove("active"));
+  (teMap[i] || []).forEach(idx => teItems[idx] && teItems[idx].classList.add("active"));
+}
+
+function playStep() {
+  if (playIdx >= stages.length) {
+    stopPlay();
+    return;
+  }
+  setStage(playIdx);
+  playIdx++;
+  playTimer = setTimeout(playStep, 1800);
+}
+function stopPlay() {
+  clearTimeout(playTimer);
+  playTimer = null;
+  playBtn.innerHTML = '<span class="play-icon">▶</span> Play the full cycle';
+  if (playIdx >= stages.length) {
+    // cycle done — unstick pipeline
+    pipelineEl && pipelineEl.classList.remove("sticky");
+  }
+}
+const pipelineEl = document.getElementById("pipeline");
+playBtn && playBtn.addEventListener("click", () => {
+  if (playTimer) { stopPlay(); pipelineEl.classList.remove("sticky"); return; }
+  if (playIdx >= stages.length) { clearFlow(); playIdx = 0; }
+  playBtn.innerHTML = '<span class="play-icon">⏸</span> Pause';
+  pipelineEl.classList.add("sticky");
+  playStep();
+});
+resetBtn && resetBtn.addEventListener("click", () => {
+  stopPlay();
+  playIdx = 0;
+  clearFlow();
+  pipelineEl.classList.remove("sticky");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+overlay.addEventListener("click", closeDrawer);
+document.getElementById("dClose").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+document.getElementById("startTour").addEventListener("click", () => openItem("1"));
+</script>
+</body>
+</html>

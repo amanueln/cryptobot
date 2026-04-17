@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>L2 Ladder Mockup — cryptobot</title>
+<style>
+  :root {
+    --panel: #121821;
+    --panel-2: #182030;
+    --border: #25304a;
+    --text: #e6ecf5;
+    --muted: #8895ad;
+    --dim: #5a6679;
+    --win: #16a34a;
+    --loss: #dc2626;
+    --amber: #fbbf24;
+    --green: #22c55e;
+    --red: #ef4444;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0f17;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .wrap {
+    max-width: 1100px;
+    margin: 24px auto;
+    padding: 0 16px;
+  }
+  h1 { font-size: 18px; font-weight: 500; margin: 0 0 16px; color: var(--muted); }
+  .meta { font-size: 11px; color: var(--dim); margin-bottom: 16px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 820px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---- holdings card (mimics prod) ---- */
+  .holdings-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .ch-header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px; min-width: 0;
+    flex-wrap: wrap; row-gap: 6px;
+  }
+  .ch-coin {
+    font-size: 16px; font-weight: 600;
+    flex: 0 0 auto;
+  }
+  .ch-layer {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .3px;
+    background: rgba(34,197,94,.15); color: var(--green);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis;
+    flex: 0 1 auto;
+  }
+  .ch-stats {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+    margin: 12px 0;
+  }
+  .ch-stat {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px; background: var(--panel-2);
+    border-radius: 6px;
+  }
+  .ch-stat-lbl {
+    font-size: 9px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .ch-stat-val {
+    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .ch-stat-val.green { color: var(--green); }
+  .ch-stat-val.dim { color: var(--muted); }
+  .ch-total {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-top: 10px; border-top: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .ch-total-val { font-size: 15px; font-weight: 600; }
+  .ch-total-pnl { font-size: 13px; color: var(--green); }
+
+  /* ---- L2 ladder ---- */
+  .l2-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    position: sticky; top: 16px;
+  }
+  .l2-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .l2-title {
+    font-size: 12px; font-weight: 600; letter-spacing: .3px;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .l2-status {
+    display: flex; align-items: center; gap: 6px; font-size: 10px;
+  }
+  .l2-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 6px var(--green);
+  }
+  .l2-dot.off { background: var(--dim); box-shadow: none; }
+  .l2-age {
+    color: var(--dim); font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    margin-left: 4px;
+  }
+
+  .l2-body { padding: 8px 0; font-variant-numeric: tabular-nums; }
+
+  .l2-row {
+    display: grid;
+    align-items: center;
+    height: 18px;
+    padding: 0 12px;
+    font-size: 11px;
+    position: relative;
+  }
+  .l2-row.ask { grid-template-columns: 70px 1fr 55px 28px; }
+  .l2-row.bid { grid-template-columns: 28px 55px 1fr 70px; }
+  .l2-row .price { font-weight: 500; }
+  .l2-row.bid .price { color: var(--green); }
+  .l2-row.ask .price { color: var(--red); }
+  .l2-row .bar {
+    height: 12px;
+    border-radius: 2px;
+    margin: 0 6px;
+    opacity: .45;
+    position: relative;
+    z-index: 0;
+  }
+  .l2-row.bid .bar { background: var(--green); justify-self: end; }
+  .l2-row.ask .bar { background: var(--red); justify-self: start; }
+  .l2-row .size {
+    font-size: 10px; color: var(--muted);
+    position: relative; z-index: 2;
+  }
+  .l2-row.bid .size { text-align: right; }
+  .l2-row.ask .size { text-align: left; }
+  .l2-row .age {
+    font-size: 9px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    position: relative; z-index: 2;
+    text-align: center;
+  }
+  .l2-row.bid .age { text-align: left; }
+  .l2-row.ask .age { text-align: right; }
+  .l2-row.fresh .age { color: var(--green); font-weight: 600; }
+  .l2-row.wall .bar { opacity: .8; box-shadow: 0 0 6px currentColor; }
+  .l2-row.wall .size { color: var(--amber); font-weight: 600; text-shadow: 0 0 3px #0b0f17, 0 0 3px #0b0f17; }
+  .l2-row .price, .l2-row .age, .l2-row .size { position: relative; z-index: 2; }
+
+  /* Mid-price separator */
+  .l2-mid {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 12px; margin: 4px 0;
+    background: linear-gradient(90deg,
+      rgba(59,130,246,0) 0%,
+      rgba(59,130,246,.12) 50%,
+      rgba(59,130,246,0) 100%);
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    font-size: 12px; font-weight: 600;
+  }
+  .l2-mid-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+  .l2-mid-val { color: var(--text); font-variant-numeric: tabular-nums; }
+  .l2-mid-spread { color: var(--dim); font-size: 10px; }
+
+  /* Overlay lines for trail stop & entry */
+  .l2-overlay {
+    position: absolute; left: 12px; right: 12px;
+    height: 0; border-top: 2px solid;
+    pointer-events: none;
+  }
+  .l2-overlay .lbl {
+    position: absolute; right: 0; top: -9px;
+    font-size: 9px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px;
+    letter-spacing: .4px; text-transform: uppercase;
+  }
+  .l2-overlay.stop { border-color: var(--amber); }
+  .l2-overlay.stop .lbl { background: var(--amber); color: #111; }
+  .l2-overlay.entry { border-color: rgba(255,255,255,.25); border-style: dashed; }
+  .l2-overlay.entry .lbl { background: rgba(255,255,255,.12); color: var(--muted); }
+
+  /* Footer with computed depth signals */
+  .l2-signals {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    font-size: 11px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
+  }
+  .l2-sig-lbl { color: var(--muted); }
+  .l2-sig-val { font-weight: 600; text-align: right; }
+  .l2-sig-val.good { color: var(--green); }
+  .l2-sig-val.warn { color: var(--amber); }
+  .l2-sig-val.bad { color: var(--red); }
+
+  .note {
+    margin-top: 12px; font-size: 11px; color: var(--dim); line-height: 1.5;
+  }
+
+  /* Interpretation panel */
+  .l2-read {
+    border-top: 1px solid var(--border);
+    padding: 10px 14px 12px;
+    background: #0f1520;
+  }
+  .l2-read-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .l2-read-title {
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+  .l2-verdict {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .l2-verdict.hold   { background: rgba(34,197,94,.15); color: var(--green); }
+  .l2-verdict.watch  { background: rgba(251,191,36,.15); color: var(--amber); }
+  .l2-verdict.risk   { background: rgba(239,68,68,.18);  color: var(--red); }
+  .l2-verdict.wait   { background: rgba(139,149,173,.15); color: var(--muted); }
+
+  .l2-read-list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .l2-read-list li {
+    display: grid; grid-template-columns: 14px 1fr;
+    gap: 8px; align-items: start;
+    font-size: 11px; line-height: 1.35;
+  }
+  .l2-read-list .ic {
+    text-align: center; font-weight: 700;
+    font-size: 10px; margin-top: 1px;
+  }
+  .l2-read-list .ic.ok  { color: var(--green); }
+  .l2-read-list .ic.warn { color: var(--amber); }
+  .l2-read-list .ic.bad { color: var(--red); }
+  .l2-read-list .txt { color: var(--text); }
+  .l2-read-list .hi { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .l2-read-list .dim { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Holdings Card + L2 Ladder — live mockup</h1>
+  <div class="meta">
+    Connects directly to Coinbase's public level2 WebSocket.
+    Pair: <select id="pair-select" style="background:#182030;color:var(--text);border:1px solid var(--border);padding:3px 6px;border-radius:4px;font-size:11px">
+      <option>FARTCOIN-USD</option><option>BTC-USD</option><option>ETH-USD</option>
+      <option>DOGE-USD</option><option>SOL-USD</option></select>
+    &nbsp;·&nbsp; Entry/Stop prices below are mocked to match the real FARTCOIN position.
+  </div>
+  <div class="grid">
+    <!-- Holdings card (mimics current prod UI) -->
+    <div class="holdings-card">
+      <div class="ch-header">
+        <span class="ch-coin" id="h-coin">FARTCOIN</span>
+        <span class="ch-layer">Progressive lock (2.0%)</span>
+      </div>
+      <div class="ch-stats">
+        <div class="ch-stat">
+          <span class="ch-stat-lbl">Entry</span>
+          <span class="ch-stat-val dim" id="h-entry">$0.217200</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-lbl">Now</span>
+          <span class="ch-stat-val" id="h-now">$0.228500</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-lbl">Stop</span>
+          <span class="ch-stat-val" id="h-stop">$0.226576</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-lbl">Dist</span>
+          <span class="ch-stat-val" id="h-dist">0.8%</span>
+        </div>
+        <div class="ch-stat">
+          <span class="ch-stat-lbl">If Stop</span>
+          <span class="ch-stat-val green" id="h-ifstop">+$167.38 (4.3%)</span>
+        </div>
+      </div>
+      <div class="ch-total">
+        <span class="ch-total-val" id="h-equity">$4,107.79</span>
+        <span class="ch-total-pnl" id="h-pnl">+$230.29 (5.9%)</span>
+      </div>
+      <div class="note">
+        <b>What's new:</b> the ladder on the right shows the live Coinbase order book. Green bars = bids (buyers), red = asks (sellers). The <span style="color:var(--amber);font-weight:600">yellow line</span> is your trail stop drawn on the price axis — so you can literally see whether bids exist below it. Walls (unusually large orders) glow.
+      </div>
+    </div>
+
+    <!-- L2 Ladder -->
+    <div class="l2-card">
+      <div class="l2-head">
+        <span class="l2-title">Order Book · <span id="lbl-pair">FARTCOIN</span></span>
+        <span class="l2-status">
+          <span class="l2-dot off" id="l2-dot"></span>
+          <span id="l2-status-text">connecting…</span>
+          <span class="l2-age" id="l2-age"></span>
+        </span>
+      </div>
+      <div class="l2-body" id="l2-body"></div>
+      <div class="l2-signals">
+        <span class="l2-sig-lbl">Spread</span>
+        <span class="l2-sig-val" id="sig-spread">—</span>
+        <span class="l2-sig-lbl">Bid imbalance (0-1%)</span>
+        <span class="l2-sig-val" id="sig-imb">—</span>
+        <span class="l2-sig-lbl">Bids below stop (0-1%)</span>
+        <span class="l2-sig-val" id="sig-stop-depth">—</span>
+        <span class="l2-sig-lbl">Top bid wall</span>
+        <span class="l2-sig-val" id="sig-wall">—</span>
+      </div>
+      <div class="l2-read">
+        <div class="l2-read-head">
+          <span class="l2-read-title">What the book is saying</span>
+          <span class="l2-verdict" id="verdict">—</span>
+        </div>
+        <ul class="l2-read-list" id="read-list"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- mocked holding (matches the real FARTCOIN position) ----
+const HOLDING = {
+  pair: "FARTCOIN-USD",
+  entry: 0.2172,
+  stop: 0.226576,
+  shares: 17843.2, // ~$3878 / $0.2173
+};
+
+// ---- order book state ----
+let bids = new Map(); // price -> size
+let asks = new Map();
+let bidUpdates = new Map(); // price -> localMs of last update
+let askUpdates = new Map();
+let ws = null;
+let lastEventTime = null;  // latest event_time from level2 (ISO)
+let lastEventMs = 0;        // local ms when we processed it
+
+function fmtUsd(v) {
+  return v >= 1000 ? `$${Math.round(v).toLocaleString()}` : `$${v.toFixed(2)}`;
+}
+function fmtPrice(p, pair) {
+  if (p >= 1000) return `$${p.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  if (p >= 1) return `$${p.toFixed(4)}`;
+  return `$${p.toFixed(6)}`;
+}
+
+function subscribe(pair) {
+  if (ws) { try { ws.close(); } catch(e){} }
+  bids = new Map(); asks = new Map();
+  bidUpdates = new Map(); askUpdates = new Map();
+  document.getElementById('lbl-pair').textContent = pair.replace('-USD','');
+  document.getElementById('l2-dot').classList.add('off');
+  document.getElementById('l2-status-text').textContent = 'connecting…';
+  ws = new WebSocket('wss://advanced-trade-ws.coinbase.com');
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type:'subscribe', product_ids:[pair], channel:'level2'}));
+    document.getElementById('l2-dot').classList.remove('off');
+    document.getElementById('l2-status-text').textContent = 'live';
+  };
+  ws.onmessage = (ev) => {
+    let m;
+    try { m = JSON.parse(ev.data); } catch (e) { return; }
+    if (m.channel !== 'l2_data') return;
+    for (const event of (m.events || [])) {
+      for (const u of (event.updates || [])) {
+        const side = u.side;
+        const price = +u.price_level;
+        const qty = +u.new_quantity;
+        const book = side === 'bid' ? bids : asks;
+        const upd = side === 'bid' ? bidUpdates : askUpdates;
+        const nowMs = Date.now();
+        if (!qty) { book.delete(price); upd.delete(price); }
+        else { book.set(price, qty); upd.set(price, nowMs); }
+        if (u.event_time) { lastEventTime = u.event_time; lastEventMs = nowMs; }
+      }
+    }
+  };
+  ws.onclose = () => {
+    document.getElementById('l2-dot').classList.add('off');
+    document.getElementById('l2-status-text').textContent = 'disconnected';
+  };
+}
+
+function topN(book, side, n) {
+  const arr = [...book.entries()];
+  arr.sort((a, b) => side === 'bid' ? b[0] - a[0] : a[0] - b[0]);
+  return arr.slice(0, n);
+}
+
+function depthWithin(book, mid, loPct, hiPct, side) {
+  let usd = 0;
+  for (const [price, size] of book) {
+    const dist = side === 'bid' ? (mid - price) / mid * 100 : (price - mid) / mid * 100;
+    if (dist >= loPct && dist < hiPct) usd += size * price;
+  }
+  return usd;
+}
+
+function largestWall(book, mid, side, maxDist) {
+  let best = null;
+  for (const [price, size] of book) {
+    const dist = side === 'bid' ? (mid - price) / mid * 100 : (price - mid) / mid * 100;
+    if (dist < 0 || dist > maxDist) continue;
+    const usd = size * price;
+    if (!best || usd > best.usd) best = { price, size, dist, usd };
+  }
+  return best;
+}
+
+function bestBid() { if (!bids.size) return null; let m = -Infinity; for (const p of bids.keys()) if (p > m) m = p; return m; }
+function bestAsk() { if (!asks.size) return null; let m = Infinity; for (const p of asks.keys()) if (p < m) m = p; return m; }
+
+function render() {
+  const bb = bestBid(); const ba = bestAsk();
+  if (bb === null || ba === null) { return; }
+  const mid = (bb + ba) / 2;
+  const spread = ba - bb;
+  const spreadBps = spread / mid * 10000;
+
+  const N = 12;
+  const topBids = topN(bids, 'bid', N);
+  const topAsks = topN(asks, 'ask', N).reverse(); // asks displayed descending so mid is at bottom of ask block
+  const renderNow = Date.now();
+  const fmtAge = (ms) => {
+    if (ms == null) return '';
+    const d = renderNow - ms;
+    if (d < 1000) return 'now';
+    if (d < 60000) return `${Math.round(d/1000)}s`;
+    if (d < 3600000) return `${Math.round(d/60000)}m`;
+    return `${Math.round(d/3600000)}h`;
+  };
+  const maxSize = Math.max(
+    ...topBids.map(([,s]) => s), ...topAsks.map(([,s]) => s), 1
+  );
+
+  // Wall threshold = 3× median of visible
+  const allSizes = [...topBids.map(([,s])=>s), ...topAsks.map(([,s])=>s)];
+  allSizes.sort((a,b) => a-b);
+  const median = allSizes[Math.floor(allSizes.length/2)] || 0;
+  const wallThresh = median * 3;
+
+  const body = document.getElementById('l2-body');
+  body.innerHTML = '';
+
+  // Asks (render descending so closest-to-mid is at bottom)
+  for (const [p, s] of topAsks) {
+    const row = document.createElement('div');
+    const updMs = askUpdates.get(p);
+    const age = updMs ? renderNow - updMs : 9e9;
+    const fresh = age < 1500 ? ' fresh' : '';
+    row.className = 'l2-row ask' + (s >= wallThresh ? ' wall' : '') + fresh;
+    const usd = s * p;
+    row.innerHTML = `<span class="price">${fmtPrice(p)}</span>
+      <span class="bar" style="width:${Math.min(100, s/maxSize*100)}%"></span>
+      <span class="size">${fmtUsd(usd)}</span>
+      <span class="age">${fmtAge(updMs)}</span>`;
+    body.appendChild(row);
+  }
+
+  // Mid block
+  const midDiv = document.createElement('div');
+  midDiv.className = 'l2-mid';
+  midDiv.innerHTML = `<span class="l2-mid-label">Mid</span>
+    <span class="l2-mid-val">${fmtPrice(mid)}</span>
+    <span class="l2-mid-spread">${spreadBps.toFixed(1)}bps</span>`;
+  body.appendChild(midDiv);
+
+  // Bids
+  for (const [p, s] of topBids) {
+    const row = document.createElement('div');
+    const updMs = bidUpdates.get(p);
+    const age = updMs ? renderNow - updMs : 9e9;
+    const fresh = age < 1500 ? ' fresh' : '';
+    row.className = 'l2-row bid' + (s >= wallThresh ? ' wall' : '') + fresh;
+    const usd = s * p;
+    row.innerHTML = `<span class="age">${fmtAge(updMs)}</span>
+      <span class="size">${fmtUsd(usd)}</span>
+      <span class="bar" style="width:${Math.min(100, s/maxSize*100)}%"></span>
+      <span class="price">${fmtPrice(p)}</span>`;
+    body.appendChild(row);
+  }
+
+  // If stop is below the lowest visible bid, show an indicator row
+  const lowestBid = topBids.length ? topBids[topBids.length - 1][0] : null;
+  if (lowestBid !== null && HOLDING.stop < lowestBid) {
+    const distPct = (lowestBid - HOLDING.stop) / lowestBid * 100;
+    const sentinel = document.createElement('div');
+    sentinel.style.cssText = 'padding:6px 12px;margin-top:2px;border-top:1px dashed rgba(251,191,36,.35);display:flex;justify-content:space-between;font-size:10px;color:var(--amber);font-weight:600;letter-spacing:.3px;text-transform:uppercase;';
+    sentinel.innerHTML = `<span>↓ Stop ${fmtPrice(HOLDING.stop)}</span><span>${distPct.toFixed(2)}% below visible</span>`;
+    body.appendChild(sentinel);
+  }
+
+  // Overlay: trail stop & entry lines positioned within the body
+  // Figure out which row's price bracket contains the stop
+  function addOverlay(targetPrice, klass, label) {
+    const allPrices = [...topAsks.map(([p])=>p), mid, ...topBids.map(([p])=>p)];
+    // find insertion row: scan children
+    const rows = body.children;
+    for (let i = 0; i < rows.length - 1; i++) {
+      const cur = allPrices[i];
+      const nxt = allPrices[i+1];
+      if ((cur >= targetPrice && nxt <= targetPrice) || (cur <= targetPrice && nxt >= targetPrice)) {
+        const ov = document.createElement('div');
+        ov.className = 'l2-overlay ' + klass;
+        ov.style.position = 'absolute';
+        ov.style.left = '12px'; ov.style.right = '12px';
+        // position over the boundary — use top of rows[i+1]
+        const rect = rows[i+1].getBoundingClientRect();
+        const parentRect = body.getBoundingClientRect();
+        ov.style.top = `${rect.top - parentRect.top - 1}px`;
+        ov.innerHTML = `<span class="lbl">${label}</span>`;
+        body.appendChild(ov);
+        body.style.position = 'relative';
+        break;
+      }
+    }
+  }
+  addOverlay(HOLDING.stop, 'stop', 'Stop ' + fmtPrice(HOLDING.stop));
+  addOverlay(HOLDING.entry, 'entry', 'Entry ' + fmtPrice(HOLDING.entry));
+
+  // --- holdings card live updates (just price + distance + pnl) ---
+  const now = mid; // use mid as "now" proxy
+  const nowEl = document.getElementById('h-now');
+  nowEl.textContent = fmtPrice(now);
+  const distPct = (now - HOLDING.stop) / now * 100;
+  document.getElementById('h-dist').textContent = `${distPct.toFixed(1)}%`;
+  const equity = HOLDING.shares * now;
+  document.getElementById('h-equity').textContent = `$${equity.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const pnl = equity - HOLDING.shares * HOLDING.entry;
+  const pnlPct = (now - HOLDING.entry) / HOLDING.entry * 100;
+  document.getElementById('h-pnl').textContent = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct.toFixed(1)}%)`;
+
+  // --- depth signals ---
+  document.getElementById('sig-spread').textContent = `${spreadBps.toFixed(1)} bps`;
+  const bid01 = depthWithin(bids, mid, 0, 1, 'bid');
+  const ask01 = depthWithin(asks, mid, 0, 1, 'ask');
+  const total = bid01 + ask01;
+  const imb = total ? bid01 / total * 100 : 50;
+  const imbEl = document.getElementById('sig-imb');
+  imbEl.textContent = `${imb.toFixed(0)}% buy`;
+  imbEl.className = 'l2-sig-val ' + (imb > 58 ? 'good' : imb < 42 ? 'bad' : 'warn');
+
+  // Bids sitting between stop price and mid (catches a dip toward stop)
+  let stopDepth = 0;
+  for (const [p, s] of bids) {
+    if (p <= mid && p >= HOLDING.stop) stopDepth += s * p;
+  }
+  const stopEl = document.getElementById('sig-stop-depth');
+  stopEl.textContent = fmtUsd(stopDepth);
+  stopEl.className = 'l2-sig-val ' + (stopDepth > 50000 ? 'good' : stopDepth > 10000 ? 'warn' : 'bad');
+
+  const w = largestWall(bids, mid, 'bid', 2.0);
+  const wEl = document.getElementById('sig-wall');
+  if (w) {
+    wEl.textContent = `${fmtUsd(w.usd)} @ ${fmtPrice(w.price)} (${w.dist.toFixed(2)}% below)`;
+    wEl.className = 'l2-sig-val ' + (w.usd > 30000 ? 'good' : 'warn');
+  } else {
+    wEl.textContent = '—';
+    wEl.className = 'l2-sig-val';
+  }
+
+  // --- plain-language interpretation ---
+  renderInterpretation({
+    mid, bid01, ask01, imb, spreadBps,
+    stopDepth, wall: w, equity,
+  });
+}
+
+function renderInterpretation(ctx) {
+  const { mid, bid01, ask01, imb, spreadBps, stopDepth, wall, equity } = ctx;
+  const readList = document.getElementById('read-list');
+  const verdictEl = document.getElementById('verdict');
+  const lines = [];
+  const scores = []; // +1 good, -1 bad, 0 neutral
+
+  // 1. Buyer/seller pressure from imbalance
+  if (imb >= 60) {
+    lines.push({ ic: 'ok', html:
+      `<span class="hi">Buyers in control</span> — <span class="hi">${imb.toFixed(0)}%</span> of near-price depth is bids. Dips are getting absorbed.` });
+    scores.push(1);
+  } else if (imb <= 40) {
+    lines.push({ ic: 'bad', html:
+      `<span class="hi">Sellers heavy</span> — only <span class="hi">${imb.toFixed(0)}%</span> bid-side near mid. Asks are stacked; rallies will face resistance.` });
+    scores.push(-1);
+  } else {
+    lines.push({ ic: 'warn', html:
+      `<span class="hi">Balanced book</span> — bid/ask near mid is roughly even (${imb.toFixed(0)}% buy). No strong directional pressure.` });
+    scores.push(0);
+  }
+
+  // 2. Wall / support
+  if (wall) {
+    const coversPos = wall.usd > equity * 3;
+    const coversSome = wall.usd > equity;
+    if (coversPos) {
+      lines.push({ ic: 'ok', html:
+        `<span class="hi">Strong support</span> — <span class="hi">${fmtUsd(wall.usd)}</span> wall sits ${wall.dist.toFixed(2)}% below mid (${(wall.usd/equity).toFixed(1)}× your position). Price likely defends there.` });
+      scores.push(1);
+    } else if (coversSome) {
+      lines.push({ ic: 'warn', html:
+        `<span class="hi">Moderate support</span> — ${fmtUsd(wall.usd)} wall ${wall.dist.toFixed(2)}% down. Could cushion a dip but not guaranteed.` });
+      scores.push(0);
+    } else {
+      lines.push({ ic: 'bad', html:
+        `<span class="hi">Weak walls</span> — largest bid only ${fmtUsd(wall.usd)}, smaller than your $${equity.toFixed(0)} position. Thin book.` });
+      scores.push(-1);
+    }
+  } else {
+    lines.push({ ic: 'warn', html:
+      `<span class="hi">No visible walls</span> below mid — book is flat here. Price has no clear defensive level.` });
+    scores.push(0);
+  }
+
+  // 3. Stop cushion
+  if (stopDepth > equity * 5) {
+    lines.push({ ic: 'ok', html:
+      `<span class="hi">Stop well-cushioned</span> — <span class="hi">${fmtUsd(stopDepth)}</span> of bids stacked between price and your stop. A dip would eat through layers before triggering.` });
+    scores.push(1);
+  } else if (stopDepth > equity) {
+    lines.push({ ic: 'warn', html:
+      `<span class="hi">Thin cushion to stop</span> — only ${fmtUsd(stopDepth)} of bids above your stop. A single market sell could carry through.` });
+    scores.push(-1);
+  } else if (stopDepth > 0) {
+    lines.push({ ic: 'bad', html:
+      `<span class="hi">Almost no cushion</span> — ${fmtUsd(stopDepth)} between price and stop. Very vulnerable to a sweep.` });
+    scores.push(-1);
+  } else {
+    lines.push({ ic: 'bad', html:
+      `<span class="hi">No visible bids</span> between price and stop. If it drops, nothing to slow it.` });
+    scores.push(-1);
+  }
+
+  // 4. Liquidity / spread
+  if (spreadBps <= 5) {
+    lines.push({ ic: 'ok', html:
+      `<span class="hi">Tight spread</span> (${spreadBps.toFixed(1)} bps) — liquid market, exit cost is low.` });
+  } else if (spreadBps <= 20) {
+    lines.push({ ic: 'warn', html:
+      `<span class="hi">Moderate spread</span> (${spreadBps.toFixed(1)} bps) — some slippage expected on a market sell.` });
+  } else {
+    lines.push({ ic: 'bad', html:
+      `<span class="hi">Wide spread</span> (${spreadBps.toFixed(1)} bps) — exit will cost. Consider limit orders.` });
+  }
+
+  readList.innerHTML = lines.map(l =>
+    `<li><span class="ic ${l.ic}">${l.ic==='ok'?'●':l.ic==='warn'?'▲':'✕'}</span><span class="txt">${l.html}</span></li>`
+  ).join('');
+
+  // Verdict = aggregate
+  const total = scores.reduce((a,b)=>a+b, 0);
+  let v, vtxt;
+  if (total >= 2) { v = 'hold'; vtxt = 'Book supports holding'; }
+  else if (total <= -2) { v = 'risk'; vtxt = 'Risk rising — tighten'; }
+  else { v = 'watch'; vtxt = 'Mixed — watch'; }
+  verdictEl.className = 'l2-verdict ' + v;
+  verdictEl.textContent = vtxt;
+}
+
+document.getElementById('pair-select').addEventListener('change', (e) => subscribe(e.target.value));
+subscribe('FARTCOIN-USD');
+setInterval(render, 400);
+
+// "updated Xs ago" age ticker — refreshes even between book updates
+setInterval(() => {
+  const ageEl = document.getElementById('l2-age');
+  if (!lastEventMs) { ageEl.textContent = ''; return; }
+  const ms = Date.now() - lastEventMs;
+  if (ms < 1000) ageEl.textContent = '· 0.0s';
+  else if (ms < 60000) ageEl.textContent = `· ${(ms/1000).toFixed(1)}s`;
+  else ageEl.textContent = `· ${Math.round(ms/60000)}m`;
+}, 200);
+</script>
+</body>
+</html>
