@@ -27,6 +27,7 @@ Chart.register(...registerables, zoomPlugin);
           {{ engineTagText() }}
         </span>
         <span class="engine-alloc">{{ formatCurrency(status()?.starting_balance ?? 0) }} allocated</span>
+        <span class="engine-version" title="Running git commit">v: {{ commitSha() || '...' }}</span>
         <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
         <button class="backup-btn" (click)="backupNow()" [disabled]="backupRunning()" title="Backup databases to external drive">{{ backupRunning() ? 'Backing up...' : backupResult() || 'Backup' }}</button>
         <button class="reset-btn" (click)="resetData()" title="Reset momentum data">Reset Data</button>
@@ -1235,6 +1236,9 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   engineTickDisplay(): string { return this._engineTickDisplay(); }
 
+  private _commitSha = signal('');
+  commitSha(): string { return this._commitSha(); }
+
   private _updateEngineTick(): void {
     const s = this.status();
     if (s?.status !== 'cash' || !s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
@@ -1257,6 +1261,11 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       this.sellNotification.set({ type: 'pending', message: `Selling ${pendingSell.replace('-USD', '')}... waiting for engine to execute` });
       this._resumeSellPoll(pendingSell);
     }
+
+    this.api.fetchVersion().subscribe({
+      next: (v) => this._commitSha.set(v.commit || 'unknown'),
+      error: () => this._commitSha.set('error'),
+    });
 
     forkJoin({
       trades: this.api.fetchMomentumTrades(20),

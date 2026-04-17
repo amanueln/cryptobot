@@ -62,6 +62,33 @@ def _ensure_gate_log_columns():
 
 _ensure_gate_log_columns()
 
+
+def _get_git_sha():
+    """Return the short git SHA of the running code, or 'unknown'."""
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    head_path = os.path.join(repo_root, ".git", "HEAD")
+    try:
+        with open(head_path, "r") as f:
+            head = f.read().strip()
+        if head.startswith("ref: "):
+            ref = head[5:]
+            with open(os.path.join(repo_root, ".git", ref), "r") as f:
+                sha = f.read().strip()
+        else:
+            sha = head
+        return sha[:7]
+    except Exception:
+        return "unknown"
+
+
+_GIT_SHA = _get_git_sha()
+
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"commit": _GIT_SHA})
+
+
 # --- Auth config ---
 AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")

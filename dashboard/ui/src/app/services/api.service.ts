@@ -625,6 +625,10 @@ export class ApiService {
     });
   }
 
+  fetchVersion() {
+    return this.http.get<{ commit: string }>(`${API}/version`);
+  }
+
   /** Poll scan progress every 2s while scanning, stop when done. */
   startScanProgressPolling(onComplete?: () => void) {
     const poll = () => {
