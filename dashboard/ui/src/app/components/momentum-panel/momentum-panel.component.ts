@@ -200,6 +200,18 @@ Chart.register(...registerables, zoomPlugin);
                         <span class="tt">How far current price is from the stop — lower = closer to selling</span>
                       </div>
                       <div class="ch-stat tt-wrap">
+                        <span class="ch-stat-lbl">If Stop</span>
+                        <span class="ch-stat-val"
+                              [class.green]="ifStopPnlDollars(h) > 0"
+                              [class.red]="ifStopPnlDollars(h) < 0"
+                              [class.dim]="!h.stop_price || ifStopPnlDollars(h) === 0">
+                          {{ h.stop_price > 0
+                              ? (ifStopPnlDollars(h) >= 0 ? '+' : '') + formatCurrency(ifStopPnlDollars(h)) + ' (' + ifStopPnlPct(h).toFixed(1) + '%)'
+                              : '—' }}
+                        </span>
+                        <span class="tt">P&amp;L you'd lock in if the trail stop triggered at the current level — the minimum outcome unless price keeps rising.</span>
+                      </div>
+                      <div class="ch-stat tt-wrap">
                         <span class="ch-stat-lbl">Hold</span>
                         <span class="ch-stat-val dim">{{ status()?.hours_in_position ?? 0 }}h/72h</span>
                         <span class="tt">Time held vs 72h max hold limit. Position auto-exits at 72h regardless of profit.</span>
@@ -1906,6 +1918,16 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     const hours = this.status()?.exit_cooldown_remaining ?? 0;
     if (hours < 1) return `${Math.round(hours * 60)}min`;
     return `${hours}h`;
+  }
+
+  ifStopPnlDollars(h: any): number {
+    if (!h || !h.stop_price || !h.entry_price || !h.shares) return 0;
+    return (h.stop_price - h.entry_price) * h.shares;
+  }
+
+  ifStopPnlPct(h: any): number {
+    if (!h || !h.stop_price || !h.entry_price) return 0;
+    return ((h.stop_price - h.entry_price) / h.entry_price) * 100;
   }
 
   trailLayerLabel(layer: string): string {
