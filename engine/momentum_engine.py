@@ -585,24 +585,34 @@ class MomentumEngine:
         else:
             self.next_rebal_hours = REBAL_HOURS - self._hours_since_rebal
 
-        # === Info-only scan while holding ===
-        # Keeps the scanner UI fresh even when we're not evaluating entries.
-        # No trading impact — decisions above have already been made.
-        # Preserve entry_rejections so the dashboard keeps showing the last
-        # actual entry-eval reasons rather than this info pass.
-        if self.holdings and not self._compute_ran_this_tick:
-            saved_rejections = list(self._entry_rejections)
-            info_scores = self._compute_scores()
-            self.accel_scores = info_scores
-            if info_scores:
-                self._filter_entries(info_scores)
-            for g in self._gate_log:
+        return trades
+
+    def info_scan(self) -> None:
+        """Refresh _gate_log informationally without making trade decisions.
+
+        Called by sim_runner every poll cycle so the scanner UI stays fresh
+        even while holding (when the normal entry/rebalance path is dormant).
+        No-op if an entry/rebalance eval already ran this tick, or if we're
+        still warming up. Preserves _entry_rejections so the dashboard keeps
+        showing the last real entry-eval reasons.
+        """
+        if self._compute_ran_this_tick:
+            return
+        if not self._warmup_done:
+            return
+        saved_rejections = list(self._entry_rejections)
+        info_scores = self._compute_scores()
+        self.accel_scores = info_scores
+        if info_scores:
+            self._filter_entries(info_scores)
+        for g in self._gate_log:
+            if self.holdings:
                 g["picked"] = 0
                 if g.get("result") == "pass":
                     g["reason_not_picked"] = "already holding"
-            self._entry_rejections = saved_rejections
-
-        return trades
+        self._entry_rejections = saved_rejections
+        # Mark as ran so repeated calls in same poll don't duplicate work
+        self._compute_ran_this_tick = True
 
     def _compute_scores(self) -> list[AccelScore]:
         """Compute momentum acceleration scores for all pairs.

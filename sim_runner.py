@@ -738,12 +738,24 @@ class SimRunner:
             mom.status, holdings_json
         )
 
+        # Refresh gate log every poll — even while holding — so the
+        # scanner UI doesn't go stale. feed_candle only runs the full
+        # entry/rebalance eval on new hourly candles, so within the hour
+        # we'd otherwise re-write the same frozen rows every minute.
+        try:
+            mom.info_scan()
+        except Exception as e:
+            logger.error(f"[MOMENTUM] Failed info scan: {e}")
+
         # Log gate evaluations for every candidate this cycle
         if hasattr(mom, '_gate_log') and mom._gate_log:
             try:
                 self.trade_logger.log_momentum_gates(mom._gate_log)
             except Exception as e:
                 logger.error(f"[MOMENTUM] Failed to log gates: {e}")
+
+        # Reset per-poll compute flag so next cycle's info_scan runs fresh
+        mom._compute_ran_this_tick = False
 
         # Backfill follow-up prices for old gate log entries
         try:
