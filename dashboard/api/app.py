@@ -2300,8 +2300,10 @@ def api_momentum_accel():
     """
     conn = get_db()
     try:
-        # Latest gate log row per pair — dedupe by MAX(rowid) to handle multiple
-        # rows written at the same timestamp (prior engine versions flushed duplicates).
+        # Latest gate log row per pair, but only from the last ~5 minutes.
+        # Pairs that were rotated out of the scanner's universe keep their
+        # last gate-log row forever — without this filter they'd keep
+        # showing up on the UI as if they were current data.
         rows = conn.execute("""
             SELECT pair, accel, result, blocked_by,
                    rsi, adx, green_count, body_ratio, chg3h_atr,
@@ -2310,6 +2312,7 @@ def api_momentum_accel():
             WHERE rowid IN (
                 SELECT MAX(rowid) FROM momentum_gate_log GROUP BY pair
             )
+            AND created_at >= datetime('now', '-5 minutes')
         """).fetchall()
     except Exception:
         return jsonify([])
