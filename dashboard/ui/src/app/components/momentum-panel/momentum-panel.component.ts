@@ -1,5 +1,5 @@
 import {
-  Component, OnInit, AfterViewInit, inject, signal, ViewChild, ElementRef,
+  Component, OnInit, AfterViewInit, inject, signal, computed, ViewChild, ElementRef,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
@@ -1301,7 +1301,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     });
 
     forkJoin({
-      trades: this.api.fetchMomentumTrades(20),
+      trades: this.api.fetchMomentumTrades(500),
       events: this.api.fetchMomentumEvents(20),
       equity: this.api.fetchMomentumEquity(this.chartHours()),
       accel: this.api.fetchMomentumAccel(),
@@ -1335,7 +1335,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   /** Reload trades, events, equity, and accel on each poll cycle */
   private _refreshAllData(): void {
-    this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+    this.api.fetchMomentumTrades(500).subscribe(t => this.trades.set(t));
     this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
     this.api.fetchMomentumAccel().subscribe(a => this.accelScores.set(a));
     this.api.fetchMomentumEquity(this.chartHours()).subscribe(eq => {
@@ -1353,7 +1353,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
           // Refresh all data now that warmup is done
           this.api.refreshMomentumStatus();
           forkJoin({
-            trades: this.api.fetchMomentumTrades(20),
+            trades: this.api.fetchMomentumTrades(500),
             events: this.api.fetchMomentumEvents(20),
             equity: this.api.fetchMomentumEquity(this.chartHours()),
             accel: this.api.fetchMomentumAccel(),
@@ -1702,7 +1702,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
             this.sellingPair.set(null);
             sessionStorage.removeItem('momentum_selling_pair');
             this.sellNotification.set({ type: 'success', message: `${short} sold successfully` });
-            this.api.fetchMomentumTrades(20).subscribe(t => this.trades.set(t));
+            this.api.fetchMomentumTrades(500).subscribe(t => this.trades.set(t));
             this.api.fetchMomentumEvents(20).subscribe(e => this.events.set(e));
             this.api.fetchMomentumEquity(this.chartHours()).subscribe(eq => {
               this.equityData.set(eq);
