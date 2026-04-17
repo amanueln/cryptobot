@@ -549,8 +549,8 @@ class SimRunner:
             self.momentum_engine.status_detail = "Warmup complete — watching for signals"
         else:
             # Resume WS tick recording for any position we just restored on startup
-            for h in self.momentum_engine.holdings:
-                self._ws_start_recording(h.pair)
+            for pair in self.momentum_engine.holdings:
+                self._ws_start_recording(pair)
 
         # Mark warmup complete
         try:
