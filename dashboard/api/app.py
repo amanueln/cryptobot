@@ -40,6 +40,28 @@ CORS(app)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "candles.db")
 
+
+def _ensure_gate_log_columns():
+    """Self-healing migration: add rsi/adx columns if missing.
+
+    Runs once on API startup so the dashboard works even if the bot
+    container hasn't been restarted yet.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        for col, ctype in [("rsi", "REAL"), ("adx", "REAL")]:
+            try:
+                conn.execute(f"ALTER TABLE momentum_gate_log ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+_ensure_gate_log_columns()
+
 # --- Auth config ---
 AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
