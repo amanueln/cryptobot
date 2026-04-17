@@ -73,6 +73,9 @@ TRAIL_ACTIVATE_PCT = 2.0   # peak PnL% needed to activate wide trail
 TRAIL_TIGHT_PCT = 2.5      # Layer 2: tighter trail after delay period above threshold
 TRAIL_TIGHTEN_PCT = 5.0    # peak PnL% needed before tight trail can activate
 TRAIL_DELAY_TICKS = 30     # ticks (minutes) above tighten threshold before tight trail activates
+# Progressive lock-in: the further ahead the peak, the less we give back.
+# Each tier: (peak_pct_min, trail_pct). Triggers immediately, no delay.
+TRAIL_PROGRESSIVE = [(6.0, 2.0), (8.0, 1.5)]
 TRAIL_STALE_PCT = 2.0      # Layer 3: tightest trail when peak goes stale (no new high)
 TRAIL_STALE_TICKS = 30     # ticks (minutes) with no new high = stale peak
 
@@ -872,6 +875,11 @@ class MomentumEngine:
         if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
             new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_TIGHT_PCT / 100))
 
+        # Layer 2b: Progressive lock-in — tighter trail at higher peaks, no delay
+        for peak_thresh, trail_pct in TRAIL_PROGRESSIVE:
+            if peak_pct >= peak_thresh:
+                new_stop = max(new_stop, holding.peak_price * (1 - trail_pct / 100))
+
         # Layer 3: Stale peak — no new high for stale period, move is fading
         if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
             new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_STALE_PCT / 100))
@@ -888,6 +896,8 @@ class MomentumEngine:
             layer = "wide"
             if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
                 layer = "stale"
+            elif TRAIL_PROGRESSIVE and peak_pct >= TRAIL_PROGRESSIVE[0][0]:
+                layer = "progressive"
             elif peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
                 layer = "tight"
             logger.debug("Trail stop updated for %s: $%.4f -> $%.4f (%s layer, peak $%.4f +%.1f%%, "
@@ -1139,6 +1149,8 @@ class MomentumEngine:
             peak_pnl = (h.peak_price - h.entry_price) / h.entry_price * 100 if h.entry_price > 0 else 0
             if peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_since_new_peak >= TRAIL_STALE_TICKS:
                 trail_layer = "stale"
+            elif TRAIL_PROGRESSIVE and peak_pnl >= TRAIL_PROGRESSIVE[0][0]:
+                trail_layer = "progressive"
             elif peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_above_tighten >= TRAIL_DELAY_TICKS:
                 trail_layer = "tight"
             elif peak_pnl >= TRAIL_ACTIVATE_PCT:

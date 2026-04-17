@@ -173,6 +173,7 @@ Chart.register(...registerables, zoomPlugin);
                     @if (h.trail_layer) {
                       <span class="ch-layer tt-wrap" [class.inactive]="h.trail_layer === 'inactive'"
                             [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
+                            [class.progressive]="h.trail_layer === 'progressive'"
                             [class.stale]="h.trail_layer === 'stale'">
                         {{ trailLayerLabel(h.trail_layer) }}
                         <span class="tt">{{ trailLayerTooltip(h.trail_layer) }}</span>
@@ -873,6 +874,7 @@ Chart.register(...registerables, zoomPlugin);
     .ch-layer.inactive { background: rgba(100,116,139,0.12); color: #64748b; }
     .ch-layer.wide { background: rgba(96,165,250,0.12); color: #60a5fa; }
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .ch-layer.progressive { background: rgba(34,197,94,0.15); color: #22c55e; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
     .ch-stats { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; flex: 1; justify-content: center; }
     .ch-stat { display: flex; flex-direction: column; align-items: center; }
@@ -1871,7 +1873,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     // 1. Trail stop (delayed+stale) — how close price is to stop
     const stopDist = h.stop_distance_pct ?? 0;
     const trailPct = h.stop_price > 0 ? Math.min(100, Math.max(0, (1 - stopDist / 5) * 100)) : 0;
-    const layerName = h.trail_layer === 'stale' ? 'stale 2.0%' : h.trail_layer === 'tight' ? 'tight 2.5%' : h.trail_layer === 'wide' ? 'wide 5.0%' : 'inactive';
+    const layerName = h.trail_layer === 'stale' ? 'stale 2.0%' : h.trail_layer === 'progressive' ? 'progressive 2.0%' : h.trail_layer === 'tight' ? 'tight 2.5%' : h.trail_layer === 'wide' ? 'wide 5.0%' : 'inactive';
     conds.push({
       label: `Trail (${layerName})`, detail: h.stop_price > 0 ? `${stopDist.toFixed(1)}% away` : 'not active', pct: trailPct,
       shortLabel: 'Trail', shortDetail: h.stop_price > 0 ? `${stopDist.toFixed(1)}%` : '—',
@@ -1934,6 +1936,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     switch (layer) {
       case 'wide': return 'Wide trail (5%)';
       case 'tight': return 'Tight trail (2.5%)';
+      case 'progressive': return 'Progressive lock (2.0%)';
       case 'stale': return 'STALE — tight (2.0%)';
       case 'inactive': return 'Trail inactive';
       default: return layer;
@@ -1945,6 +1948,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       case 'inactive': return 'Trail stop is off until profit reaches +2%. Only the ATR floor stop protects you right now.';
       case 'wide': return 'Profit is +2% to +5%. Trail stop is active with a wide leash — gives room to run while locking in some gains.';
       case 'tight': return 'Profit is above +5%. Trail stop tightens to lock in more profit — smaller pullback allowed before selling.';
+      case 'progressive': return 'Profit is above +6% — trail tightens to 2% behind peak (1.5% at +8%). Locks in more as the move extends.';
       case 'stale': return 'No new price peak for 12+ hours. Trail gets aggressive — if momentum is dying, it exits faster.';
       default: return '';
     }
