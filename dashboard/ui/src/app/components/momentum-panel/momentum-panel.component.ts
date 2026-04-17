@@ -318,7 +318,9 @@ Chart.register(...registerables, zoomPlugin);
                    [class.quality-blocked]="s.accel > 0.20 && (s.result === 'blocked' || (s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
                 <div class="ac-top">
                   <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
-                  @if (s.accel > 0.20 && (s.quality || s.structural)) {
+                  @if (isHeldPair(s.pair)) {
+                    <span class="ac-badge holding">HOLDING</span>
+                  } @else if (s.accel > 0.20 && (s.quality || s.structural)) {
                     @if (s.result !== 'blocked' && s.quality?.pass !== false && s.structural?.pass !== false) {
                       <span class="ac-badge qual">READY</span>
                     } @else {
@@ -332,7 +334,9 @@ Chart.register(...registerables, zoomPlugin);
                   <span class="ac-price">{{ formatPrice(s.price) }}</span>
                 </div>
                 <div class="ac-desc">
-                  @if (s.accel > 0.20 && s.result === 'blocked' && s.blocked_by) {
+                  @if (isHeldPair(s.pair)) {
+                    Already in position — monitoring for exit.
+                  } @else if (s.accel > 0.20 && s.result === 'blocked' && s.blocked_by) {
                     Entry blocked — {{ s.blocked_by }}.
                   } @else if (s.accel > 0.20 && s.quality && !s.quality.pass) {
                     Entry blocked — poor short-term candle action.
@@ -802,6 +806,7 @@ Chart.register(...registerables, zoomPlugin);
       background: linear-gradient(180deg, rgba(239,68,68,0.04) 0%, #1a1d29 100%);
     }
     .ac-badge.blocked { background: rgba(239,68,68,0.12); color: #ef4444; }
+    .ac-badge.holding { background: rgba(250,204,21,0.12); color: #fbbf24; }
     .ac-gates-label {
       font-size: 8px; color: #4b5280; text-transform: uppercase; letter-spacing: 0.5px;
       margin-top: 4px; margin-bottom: 1px;
