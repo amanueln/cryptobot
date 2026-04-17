@@ -605,7 +605,7 @@ export class ApiService {
   }
 
   fetchMomentumAccel() {
-    return this.http.get<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; quality?: {
+    return this.http.get<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; result?: string; blocked_by?: string; quality?: {
       green: boolean; greenCount: number;
       body: boolean; bodyRatio: number;
       ext: boolean; chg3hAtr: number;

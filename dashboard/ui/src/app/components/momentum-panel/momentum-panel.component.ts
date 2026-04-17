@@ -308,11 +308,11 @@ Chart.register(...registerables, zoomPlugin);
           <div class="accel-cards">
             @for (s of topAccelScores(); track s.pair) {
               <div class="accel-card" [class.qualifying-card]="s.accel > 0.20"
-                   [class.quality-blocked]="s.accel > 0.20 && ((s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
+                   [class.quality-blocked]="s.accel > 0.20 && (s.result === 'blocked' || (s.quality && !s.quality.pass) || (s.structural && !s.structural.pass))">
                 <div class="ac-top">
                   <span class="ac-coin">{{ s.pair.replace('-USD', '') }}</span>
                   @if (s.accel > 0.20 && (s.quality || s.structural)) {
-                    @if (s.quality?.pass !== false && s.structural?.pass !== false) {
+                    @if (s.result !== 'blocked' && s.quality?.pass !== false && s.structural?.pass !== false) {
                       <span class="ac-badge qual">READY</span>
                     } @else {
                       <span class="ac-badge blocked">BLOCKED</span>
@@ -325,7 +325,9 @@ Chart.register(...registerables, zoomPlugin);
                   <span class="ac-price">{{ formatPrice(s.price) }}</span>
                 </div>
                 <div class="ac-desc">
-                  @if (s.accel > 0.20 && s.quality && !s.quality.pass) {
+                  @if (s.accel > 0.20 && s.result === 'blocked' && s.blocked_by) {
+                    Entry blocked — {{ s.blocked_by }}.
+                  } @else if (s.accel > 0.20 && s.quality && !s.quality.pass) {
                     Entry blocked — poor short-term candle action.
                   } @else if (s.accel > 0.20 && s.structural && !s.structural.pass) {
                     Entry blocked — structural risk detected.
@@ -1101,7 +1103,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   trades = signal<MomentumTradeData[]>([]);
   events = signal<MomentumEventData[]>([]);
   equityData = signal<MomentumEquityData[]>([]);
-  accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; quality?: {
+  accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; result?: string; blocked_by?: string; quality?: {
     green: boolean; greenCount: number;
     body: boolean; bodyRatio: number;
     ext: boolean; chg3hAtr: number;
@@ -1163,7 +1165,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return [...all].sort((a, b) => {
       const rank = (s: typeof a) => {
         if (s.accel <= 0.20) return 2; // BELOW
-        const blocked = (s.quality && !s.quality.pass) || (s.structural && !s.structural.pass);
+        const blocked = s.result === 'blocked' || (s.quality && !s.quality.pass) || (s.structural && !s.structural.pass);
         return blocked ? 1 : 0; // READY=0, BLOCKED=1
       };
       const ra = rank(a), rb = rank(b);

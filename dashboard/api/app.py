@@ -2316,6 +2316,32 @@ def api_momentum_accel():
     finally:
         conn.close()
 
+    # Load engine lockout state so we can mark non-tradable pairs as blocked
+    # even when their raw gates pass (e.g. AXL 24h same-coin lockout after sell).
+    locked_until: dict[str, str] = {}
+    try:
+        state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_status.json")
+        if os.path.exists(state_path):
+            with open(state_path) as f:
+                engine_state = json.load(f)
+            now_iso = datetime.now().isoformat()
+            lp, lu = engine_state.get("lockout_pair"), engine_state.get("lockout_until")
+            if lp and lu and lu > now_iso:
+                locked_until[lp] = lu
+            for p, until in (engine_state.get("loss_lockouts") or {}).items():
+                if until and until > now_iso:
+                    locked_until[p] = until
+    except Exception:
+        pass
+
+    def _lockout_label(until_iso: str) -> str:
+        try:
+            until = datetime.fromisoformat(until_iso)
+            hrs = max(0, (until - datetime.now()).total_seconds() / 3600)
+            return f"Locked out ({hrs:.1f}h left)"
+        except Exception:
+            return "Locked out"
+
     scores = []
     for r in rows:
         accel = r["accel"] or 0.0
@@ -2346,14 +2372,21 @@ def api_momentum_accel():
                            and time_at_level is not None
                            and gate_ath and gate_fresh and gate_level)
 
+        pair = r["pair"]
+        result = r["result"]
+        blocked_by = r["blocked_by"]
+        if pair in locked_until:
+            result = "blocked"
+            blocked_by = _lockout_label(locked_until[pair])
+
         scores.append({
-            "pair": r["pair"],
+            "pair": pair,
             "accel": round(accel, 4),
             "price": round(r["price"], 6) if r["price"] is not None else 0,
             "adx": round(r["adx"], 1) if r["adx"] is not None else None,
             "rsi": round(r["rsi"], 1) if r["rsi"] is not None else None,
-            "result": r["result"],
-            "blocked_by": r["blocked_by"],
+            "result": result,
+            "blocked_by": blocked_by,
             "quality": {
                 "green": gate_green, "greenCount": green_count if green_count is not None else 0,
                 "body": gate_body, "bodyRatio": round(body_ratio, 2) if body_ratio is not None else 0,
