@@ -9,13 +9,14 @@ import {
   MomentumEquityData, MomentumEventData,
 } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
+import { TradeCalendarComponent } from '../trade-calendar/trade-calendar.component';
 
 Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-momentum-panel',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TradeCalendarComponent],
   template: `
     <div class="mp-root">
 
@@ -403,7 +404,18 @@ Chart.register(...registerables, zoomPlugin);
       <!-- Recent trades table -->
       <div class="trades-section">
         <div class="trades-header-row">
-          <div class="section-header">Recent Trades</div>
+          <div class="trades-title-group">
+            <div class="section-header">Recent Trades</div>
+            <button class="calendar-btn" (click)="openCalendar()" title="View trades by day">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              Calendar
+            </button>
+          </div>
           <div class="trade-stats-bar">
             <span class="ts-mood">{{ botMoodEmoji() }}</span>
             <span class="ts-record">
@@ -482,6 +494,12 @@ Chart.register(...registerables, zoomPlugin);
         </table>
         </div>
       </div>
+
+      <app-trade-calendar
+        [trades]="allTrades()"
+        [open]="calendarOpen()"
+        (close)="closeCalendar()">
+      </app-trade-calendar>
 
     </div>
   `,
@@ -939,6 +957,17 @@ Chart.register(...registerables, zoomPlugin);
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 0 0.5rem 0;
     }
+    .trades-title-group {
+      display: flex; align-items: center; gap: 0.6rem;
+    }
+    .calendar-btn {
+      display: flex; align-items: center; gap: 0.3rem;
+      background: #1a1f2e; border: 1px solid #2a3040; color: #cbd5e1;
+      padding: 0.3rem 0.65rem; border-radius: 6px; cursor: pointer;
+      font-size: 0.75rem; transition: all 0.15s ease;
+    }
+    .calendar-btn:hover { background: #252b3d; border-color: #3b4b6b; color: #e2e8f0; }
+    .calendar-btn svg { stroke: currentColor; }
     .trade-stats-bar {
       display: flex; align-items: center; gap: 0.6rem;
       font-size: 0.8rem; color: #94a3b8;
@@ -1101,6 +1130,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   status = this.api.momentumStatus;
   trades = signal<MomentumTradeData[]>([]);
+  allTrades = signal<MomentumTradeData[]>([]);
+  calendarOpen = signal(false);
   events = signal<MomentumEventData[]>([]);
   equityData = signal<MomentumEquityData[]>([]);
   accelScores = signal<{ pair: string; accel: number; price: number; adx?: number; rsi?: number; result?: string; blocked_by?: string; quality?: {
@@ -1591,6 +1622,16 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       },
     });
   }
+
+  openCalendar(): void {
+    // Fetch fuller trade history for the calendar (more than the 20 shown in the table).
+    this.api.fetchMomentumTrades(500).subscribe({
+      next: (t) => { this.allTrades.set(t); this.calendarOpen.set(true); },
+      error: () => { this.allTrades.set(this.trades()); this.calendarOpen.set(true); },
+    });
+  }
+
+  closeCalendar(): void { this.calendarOpen.set(false); }
 
   backupNow(): void {
     this.backupRunning.set(true);
