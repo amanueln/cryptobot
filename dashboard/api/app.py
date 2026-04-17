@@ -2262,8 +2262,8 @@ def api_momentum_accel():
                 WHERE g2.pair = g1.pair
             )
         """).fetchall()
-    except Exception as e:
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+    except Exception:
+        return jsonify([])
     finally:
         conn.close()
 
