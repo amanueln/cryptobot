@@ -32,6 +32,13 @@ class WSRecorder:
         self._ticks: list[dict] = []
         self._db_path = db_path or DB_DIR / "ws_ticks.db"
         self._trade_id: str | None = None
+        # In-memory L2 order book (price -> size) and per-level first-seen epoch.
+        self._bids: dict[float, float] = {}
+        self._asks: dict[float, float] = {}
+        self._bid_first_seen: dict[float, float] = {}
+        self._ask_first_seen: dict[float, float] = {}
+        self._book_snapshot_done = False
+        self._book_lock = threading.Lock()
         self._ensure_db()
 
     def _ensure_db(self):
@@ -74,19 +81,29 @@ class WSRecorder:
         self._pair = pair
         self._trade_id = trade_id or f"{pair}_{int(time.time())}"
         self._ticks = []
+        with self._book_lock:
+            self._bids.clear(); self._asks.clear()
+            self._bid_first_seen.clear(); self._ask_first_seen.clear()
+            self._book_snapshot_done = False
         self._running = True
 
         def _on_open(ws):
-            logger.info("WS recorder connected — subscribing to %s", pair)
+            logger.info("WS recorder connected — subscribing to ticker+level2 for %s", pair)
             ws.send(json.dumps({
                 "type": "subscribe",
                 "product_ids": [pair],
                 "channel": "ticker",
             }))
+            ws.send(json.dumps({
+                "type": "subscribe",
+                "product_ids": [pair],
+                "channel": "level2",
+            }))
 
         def _on_message(ws, message):
             data = json.loads(message)
-            if data.get("channel") == "ticker":
+            ch = data.get("channel")
+            if ch == "ticker":
                 for event in data.get("events", []):
                     for ticker in event.get("tickers", []):
                         tick = {
@@ -101,6 +118,8 @@ class WSRecorder:
                         # Batch write every 50 ticks
                         if len(self._ticks) % 50 == 0:
                             self._flush_ticks()
+            elif ch == "l2_data":
+                self._apply_l2_events(data.get("events", []))
 
         def _on_error(ws, error):
             logger.warning("WS recorder error: %s", error)
@@ -126,6 +145,123 @@ class WSRecorder:
         )
         self._thread = threading.Thread(target=self._ws.run_forever, daemon=True)
         self._thread.start()
+
+    def _apply_l2_events(self, events: list[dict]):
+        """Apply level2 snapshot/update events to the in-memory book."""
+        now = time.time()
+        with self._book_lock:
+            for event in events:
+                etype = event.get("type")
+                if etype == "snapshot":
+                    self._bids.clear(); self._asks.clear()
+                    self._bid_first_seen.clear(); self._ask_first_seen.clear()
+                for u in event.get("updates", []):
+                    side = u.get("side")
+                    try:
+                        price = float(u.get("price_level", 0))
+                        qty = float(u.get("new_quantity", 0))
+                    except (TypeError, ValueError):
+                        continue
+                    if side == "bid":
+                        book = self._bids
+                        seen = self._bid_first_seen
+                    elif side in ("offer", "ask"):
+                        book = self._asks
+                        seen = self._ask_first_seen
+                    else:
+                        continue
+                    if qty <= 0:
+                        book.pop(price, None)
+                        seen.pop(price, None)
+                    else:
+                        # Preserve first-seen timestamp across qty updates at the same price.
+                        if price not in book:
+                            seen[price] = now
+                        book[price] = qty
+                if etype == "snapshot":
+                    self._book_snapshot_done = True
+
+    def get_book_snapshot(self, depth: int = 20) -> dict:
+        """Return a UI-friendly snapshot: top N bids/asks, mid, spread, first-seen ages.
+
+        Returns dict with: pair, mid, best_bid, best_ask, spread_bps, bids, asks,
+        snapshot_done. Each level in bids/asks is {price, size, usd, first_seen_ms_age}.
+        """
+        now = time.time()
+        with self._book_lock:
+            if not self._book_snapshot_done or not self._bids or not self._asks:
+                return {
+                    "pair": self._pair,
+                    "mid": None,
+                    "best_bid": None,
+                    "best_ask": None,
+                    "spread_bps": None,
+                    "bids": [],
+                    "asks": [],
+                    "snapshot_done": self._book_snapshot_done,
+                }
+            sorted_bids = sorted(self._bids.items(), key=lambda x: -x[0])[:depth]
+            sorted_asks = sorted(self._asks.items(), key=lambda x: x[0])[:depth]
+            best_bid = sorted_bids[0][0]
+            best_ask = sorted_asks[0][0]
+            mid = (best_bid + best_ask) / 2
+            spread_bps = (best_ask - best_bid) / mid * 10000 if mid else None
+            def _lvl(side_seen, price, size):
+                fs = side_seen.get(price)
+                age_ms = int((now - fs) * 1000) if fs else 0
+                return {"price": price, "size": size, "usd": price * size, "age_ms": age_ms}
+            return {
+                "pair": self._pair,
+                "mid": mid,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "spread_bps": spread_bps,
+                "bids": [_lvl(self._bid_first_seen, p, s) for p, s in sorted_bids],
+                "asks": [_lvl(self._ask_first_seen, p, s) for p, s in sorted_asks],
+                "snapshot_done": True,
+            }
+
+    def find_qualifying_wall(
+        self,
+        peak: float,
+        position_equity_usd: float,
+        min_size_vs_position: float,
+        min_persistence_ms: int,
+        max_dist_from_peak_pct: float,
+    ) -> dict | None:
+        """Find the largest bid wall within max_dist_from_peak_pct below peak that
+        meets the size and persistence guardrails. Returns dict or None.
+
+        Output: {price, size, usd, age_ms, dist_from_peak_pct}
+        """
+        now = time.time()
+        with self._book_lock:
+            if not self._book_snapshot_done or not self._bids:
+                return None
+            min_price = peak - (peak * max_dist_from_peak_pct / 100.0)
+            min_usd = position_equity_usd * min_size_vs_position
+            best = None
+            for price, size in self._bids.items():
+                if price < min_price or price > peak:
+                    continue
+                usd = price * size
+                if usd < min_usd:
+                    continue
+                fs = self._bid_first_seen.get(price)
+                if fs is None:
+                    continue
+                age_ms = int((now - fs) * 1000)
+                if age_ms < min_persistence_ms:
+                    continue
+                if best is None or usd > best["usd"]:
+                    best = {
+                        "price": price,
+                        "size": size,
+                        "usd": usd,
+                        "age_ms": age_ms,
+                        "dist_from_peak_pct": (peak - price) / peak * 100.0 if peak else 0.0,
+                    }
+            return best
 
     def _flush_ticks(self):
         """Write buffered ticks to SQLite."""
@@ -161,6 +297,10 @@ class WSRecorder:
             except Exception:
                 pass
         self._flush_ticks()
+        with self._book_lock:
+            self._bids.clear(); self._asks.clear()
+            self._bid_first_seen.clear(); self._ask_first_seen.clear()
+            self._book_snapshot_done = False
         count = self._get_tick_count()
         logger.info("WS recorder stopped — %d ticks recorded for %s", count, self._pair)
         return count

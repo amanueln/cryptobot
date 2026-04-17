@@ -10,8 +10,10 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -620,9 +622,19 @@ class SimRunner:
             alloc = self.momentum_engine.starting_balance
             fee = self.momentum_engine.fee_rate
             pairs = self.momentum_engine.pairs
+            # Preserve wall-aware config across reset.
+            wa_cfg = {
+                "enabled": self.momentum_engine.wall_aware_enabled,
+                "min_size_vs_position": self.momentum_engine.wall_aware_min_size_mult,
+                "min_persistence_ms": self.momentum_engine.wall_aware_min_persistence_ms,
+                "max_dist_from_peak_pct": self.momentum_engine.wall_aware_max_dist_pct,
+                "stop_offset_pct": self.momentum_engine.wall_aware_stop_offset_pct,
+            }
             self.momentum_engine = MomentumEngine(
                 allocation_usd=alloc, fee_rate=fee, pairs=pairs,
+                wall_aware_config=wa_cfg,
             )
+            self.momentum_engine.set_book_provider(self._ws_recorder)
             # Re-run warmup from DB so the engine has price history immediately
             self._warmup_momentum(clear_tables=True)
             logger.info("Momentum engine reset complete with $%.0f", alloc)
@@ -682,6 +694,33 @@ class SimRunner:
                 pass
             self.momentum_engine._exit_cooldown = 0
             logger.info("Momentum cooldown skipped by user — ready to re-enter")
+            # Don't make the user wait for the next hourly candle — run the
+            # immediate-entry evaluation now using the latest known closes.
+            try:
+                forced = self.momentum_engine.force_entry_eval(datetime.now())
+                for trade in forced:
+                    self.trade_logger.log_momentum_trade(trade)
+                    short = trade.pair.replace("-USD", "")
+                    title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
+                    self._ws_start_recording(trade.pair)
+                    self.trade_logger.log_momentum_event(
+                        f"momentum_{trade.side}", title, trade.reason
+                    )
+                    logger.info(f"[MOMENTUM] BUY {short} @ {_fmt_price(trade.price)} — {trade.reason}")
+            except Exception as e:
+                logger.error(f"[MOMENTUM] force_entry_eval failed: {e}")
+
+        # Check for wall-aware toggle flag
+        wa_flag = os.path.join(os.path.dirname(__file__), "data", "wall_aware_toggle.flag")
+        if os.path.exists(wa_flag):
+            try:
+                with open(wa_flag) as f:
+                    want = f.read().strip().lower() == "on"
+                os.remove(wa_flag)
+            except Exception:
+                want = False
+            self.momentum_engine.set_wall_aware_enabled(want)
+            logger.info("Wall-aware trail %s by user", "enabled" if want else "disabled")
 
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
@@ -771,13 +810,26 @@ class SimRunner:
         except Exception as e:
             logger.error(f"[MOMENTUM] Failed to backfill gate outcomes: {e}")
 
-        # Persist engine status for dashboard API
+        # Persist engine status for dashboard API. Book writer thread also writes
+        # this at 1Hz so the UI card breathes with WS cadence — this 60s path
+        # stays as a belt-and-suspenders write after the heavy poll work.
+        self._write_status_json()
+
+        # Book snapshot now written continuously by _book_writer_loop thread.
+
+    def _write_status_json(self) -> None:
+        """Atomic write of momentum_status.json. Safe to call from any thread."""
+        mom = self.momentum_engine
+        if mom is None:
+            return
         try:
             status_path = os.path.join(os.path.dirname(__file__), "data", "momentum_status.json")
             status_dict = mom.get_status_dict()
             status_dict["ws_recorder"] = self._ws_recorder.get_status()
-            with open(status_path, "w") as f:
+            tmp_path = status_path + ".tmp"
+            with open(tmp_path, "w") as f:
                 json.dump(status_dict, f, default=str)
+            os.replace(tmp_path, status_path)
         except Exception:
             pass
 
@@ -1033,6 +1085,43 @@ class SimRunner:
         finally:
             conn.close()
 
+    def _book_writer_loop(self):
+        """Continuously write the live L2 book snapshot to disk for the dashboard.
+
+        Runs as a daemon thread at 1Hz so the UI ladder never shows "stale" while
+        the WS recorder has fresh data. Also refreshes the engine's live mid
+        cache + wall-aware state and writes status.json on the same tick so the
+        holding card (Now/Dist/If-Stop/P&L) and compare block breathe at WS
+        cadence instead of the 60s poll cadence. Silently idles when no pair
+        is recording.
+        """
+        book_path = os.path.join(os.path.dirname(__file__), "data", "momentum_orderbook.json")
+        while self.running:
+            try:
+                snapshot = self._ws_recorder.get_book_snapshot(depth=20)
+                snapshot["written_at"] = datetime.now().isoformat()
+                tmp_path = book_path + ".tmp"
+                with open(tmp_path, "w") as f:
+                    json.dump(snapshot, f, default=str)
+                os.replace(tmp_path, book_path)
+
+                # Push the fresh mid into the engine so Now/Dist/P&L/stop
+                # re-evaluate at 1Hz. Safe: refresh_live_state only ratchets
+                # peak + wall anchor; it never advances the 60s tick counters
+                # or triggers exits.
+                mom = self.momentum_engine
+                pair = snapshot.get("pair")
+                mid = snapshot.get("mid")
+                if mom is not None and pair and mid:
+                    mom.refresh_live_state({pair: mid})
+
+                # Write status.json on the same tick so the dashboard sees the
+                # live values without waiting for the next 60s poll.
+                self._write_status_json()
+            except Exception:
+                pass
+            time.sleep(1.0)
+
     def run(self):
         """Main polling loop — polls all pairs, prints combined dashboard."""
         self.running = True
@@ -1065,6 +1154,9 @@ class SimRunner:
         if self.vol_predictor:
             print(f"  Volatility forecasting: ENABLED (GARCH-LightGBM)")
         print(f"  Press Ctrl+C to stop.\n")
+
+        book_writer = threading.Thread(target=self._book_writer_loop, daemon=True)
+        book_writer.start()
 
         try:
             while self.running:
@@ -1833,6 +1925,7 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
         with open("config/bot_config.yaml") as f:
             bot_cfg_reload = yaml.safe_load(f)
         mom_config = bot_cfg_reload.get("momentum_rotation", {})
+        wall_aware_config = bot_cfg_reload.get("wall_aware_trail", {})
         if mom_config.get("enabled", False):
             mom_alloc = float(mom_config.get("allocation_usd", 1500))
             # Create scanner first — it will find the best pairs
@@ -1840,11 +1933,21 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
             runner.momentum_engine = MomentumEngine(
                 allocation_usd=mom_alloc,
                 fee_rate=taker_fee,
+                wall_aware_config=wall_aware_config,
                 # pairs will be set by scanner during warmup
             )
+            # Give engine access to the live L2 book for wall-aware trail.
+            runner.momentum_engine.set_book_provider(runner._ws_recorder)
             print(f"\n  Momentum Rotation Engine: ENABLED (${mom_alloc:,.0f} allocation)")
             print(f"  Scanner: top ~30 by volume, excluding grid pairs")
             print(f"  Config: weekly rebalance, BTC 500MA regime, 7% re-entry")
+            if runner.momentum_engine.wall_aware_enabled:
+                print(f"  Wall-aware trail: ENABLED "
+                      f"(>= {runner.momentum_engine.wall_aware_min_size_mult}x pos, "
+                      f">= {runner.momentum_engine.wall_aware_min_persistence_ms}ms, "
+                      f"<= {runner.momentum_engine.wall_aware_max_dist_pct}% from peak)")
+            else:
+                print(f"  Wall-aware trail: disabled (flip bot_config.yaml wall_aware_trail.enabled)")
     except Exception as e:
         logger.warning(f"Momentum engine init error: {e}")
 

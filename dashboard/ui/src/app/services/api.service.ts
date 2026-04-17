@@ -322,6 +322,7 @@ export interface MomentumStatusData {
   lockout_pair?: string | null;
   lockout_until?: string | null;
   loss_lockouts?: Record<string, string>;
+  wall_aware?: WallAwareState;
   error?: string;
 }
 
@@ -344,6 +345,46 @@ export interface MomentumHoldingData {
   trail_layer?: string;
   ticks_above_tighten?: number;
   ticks_since_new_peak?: number;
+  // Wall-aware trail fields (0/empty when feature off or no wall yet)
+  price_only_stop?: number;
+  wall_aware_stop?: number;
+  active_anchor_price?: number;
+  active_anchor_usd?: number;
+  active_anchor_age_ms?: number;
+  stop_source?: 'price' | 'wall';
+}
+
+export interface WallAwareState {
+  enabled: boolean;
+  config: {
+    min_size_vs_position: number;
+    min_persistence_ms: number;
+    max_dist_from_peak_pct: number;
+    stop_offset_pct: number;
+  };
+  decision_log: { ts: string; pair: string; action: string; detail: string }[];
+  book_provider_attached: boolean;
+}
+
+export interface MomentumOrderbookLevel {
+  price: number;
+  size: number;
+  usd: number;
+  age_ms: number;
+}
+
+export interface MomentumOrderbookData {
+  available: boolean;
+  pair: string | null;
+  mid: number | null;
+  best_bid: number | null;
+  best_ask: number | null;
+  spread_bps: number | null;
+  bids: MomentumOrderbookLevel[];
+  asks: MomentumOrderbookLevel[];
+  snapshot_done?: boolean;
+  written_at?: string;
+  reason?: string;
 }
 
 export interface MomentumTradeData {
@@ -572,6 +613,15 @@ export class ApiService {
     return this.http.post<{ status: string }>(`${API}/momentum/skip-cooldown`, {});
   }
 
+  fetchMomentumOrderbook() {
+    return this.http.get<MomentumOrderbookData>(`${API}/momentum/orderbook`);
+  }
+
+  toggleWallAware(enabled: boolean) {
+    return this.http.post<{ status: string; requested_enabled: boolean }>(
+      `${API}/momentum/wall-aware/toggle`, { enabled });
+  }
+
   fetchEvents(limit = 50) {
     return this.http.get<EventData[]>(`${API}/events`, { params: { limit: limit.toString() } });
   }
@@ -621,6 +671,15 @@ export class ApiService {
   refreshMomentumStatus() {
     this.fetchMomentumStatus().subscribe({
       next: (data) => this.momentumStatus.set(data),
+      error: () => {},
+    });
+  }
+
+  readonly momentumOrderbook = signal<MomentumOrderbookData | null>(null);
+
+  refreshMomentumOrderbook() {
+    this.fetchMomentumOrderbook().subscribe({
+      next: (data) => this.momentumOrderbook.set(data),
       error: () => {},
     });
   }

@@ -27,6 +27,7 @@ positions, and equity tracking.
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 
@@ -171,6 +172,13 @@ class MomentumHolding:
     trail_stop_price: float = 0.0    # tightening trail — ratchets up
     ticks_above_tighten: int = 0     # how many ticks peak has been above TRAIL_TIGHTEN_PCT
     ticks_since_new_peak: int = 0    # how many ticks since last new high (stale peak detection)
+    # Wall-aware trail state (only populated when wall_aware_trail.enabled)
+    price_only_stop: float = 0.0     # stop that flat-trail logic would set (shown for UI compare)
+    wall_aware_stop: float = 0.0     # stop derived from current qualifying wall (0 if none)
+    active_anchor_price: float = 0.0 # bid price of the wall currently anchoring the stop
+    active_anchor_usd: float = 0.0   # wall USD size at that price
+    active_anchor_age_ms: int = 0    # how long the wall has sat there
+    stop_source: str = "price"       # "price" | "wall"
 
 
 @dataclass
@@ -185,12 +193,36 @@ class MomentumEngine:
     """Self-contained momentum rotation engine with its own cash and positions."""
 
     def __init__(self, allocation_usd: float, fee_rate: float = FEE_RATE,
-                 pairs: list[str] | None = None):
+                 pairs: list[str] | None = None,
+                 wall_aware_config: dict | None = None):
         self.starting_balance = allocation_usd
         self.cash = allocation_usd
         self.fee_rate = fee_rate
         self.holdings: dict[str, MomentumHolding] = {}
         self.pairs: list[str] = list(pairs) if pairs else list(DEFAULT_PAIRS)
+
+        # Wall-aware trail config (see bot_config.yaml → wall_aware_trail)
+        wa = wall_aware_config or {}
+        self.wall_aware_enabled: bool = bool(wa.get("enabled", False))
+        self.wall_aware_min_size_mult: float = float(wa.get("min_size_vs_position", 3.0))
+        self.wall_aware_min_persistence_ms: int = int(wa.get("min_persistence_ms", 10000))
+        self.wall_aware_max_dist_pct: float = float(wa.get("max_dist_from_peak_pct", 1.5))
+        self.wall_aware_stop_offset_pct: float = float(wa.get("stop_offset_pct", 0.001))
+        # Duck-typed provider — must expose find_qualifying_wall() and get_book_snapshot().
+        # Set via set_book_provider() from sim_runner so engine stays decoupled from WS.
+        self._book_provider = None
+        # Running log of recent wall-anchor decisions for the UI decision panel.
+        # Each entry: {ts, pair, action, detail} where action in {tick, shift, cleared}.
+        self._wall_decision_log: list[dict] = []
+        # Live WS mid-price cache: pair -> {"mid": float, "ts": float (epoch sec)}.
+        # Populated by refresh_live_state() at 1Hz. Consumed by the holdings
+        # getters so Now/Dist/If-Stop/P&L breathe at WS cadence instead of the
+        # 60s candle poll.
+        self._live_mids: dict[str, dict] = {}
+        # Dedup key for the decision log: pair -> (rounded_price, int_usd) of
+        # the last anchor we logged. Prevents the 1Hz loop from spamming the
+        # log when the wall sits still.
+        self._last_logged_anchor: dict[str, tuple] = {}
 
         # Candle history per pair (need LONG_LB + REGIME_MA worth of closes)
         self._closes: dict[str, list[float]] = {p: [] for p in self.pairs}
@@ -828,6 +860,90 @@ class MomentumEngine:
 
         return filtered
 
+    def force_entry_eval(self, now: datetime) -> list[Trade]:
+        """Run the immediate-entry evaluation out-of-band.
+
+        Used by the 'Skip cooldown' button so the dashboard doesn't have to
+        wait for the next hourly candle to see a trade. Uses last-known
+        closes already in history; mints a trade timestamp of `now`.
+        Returns any trades executed. Logs reasons into _entry_rejections
+        just like the normal feed_candle path.
+        """
+        trades: list[Trade] = []
+        if self.holdings or not self._was_cash:
+            return trades
+        if self.cash <= self.starting_balance * 0.5:
+            self._entry_rejections = [
+                f"Cash ${self.cash:.2f} < 50% of starting balance ${self.starting_balance:.2f}"
+            ]
+            return trades
+        self._entry_rejections = []
+        if not self.regime_bullish:
+            self._entry_rejections.append("BTC regime is bearish — no entries allowed")
+            return trades
+
+        scores = self._compute_scores()
+        self.accel_scores = scores
+        qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+        below_thresh = [s for s in scores if s.accel <= REENTRY_THRESHOLD]
+        for s in below_thresh:
+            self._entry_rejections.append(
+                f"{s.pair}: accel {s.accel:.1%} < {REENTRY_THRESHOLD:.0%} threshold"
+            )
+        if self._last_sold_pair and self._last_sold_time:
+            if now < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                locked = [s for s in qualifying if s.pair == self._last_sold_pair]
+                for s in locked:
+                    self._entry_rejections.append(
+                        f"{s.pair}: same-coin lockout ({LOCKOUT_HOURS}h)"
+                    )
+                qualifying = [s for s in qualifying if s.pair != self._last_sold_pair]
+
+        qualifying = self._filter_entries(qualifying)
+        if not qualifying:
+            return trades
+
+        self._was_cash = False
+        self._entry_rejections = []
+        winners = qualifying[:TOP_N]
+        investable = self.cash * 0.99
+        per = investable / len(winners)
+        for s in winners:
+            if per > 1:
+                t = self._buy(
+                    s.pair, per, now,
+                    f"Immediate entry: {s.accel:+.1%} accel (skip-cooldown)",
+                )
+                if t:
+                    trades.append(t)
+        self._peak_equity = self.get_equity()
+        self._hours_in_position = 0
+        held = [h.pair.replace('-USD', '') for h in self.holdings.values()]
+        self.status = "holding"
+        self.status_detail = f"Holding {', '.join(held)}"
+        self._hours_since_rebal = 0
+        return trades
+
+    def set_book_provider(self, provider) -> None:
+        """Attach a level2-book provider (e.g. WSRecorder) used by wall-aware trail.
+
+        Provider must expose `find_qualifying_wall(peak, equity, min_size_mult,
+        min_persistence_ms, max_dist_pct)` and `get_book_snapshot(depth)`.
+        """
+        self._book_provider = provider
+
+    def set_wall_aware_enabled(self, enabled: bool) -> None:
+        """Toggle wall-aware trail at runtime (dashboard button)."""
+        self.wall_aware_enabled = bool(enabled)
+        self._wall_decision_log.append({
+            "ts": datetime.now().isoformat(),
+            "pair": next(iter(self.holdings), ""),
+            "action": "toggle",
+            "detail": f"Wall-aware {'enabled' if enabled else 'disabled'} at runtime",
+        })
+        if len(self._wall_decision_log) > 50:
+            self._wall_decision_log = self._wall_decision_log[-50:]
+
     def _get_accel(self, pair: str) -> float | None:
         """Get current momentum acceleration for a held pair."""
         closes = self._closes.get(pair, [])
@@ -888,6 +1004,92 @@ class MomentumEngine:
         if holding.atr_stop_price > 0:
             new_stop = max(new_stop, holding.atr_stop_price)
 
+        # Remember the price-only computation regardless of wall-aware state —
+        # UI compare block shows this as the fallback.
+        holding.price_only_stop = new_stop
+
+        # Layer 4 (wall-aware): hug the largest qualifying bid wall. Ratchets up only;
+        # if the wall disappears later, wall_aware_stop stays put so locked profit
+        # isn't given back on a spoof pullback.
+        wall_stop_used = False
+        if self.wall_aware_enabled and self._book_provider is not None and holding.shares > 0:
+            try:
+                position_equity = holding.shares * cur_price
+                wall = self._book_provider.find_qualifying_wall(
+                    peak=holding.peak_price,
+                    position_equity_usd=position_equity,
+                    min_size_vs_position=self.wall_aware_min_size_mult,
+                    min_persistence_ms=self.wall_aware_min_persistence_ms,
+                    max_dist_from_peak_pct=self.wall_aware_max_dist_pct,
+                )
+            except Exception as e:
+                logger.warning("wall_aware: book_provider.find_qualifying_wall failed: %s", e)
+                wall = None
+
+            if wall is not None:
+                wa_candidate = wall["price"] * (1 - self.wall_aware_stop_offset_pct)
+                prev_stop = holding.wall_aware_stop
+                # Ratchet wall-aware stop upward only.
+                if wa_candidate > holding.wall_aware_stop:
+                    holding.wall_aware_stop = wa_candidate
+                # Record anchor metadata (reflects the current qualifying wall).
+                prev_anchor = holding.active_anchor_price
+                holding.active_anchor_price = wall["price"]
+                holding.active_anchor_usd = wall["usd"]
+                holding.active_anchor_age_ms = wall["age_ms"]
+                if abs(prev_anchor - wall["price"]) > 1e-12:
+                    age_s = int(wall["age_ms"] / 1000)
+                    if age_s < 60:
+                        age_str = f"{age_s}s"
+                    elif age_s < 3600:
+                        age_str = f"{age_s // 60}m"
+                    else:
+                        age_str = f"{age_s // 3600}h {(age_s % 3600) // 60}m"
+                    usd_k = wall["usd"] / 1000
+                    wall_size = f"${usd_k:,.0f}k" if usd_k >= 1 else f"${wall['usd']:,.0f}"
+                    if prev_anchor == 0:
+                        stop_part = f"Stop anchored at ${holding.wall_aware_stop:.6f}"
+                    elif holding.wall_aware_stop > prev_stop:
+                        delta = holding.wall_aware_stop - prev_stop
+                        stop_part = f"Stop raised ${prev_stop:.6f} → ${holding.wall_aware_stop:.6f} (+${delta:.6f})"
+                    else:
+                        stop_part = f"Wall moved up but stop held at ${holding.wall_aware_stop:.6f} (ratchet)"
+                    self._wall_decision_log.append({
+                        "ts": datetime.now().isoformat(),
+                        "pair": holding.pair,
+                        "action": "shift" if prev_anchor > 0 else "anchor",
+                        "detail": (
+                            f"{stop_part} · new {wall_size} wall at ${wall['price']:.6f} "
+                            f"({age_str} old, -{wall['dist_from_peak_pct']:.2f}% from peak)"
+                        ),
+                    })
+                    if len(self._wall_decision_log) > 50:
+                        self._wall_decision_log = self._wall_decision_log[-50:]
+            else:
+                # No qualifying wall right now — clear live anchor metadata but keep
+                # wall_aware_stop at its last ratcheted level.
+                if holding.active_anchor_price > 0:
+                    self._wall_decision_log.append({
+                        "ts": datetime.now().isoformat(),
+                        "pair": holding.pair,
+                        "action": "cleared",
+                        "detail": (
+                            f"Wall disappeared — stop locked at ${holding.wall_aware_stop:.6f} "
+                            f"(no give-back; price-only trail takes over if it climbs higher)"
+                        ),
+                    })
+                    if len(self._wall_decision_log) > 50:
+                        self._wall_decision_log = self._wall_decision_log[-50:]
+                holding.active_anchor_price = 0.0
+                holding.active_anchor_usd = 0.0
+                holding.active_anchor_age_ms = 0
+
+            if holding.wall_aware_stop > new_stop:
+                new_stop = holding.wall_aware_stop
+                wall_stop_used = True
+
+        holding.stop_source = "wall" if wall_stop_used else "price"
+
         # Ratchet: only move up
         if new_stop > holding.trail_stop_price:
             old_stop = holding.trail_stop_price
@@ -904,6 +1106,133 @@ class MomentumEngine:
                          "above_thr=%d stale=%d)",
                          holding.pair, old_stop, new_stop, layer, holding.peak_price, peak_pct,
                          holding.ticks_above_tighten, holding.ticks_since_new_peak)
+
+    def _effective_price(self, pair: str, stale_sec: float = 10.0) -> float:
+        """Return live WS mid if fresh, else last candle close.
+
+        Lets getters (equity, holdings info) show breathing 1Hz prices without
+        waiting for the 60s candle poll. Falls back to candle close if the WS
+        snapshot is stale or missing so we never return garbage when the feed
+        stalls.
+        """
+        entry = self._live_mids.get(pair)
+        if entry and (time.time() - entry["ts"]) <= stale_sec:
+            mid = entry.get("mid")
+            if mid and mid > 0:
+                return float(mid)
+        closes = self._closes.get(pair)
+        if closes:
+            return float(closes[-1])
+        return 0.0
+
+    def refresh_live_state(self, mid_prices: dict[str, float]) -> None:
+        """1Hz lightweight refresh of wall-aware state + live mid cache.
+
+        Called from sim_runner's book writer thread at ~1Hz. Keeps the holding
+        card (Now/Dist/If-Stop/P&L) and the wall-aware compare/decision log in
+        sync with WS cadence. Intentionally does NOT advance tick counters or
+        trigger exits — those stay on the 60s candle path so stale/delay
+        thresholds remain correct.
+        """
+        now = time.time()
+        for pair, mid in mid_prices.items():
+            if mid is None or mid <= 0:
+                continue
+            self._live_mids[pair] = {"mid": float(mid), "ts": now}
+
+            h = self.holdings.get(pair)
+            if h is None or h.shares <= 0 or h.entry_price <= 0:
+                continue
+
+            # Ratchet peak on live mid. Tick counters stay untouched — the
+            # 60s tick path still owns ticks_since_new_peak / ticks_above_tighten.
+            if mid > h.peak_price:
+                h.peak_price = mid
+
+            # Wall-aware re-query + ratchet. Mirrors the wall block in
+            # _update_trail_stop, minus the price-only layer computation.
+            if not (self.wall_aware_enabled and self._book_provider is not None):
+                continue
+
+            try:
+                position_equity = h.shares * mid
+                wall = self._book_provider.find_qualifying_wall(
+                    peak=h.peak_price,
+                    position_equity_usd=position_equity,
+                    min_size_vs_position=self.wall_aware_min_size_mult,
+                    min_persistence_ms=self.wall_aware_min_persistence_ms,
+                    max_dist_from_peak_pct=self.wall_aware_max_dist_pct,
+                )
+            except Exception as e:
+                logger.debug("refresh_live_state: find_qualifying_wall failed for %s: %s", pair, e)
+                continue
+
+            if wall is not None:
+                wa_candidate = wall["price"] * (1 - self.wall_aware_stop_offset_pct)
+                prev_stop = h.wall_aware_stop
+                if wa_candidate > h.wall_aware_stop:
+                    h.wall_aware_stop = wa_candidate
+                prev_anchor = h.active_anchor_price
+                h.active_anchor_price = wall["price"]
+                h.active_anchor_usd = wall["usd"]
+                h.active_anchor_age_ms = wall["age_ms"]
+
+                # Dedup: only log when the qualifying wall actually moves.
+                log_key = (round(wall["price"], 8), int(wall["usd"]))
+                if self._last_logged_anchor.get(pair) != log_key and abs(prev_anchor - wall["price"]) > 1e-12:
+                    age_s = int(wall["age_ms"] / 1000)
+                    if age_s < 60:
+                        age_str = f"{age_s}s"
+                    elif age_s < 3600:
+                        age_str = f"{age_s // 60}m"
+                    else:
+                        age_str = f"{age_s // 3600}h {(age_s % 3600) // 60}m"
+                    usd_k = wall["usd"] / 1000
+                    wall_size = f"${usd_k:,.0f}k" if usd_k >= 1 else f"${wall['usd']:,.0f}"
+                    if prev_anchor == 0:
+                        stop_part = f"Stop anchored at ${h.wall_aware_stop:.6f}"
+                    elif h.wall_aware_stop > prev_stop:
+                        delta = h.wall_aware_stop - prev_stop
+                        stop_part = f"Stop raised ${prev_stop:.6f} → ${h.wall_aware_stop:.6f} (+${delta:.6f})"
+                    else:
+                        stop_part = f"Wall moved up but stop held at ${h.wall_aware_stop:.6f} (ratchet)"
+                    self._wall_decision_log.append({
+                        "ts": datetime.now().isoformat(),
+                        "pair": pair,
+                        "action": "shift" if prev_anchor > 0 else "anchor",
+                        "detail": (
+                            f"{stop_part} · new {wall_size} wall at ${wall['price']:.6f} "
+                            f"({age_str} old, -{wall['dist_from_peak_pct']:.2f}% from peak)"
+                        ),
+                    })
+                    if len(self._wall_decision_log) > 50:
+                        self._wall_decision_log = self._wall_decision_log[-50:]
+                    self._last_logged_anchor[pair] = log_key
+
+                # Intentionally NOT ratcheting trail_stop_price here. The 60s
+                # _update_trail_stop path owns exit-stop math (activation
+                # gating, ATR floor, layer selection). If we ratchet at 1Hz a
+                # wall parked just below entry would trigger an immediate stop
+                # out before the position ever reaches activation threshold —
+                # that's how FARTCOIN got whipsawed at -1.1% right after entry.
+            else:
+                # Wall vanished — log once on the transition, then stop spamming.
+                if h.active_anchor_price > 0:
+                    self._wall_decision_log.append({
+                        "ts": datetime.now().isoformat(),
+                        "pair": pair,
+                        "action": "cleared",
+                        "detail": (
+                            f"Wall disappeared — stop locked at ${h.wall_aware_stop:.6f} "
+                            f"(no give-back; price-only trail takes over if it climbs higher)"
+                        ),
+                    })
+                    if len(self._wall_decision_log) > 50:
+                        self._wall_decision_log = self._wall_decision_log[-50:]
+                h.active_anchor_price = 0.0
+                h.active_anchor_usd = 0.0
+                h.active_anchor_age_ms = 0
+                self._last_logged_anchor.pop(pair, None)
 
     def check_stop_ticker(self, pair: str, price: float) -> Trade | None:
         """Check stops using live ticker prices (~every 60s).
@@ -1104,8 +1433,9 @@ class MomentumEngine:
         """Current total equity = cash + holdings value."""
         equity = self.cash
         for pair, holding in self.holdings.items():
-            if self._closes[pair]:
-                equity += holding.shares * self._closes[pair][-1]
+            px = self._effective_price(pair)
+            if px > 0:
+                equity += holding.shares * px
         self._last_equity = equity
         return equity
 
@@ -1113,8 +1443,9 @@ class MomentumEngine:
         """Current value of all held positions."""
         value = 0.0
         for pair, holding in self.holdings.items():
-            if self._closes[pair]:
-                value += holding.shares * self._closes[pair][-1]
+            px = self._effective_price(pair)
+            if px > 0:
+                value += holding.shares * px
         return value
 
     def get_pnl(self) -> float:
@@ -1124,7 +1455,7 @@ class MomentumEngine:
         """Return holdings with current values for dashboard."""
         info = []
         for pair, h in self.holdings.items():
-            current_price = self._closes[pair][-1] if self._closes[pair] else 0
+            current_price = self._effective_price(pair)
             value = h.shares * current_price
             pnl = value - (h.shares * h.entry_price)
             pnl_pct = (current_price / h.entry_price - 1) * 100 if h.entry_price > 0 else 0
@@ -1177,8 +1508,29 @@ class MomentumEngine:
                 "trail_layer": trail_layer,
                 "ticks_above_tighten": h.ticks_above_tighten,
                 "ticks_since_new_peak": h.ticks_since_new_peak,
+                # Wall-aware fields (all 0/empty when feature off or no wall yet)
+                "price_only_stop": h.price_only_stop,
+                "wall_aware_stop": h.wall_aware_stop,
+                "active_anchor_price": h.active_anchor_price,
+                "active_anchor_usd": h.active_anchor_usd,
+                "active_anchor_age_ms": h.active_anchor_age_ms,
+                "stop_source": h.stop_source,
             })
         return info
+
+    def get_wall_aware_state(self) -> dict:
+        """Top-level wall-aware engine state for the dashboard."""
+        return {
+            "enabled": self.wall_aware_enabled,
+            "config": {
+                "min_size_vs_position": self.wall_aware_min_size_mult,
+                "min_persistence_ms": self.wall_aware_min_persistence_ms,
+                "max_dist_from_peak_pct": self.wall_aware_max_dist_pct,
+                "stop_offset_pct": self.wall_aware_stop_offset_pct,
+            },
+            "decision_log": list(self._wall_decision_log[-20:]),
+            "book_provider_attached": self._book_provider is not None,
+        }
 
     def get_status_dict(self) -> dict:
         """Full status for API/dashboard."""
@@ -1219,4 +1571,5 @@ class MomentumEngine:
             "loss_lockouts": {p: t.isoformat() for p, t in self._loss_lockouts.items()},
             "min_price_filter": MIN_PRICE,
             "last_candle_ts": self._last_candle_ts.isoformat() if self._last_candle_ts else None,
+            "wall_aware": self.get_wall_aware_state(),
         }

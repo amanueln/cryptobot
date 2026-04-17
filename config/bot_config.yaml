@@ -19,6 +19,16 @@ momentum_rotation:
   enabled: true
   allocation_usd: 3000
 
+# Wall-aware trail stop — hugs qualifying bid walls instead of flat 2% trail.
+# When enabled, the active stop is max(price_trail, wall_price * (1 - stop_offset_pct)).
+# On by default — runtime toggle on the dashboard can still flip it off per session.
+wall_aware_trail:
+  enabled: true
+  min_size_vs_position: 3.0      # wall USD must be at least this multiple of position equity
+  min_persistence_ms: 10000      # wall must have sat at that price for this long (anti-spoof)
+  max_dist_from_peak_pct: 1.5    # only consider walls within this % below the peak
+  stop_offset_pct: 0.001         # stop sits this % below the wall price (0.1%)
+
 # Early Momentum Scanner (alerts for manual trading)
 early_scanner:
   enabled: true

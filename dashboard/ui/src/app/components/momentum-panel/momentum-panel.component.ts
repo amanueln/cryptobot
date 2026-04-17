@@ -6,17 +6,19 @@ import { Chart, registerables, ChartConfiguration } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import {
   ApiService, MomentumStatusData, MomentumTradeData,
-  MomentumEquityData, MomentumEventData,
+  MomentumEquityData, MomentumEventData, MomentumOrderbookData,
+  MomentumHoldingData,
 } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { TradeCalendarComponent } from '../trade-calendar/trade-calendar.component';
+import { OrderbookLadderComponent } from '../orderbook-ladder/orderbook-ladder.component';
 
 Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-momentum-panel',
   standalone: true,
-  imports: [CommonModule, TradeCalendarComponent],
+  imports: [CommonModule, TradeCalendarComponent, OrderbookLadderComponent],
   template: `
     <div class="mp-root">
 
@@ -28,6 +30,15 @@ Chart.register(...registerables, zoomPlugin);
           {{ engineTagText() }}
         </span>
         <span class="engine-alloc">{{ formatCurrency(status()?.starting_balance ?? 0) }} allocated</span>
+        <!-- Wall-aware trail toggle (amber chip; flips the stop anchor on active holdings) -->
+        <div class="wa-toggle-group" [class.on]="wallAware().enabled"
+             title="When on, stop hugs qualifying bid walls ≥ 3× position size (config in bot_config.yaml)">
+          <span class="wa-label">Wall-aware trail{{ wallAwareBusy() ? ' (applying…)' : '' }}</span>
+          <button class="wa-switch" [class.on]="wallAware().enabled"
+                  (click)="toggleWallAware()" [disabled]="wallAwareBusy()">
+            <span class="knob"></span>
+          </button>
+        </div>
         <span class="engine-version" title="Running git commit">v: {{ commitSha() || '...' }}</span>
         <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
         <button class="backup-btn" (click)="backupNow()" [disabled]="backupRunning()" title="Backup databases to external drive">{{ backupRunning() ? 'Backing up...' : backupResult() || 'Backup' }}</button>
@@ -40,17 +51,14 @@ Chart.register(...registerables, zoomPlugin);
           <span class="hero-label">Total</span>
           <span class="hero-value">{{ formatCurrency(status()?.equity ?? 0) }}</span>
         </div>
-        <div class="hero-divider"></div>
         <div class="hero-item">
           <span class="hero-label">Cash</span>
           <span class="hero-value cash-val">{{ formatCurrency(status()?.cash ?? 0) }}</span>
         </div>
-        <div class="hero-divider"></div>
         <div class="hero-item">
           <span class="hero-label">Positions</span>
           <span class="hero-value positions-val">{{ formatCurrency(status()?.positions_value ?? 0) }}</span>
         </div>
-        <div class="hero-divider"></div>
         <div class="hero-item">
           <span class="hero-label">P&L ({{ pnlPctStr() }})</span>
           <span class="hero-value" [class.pos]="(status()?.pnl ?? 0) >= 0" [class.neg]="(status()?.pnl ?? 0) < 0">
@@ -75,7 +83,9 @@ Chart.register(...registerables, zoomPlugin);
           </span>
           @if ((status()?.exit_cooldown_remaining ?? 0) > 0) {
             <span class="cooldown-badge">Cooldown {{ cooldownDisplay() }}</span>
-            <button class="skip-cooldown-btn" (click)="skipCooldown()" [disabled]="skippingCooldown()" title="Skip cooldown and allow immediate re-entry">{{ skippingCooldown() ? 'Skipping...' : 'Skip' }}</button>
+            <button class="skip-cooldown-btn" (click)="skipCooldown()" [disabled]="skippingCooldown()" title="Skip cooldown and trigger an immediate re-evaluation (don't wait for the next hourly candle)">{{ skippingCooldown() ? 'Skipping...' : 'Skip & Re-eval' }}</button>
+          } @else if (status()?.status === 'cash' && (status()?.holdings?.length ?? 0) === 0) {
+            <button class="skip-cooldown-btn" (click)="skipCooldown()" [disabled]="skippingCooldown()" title="Force an entry re-evaluation now instead of waiting for the next hourly candle close">{{ skippingCooldown() ? 'Evaluating...' : 'Re-eval now' }}</button>
           }
           @if ((status()?.hours_in_position ?? 0) > 0) {
             <span class="hold-time">In position {{ status()!.hours_in_position }}h</span>
@@ -169,16 +179,43 @@ Chart.register(...registerables, zoomPlugin);
               @for (h of status()?.holdings ?? []; track h.pair) {
                 <div class="compact-holding">
                   <div class="ch-row">
-                    <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
-                    @if (h.trail_layer) {
-                      <span class="ch-layer tt-wrap" [class.inactive]="h.trail_layer === 'inactive'"
-                            [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
-                            [class.progressive]="h.trail_layer === 'progressive'"
-                            [class.stale]="h.trail_layer === 'stale'">
-                        {{ trailLayerLabel(h.trail_layer) }}
-                        <span class="tt">{{ trailLayerTooltip(h.trail_layer) }}</span>
-                      </span>
-                    }
+                    <div class="ch-header">
+                      <span class="ch-coin">{{ h.pair.replace('-USD', '') }}</span>
+                      @if (h.trail_layer) {
+                        <span class="ch-layer tt-wrap" [class.inactive]="h.trail_layer === 'inactive'"
+                              [class.wide]="h.trail_layer === 'wide'" [class.tight]="h.trail_layer === 'tight'"
+                              [class.progressive]="h.trail_layer === 'progressive'"
+                              [class.stale]="h.trail_layer === 'stale'">
+                          {{ trailLayerLabel(h.trail_layer) }}
+                          <span class="tt">{{ trailLayerTooltip(h.trail_layer) }}</span>
+                        </span>
+                      }
+                      @if (wallAware().enabled && h.stop_source === 'wall') {
+                        <span class="ch-layer wall-hug tt-wrap">
+                          Wall-hugging
+                          <span class="tt">Stop is anchored 0.1% below a qualifying bid wall at
+                            {{ formatPrice(h.active_anchor_price ?? 0) }} ({{ formatCompactUsd(h.active_anchor_usd ?? 0) }},
+                            {{ ((h.active_anchor_age_ms ?? 0) / 1000) | number:'1.0-0' }}s old).</span>
+                        </span>
+                      } @else if (wallAware().enabled) {
+                        <span class="ch-layer wall-none tt-wrap">
+                          No wall &rarr; price trail
+                          <span class="tt">Wall-aware is on but no qualifying bid wall right now — using flat trail.</span>
+                        </span>
+                      }
+                      <div class="ch-pnl-group">
+                        <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
+                        <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
+                          {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
+                        </span>
+                      </div>
+                      <button class="ch-sell"
+                              [class.selling]="sellingPair() === h.pair"
+                              [disabled]="sellingPair() !== null"
+                              (click)="manualSell(h.pair)">
+                        {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
+                      </button>
+                    </div>
                     <div class="ch-stats">
                       <div class="ch-stat tt-wrap">
                         <span class="ch-stat-lbl">Entry</span>
@@ -223,18 +260,6 @@ Chart.register(...registerables, zoomPlugin);
                         <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
                       </div>
                     </div>
-                    <div class="ch-pnl-group">
-                      <span class="ch-pnl-val">{{ formatCurrency(h.value) }}</span>
-                      <span class="ch-pnl-pct" [class.pos]="h.pnl >= 0" [class.neg]="h.pnl < 0">
-                        {{ h.pnl >= 0 ? '+' : '' }}{{ formatCurrency(h.pnl) }} ({{ h.pnl_pct.toFixed(1) }}%)
-                      </span>
-                    </div>
-                    <button class="ch-sell"
-                            [class.selling]="sellingPair() === h.pair"
-                            [disabled]="sellingPair() !== null"
-                            (click)="manualSell(h.pair)">
-                      {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
-                    </button>
                   </div>
                 </div>
               }
@@ -245,6 +270,123 @@ Chart.register(...registerables, zoomPlugin);
               <div class="sell-notification" [class.success]="sellNotification()!.type === 'success'" [class.error]="sellNotification()!.type === 'error'">
                 {{ sellNotification()!.message }}
               </div>
+            }
+
+            <!-- Wall-aware: Price-only vs Wall-aware compare block -->
+            @if (isHolding() && status()!.holdings.length > 0; as hasH) {
+              @if (status()!.holdings[0]; as h) {
+                <div class="compare">
+                  <div class="compare-head">
+                    <span class="compare-title">Price-only vs Wall-aware</span>
+                    <span class="compare-active"
+                          [class.wall-on]="wallAware().enabled && (h.active_anchor_usd ?? 0) > 0"
+                          [class.price-on]="!wallAware().enabled || (h.active_anchor_usd ?? 0) === 0">
+                      {{ compareActiveLabel(h) }}
+                    </span>
+                  </div>
+                  <div class="compare-body">
+                    <div class="compare-cell"
+                         [class.active]="!wallAware().enabled || (h.active_anchor_usd ?? 0) === 0"
+                         [class.dormant]="wallAware().enabled && (h.active_anchor_usd ?? 0) > 0">
+                      <div class="compare-cell-hdr">Price-only (fallback)</div>
+                      <div class="compare-price">{{ (h.price_only_stop ?? 0) > 0 ? formatPrice(h.price_only_stop ?? 0) : '—' }}</div>
+                      <div class="compare-pct">{{ priceOnlyDistLabel(h) }}</div>
+                      <div class="compare-profit">
+                        <span class="dim">Profit locked: </span>
+                        <span class="val"
+                              [class.green]="priceOnlyIfStopDollars(h) > 0"
+                              [class.red]="priceOnlyIfStopDollars(h) < 0">
+                          {{ (h.price_only_stop ?? 0) > 0
+                              ? (priceOnlyIfStopDollars(h) >= 0 ? '+' : '') + formatCurrency(priceOnlyIfStopDollars(h)) + ' (' + priceOnlyIfStopPct(h).toFixed(2) + '%)'
+                              : '—' }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="compare-cell"
+                         [class.active]="wallAware().enabled && (h.active_anchor_usd ?? 0) > 0"
+                         [class.dormant]="!wallAware().enabled || (h.active_anchor_usd ?? 0) === 0">
+                      <div class="compare-cell-hdr">Wall-aware {{ wallAware().enabled ? '(active)' : '(off)' }}</div>
+                      <div class="compare-price">
+                        {{ (h.active_anchor_usd ?? 0) > 0 && (h.wall_aware_stop ?? 0) > 0 ? formatPrice(h.wall_aware_stop ?? 0) : '—' }}
+                      </div>
+                      <div class="compare-pct">{{ wallDistLabel(h) }}</div>
+                      <div class="compare-profit">
+                        <span class="dim">Profit locked: </span>
+                        <span class="val"
+                              [class.green]="wallAwareIfStopDollars(h) > 0"
+                              [class.red]="wallAwareIfStopDollars(h) < 0">
+                          {{ (h.active_anchor_usd ?? 0) > 0 && (h.wall_aware_stop ?? 0) > 0
+                              ? (wallAwareIfStopDollars(h) >= 0 ? '+' : '') + formatCurrency(wallAwareIfStopDollars(h)) + ' (' + wallAwareIfStopPct(h).toFixed(2) + '%)'
+                              : '(falls back to price-only)' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="compare-delta">
+                    @if (wallAware().enabled && (h.active_anchor_usd ?? 0) > 0 && compareDeltaDollars(h) > 0) {
+                      Wall-aware locks <b>+{{ formatCurrency(compareDeltaDollars(h)) }} more</b> than price-only
+                      <span class="dim">(if price drops to stop)</span>
+                    } @else if (wallAware().enabled) {
+                      <span class="dim">No qualifying wall — wall-aware falling back to price-only stop.</span>
+                    } @else {
+                      <span class="dim">Wall-aware toggle is off — using price-only stop.</span>
+                    }
+                  </div>
+                </div>
+
+                <!-- Wall-aware config + decision log -->
+                <div class="cfg-log-row">
+                  <div class="cfg" [class.dormant]="!wallAware().enabled">
+                    <div class="cfg-head">Guardrails</div>
+                    <div class="cfg-body">
+                      <div class="cfg-row tt-wrap">
+                        <span class="cfg-lbl">Min wall size vs position</span>
+                        <span class="cfg-val">≥ {{ wallAware().config.min_size_vs_position }}×</span>
+                        <span class="tt">Wall USD must be at least this multiple of position equity to qualify (anti-spoof size gate).</span>
+                      </div>
+                      <div class="cfg-row tt-wrap">
+                        <span class="cfg-lbl">Min wall persistence</span>
+                        <span class="cfg-val">≥ {{ wallAware().config.min_persistence_ms / 1000 }}s</span>
+                        <span class="tt">Wall must sit at the same price for this long before counting (anti-spoof time gate).</span>
+                      </div>
+                      <div class="cfg-row tt-wrap">
+                        <span class="cfg-lbl">Max dist from peak</span>
+                        <span class="cfg-val">≤ {{ wallAware().config.max_dist_from_peak_pct }}%</span>
+                        <span class="tt">Only walls within this % below the session peak qualify. Deeper walls are ignored.</span>
+                      </div>
+                      <div class="cfg-row tt-wrap">
+                        <span class="cfg-lbl">Stop offset below wall</span>
+                        <span class="cfg-val">{{ (wallAware().config.stop_offset_pct * 100).toFixed(2) }}%</span>
+                        <span class="tt">Stop sits this % below the wall price so we exit just above the wall.</span>
+                      </div>
+                      <div class="cfg-row">
+                        <span class="cfg-lbl">Fallback</span>
+                        <span class="cfg-val">Progressive 2.0%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="log-card">
+                    <div class="log-head">Stop decision log</div>
+                    <div class="log-body">
+                      @if (recentWallLog().length > 0) {
+                        @for (e of recentWallLog(); track e.ts) {
+                          <div class="log-row">
+                            <span class="log-ts">{{ formatLogTs(e.ts) }}</span>
+                            <span class="log-desc">
+                              <span class="log-tag" [class]="logTagClass(e.action)">{{ e.action }}</span>
+                              {{ e.detail }}
+                            </span>
+                          </div>
+                        }
+                      } @else {
+                        <div class="log-row log-empty">
+                          <span class="log-desc dim">Waiting for wall events…</span>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
             }
           </div>
 
@@ -310,6 +452,16 @@ Chart.register(...registerables, zoomPlugin);
             </div>
           }
         </div>
+
+        <!-- Middle: L2 order book ladder -->
+        @if (isHolding() && (status()?.holdings?.length ?? 0) > 0) {
+          <div class="l2-col">
+            <app-orderbook-ladder
+              [holding]="status()!.holdings[0]"
+              [wallAwareEnabled]="wallAware().enabled">
+            </app-orderbook-ladder>
+          </div>
+        }
 
         <!-- Right: Acceleration Scanner -->
         <div class="accel-col">
@@ -589,6 +741,31 @@ Chart.register(...registerables, zoomPlugin);
     }
     .reset-btn:hover { background: rgba(239,68,68,0.2); border-color: #f87171; }
 
+    /* Wall-aware trail toggle (amber chip, sits inside engine-tab) */
+    .wa-toggle-group {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 3px 10px 3px 12px; border-radius: 6px;
+      background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.3);
+      margin-left: 6px;
+    }
+    .wa-toggle-group.on {
+      background: rgba(34,197,94,.08); border-color: rgba(34,197,94,.35);
+    }
+    .wa-label { font-size: 11px; font-weight: 600; color: #fbbf24; white-space: nowrap; }
+    .wa-toggle-group.on .wa-label { color: #4ade80; }
+    .wa-switch {
+      position: relative; width: 38px; height: 20px;
+      background: #1f2232; border-radius: 11px; cursor: pointer;
+      border: 1px solid #2d3148; padding: 0; transition: all .15s;
+    }
+    .wa-switch .knob {
+      position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+      border-radius: 50%; background: #6b7280; transition: all .15s;
+    }
+    .wa-switch.on { background: rgba(34,197,94,.2); border-color: #4ade80; }
+    .wa-switch.on .knob { left: 20px; background: #4ade80; }
+    .wa-switch:disabled { opacity: 0.5; cursor: wait; }
+
     /* Hero bar */
     .hero-bar {
       display: flex; align-items: center; justify-content: center;
@@ -612,7 +789,6 @@ Chart.register(...registerables, zoomPlugin);
       font-family: 'JetBrains Mono', monospace;
     }
     .pnl-detail.fee-detail { color: #f59e0b; }
-    .hero-divider { width: 1px; height: 1.5rem; background: #2d3148; }
 
     /* Status banner */
     .status-banner {
@@ -680,12 +856,13 @@ Chart.register(...registerables, zoomPlugin);
 
     /* Equity + activity row */
     .equity-activity-row {
-      display: flex; gap: 0; border-bottom: 1px solid #2d3148;
+      display: grid; grid-template-columns: 1.7fr 1fr;
+      gap: 0; border-bottom: 1px solid #2d3148;
     }
     .equity-col {
-      flex: 3; padding: 14px 16px; border-right: 1px solid #2d3148; min-width: 0;
+      padding: 14px 16px; border-right: 1px solid #2d3148; min-width: 0;
     }
-    .activity-col { flex: 2; min-width: 0; max-height: 260px; overflow-y: auto; padding: 14px 16px; }
+    .activity-col { min-width: 0; max-height: 260px; overflow-y: auto; padding: 14px 16px; }
     .section-header {
       font-size: 12px; font-weight: 600; color: #e2e8f0;
       margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -746,15 +923,34 @@ Chart.register(...registerables, zoomPlugin);
     .no-data { font-size: 11px; color: #4b5280; font-style: italic; }
 
     /* Acceleration Scanner */
-    /* Holdings/Strategy + Accel Scanner side-by-side */
+    /* Holdings/Strategy + L2 Ladder + Accel Scanner side-by-side */
     .hold-strat-accel-row {
-      display: flex; border-bottom: 1px solid #2d3148;
+      display: grid;
+      grid-template-columns: minmax(0,1.3fr) 320px minmax(0,1fr);
+      gap: 12px;
+      padding: 12px;
+      border-bottom: 1px solid #2d3148;
+    }
+    /* Cash state: no holding → no L2 ladder column. Collapse to 2-col so
+       Strategy + Scanner fill the row instead of leaving a dead 320px gap. */
+    .hold-strat-accel-row:not(:has(.l2-col)) {
+      grid-template-columns: minmax(0,1.3fr) minmax(0,1fr);
     }
     .hold-strat-col {
-      flex: 0 0 38%; display: flex; flex-direction: column; border-right: 1px solid #2d3148; min-width: 0;
+      display: flex; flex-direction: column; min-width: 0;
     }
+    .l2-col { min-width: 0; align-self: start; }
     .accel-col {
-      flex: 1; padding: 14px 16px; background: #12141e; min-width: 0; overflow: hidden;
+      padding: 0; background: transparent; min-width: 0; overflow: hidden;
+    }
+    @media (max-width: 1200px) {
+      .hold-strat-accel-row { grid-template-columns: minmax(0,1fr) 300px; }
+      .hold-strat-accel-row:not(:has(.l2-col)) { grid-template-columns: minmax(0,1fr); }
+      .accel-col { grid-column: 1 / -1; }
+    }
+    @media (max-width: 900px) {
+      .hold-strat-accel-row { grid-template-columns: 1fr; }
+      .accel-col { grid-column: auto; }
     }
     .accel-col .section-header {
       display: flex; align-items: center; gap: 10px;
@@ -853,18 +1049,16 @@ Chart.register(...registerables, zoomPlugin);
       flex: 1; padding: 0.65rem 1rem; min-width: 0;
       background: linear-gradient(180deg, #12141e 0%, #0f1117 100%);
     }
-    @media (max-width: 900px) {
-      .hold-strat-accel-row { flex-direction: column; }
-      .hold-strat-col { border-right: none; border-bottom: 1px solid #2d3148; }
-    }
 
     /* Holdings (compact) */
     .compact-holding {
       background: #1a1d29; border: 1px solid #2d3148;
       border-radius: 0.5rem; border-left: 3px solid #a78bfa; padding: 0.6rem 0.85rem;
     }
-    .ch-row {
-      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    .ch-row { display: flex; flex-direction: column; gap: 10px; }
+    .ch-header {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      row-gap: 6px; min-width: 0;
     }
     .ch-coin { font-weight: 700; font-size: 1.1rem; white-space: nowrap; }
     .ch-layer {
@@ -876,10 +1070,151 @@ Chart.register(...registerables, zoomPlugin);
     .ch-layer.tight { background: rgba(251,191,36,0.12); color: #fbbf24; }
     .ch-layer.progressive { background: rgba(34,197,94,0.15); color: #22c55e; }
     .ch-layer.stale { background: rgba(248,113,113,0.15); color: #f87171; }
-    .ch-stats { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap; flex: 1; justify-content: center; }
-    .ch-stat { display: flex; flex-direction: column; align-items: center; }
-    .ch-stat-lbl { font-size: 0.6rem; color: #4b5280; text-transform: uppercase; letter-spacing: 0.05em; line-height: 1; }
-    .ch-stat-val { font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3; }
+    .ch-layer.wall-hug { background: rgba(52,211,153,0.18); color: #34d399; border: 1px solid rgba(52,211,153,0.35); }
+    .ch-layer.wall-none { background: rgba(251,191,36,0.10); color: #d97706; }
+    /* Wall-aware compare block (mock) */
+    .compare {
+      background: #121821; border: 1px solid #25304a;
+      border-radius: 8px; overflow: hidden; margin-top: 6px;
+    }
+    .compare-head {
+      padding: 8px 12px; border-bottom: 1px solid #25304a;
+      background: #182030;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; flex-wrap: wrap;
+    }
+    .compare-title {
+      font-size: 10px; font-weight: 600; color: #8895ad;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .compare-active {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+      text-transform: none; letter-spacing: normal;
+    }
+    .compare-active.wall-on { background: rgba(251,191,36,0.18); color: #fbbf24; }
+    .compare-active.price-on { background: rgba(139,149,173,0.15); color: #8895ad; }
+    .compare-body { display: grid; grid-template-columns: 1fr 1fr; }
+    @media (max-width: 540px) { .compare-body { grid-template-columns: 1fr; } }
+    .compare-cell { padding: 10px 12px; border-right: 1px solid #25304a; min-width: 0; }
+    .compare-cell:last-child { border-right: none; }
+    @media (max-width: 540px) {
+      .compare-cell { border-right: none; border-bottom: 1px solid #25304a; }
+      .compare-cell:last-child { border-bottom: none; }
+    }
+    .compare-cell.active { background: linear-gradient(180deg, rgba(251,191,36,0.06), transparent); }
+    .compare-cell.dormant { opacity: 0.55; }
+    .compare-cell-hdr {
+      font-size: 9px; color: #8895ad; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px;
+    }
+    .compare-price {
+      font-size: 16px; font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums; color: #e6ecf5;
+    }
+    .compare-pct {
+      font-size: 10px; color: #8895ad; margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .compare-profit {
+      margin-top: 6px; padding-top: 6px; border-top: 1px solid #25304a;
+      font-size: 11px;
+    }
+    .compare-profit .dim { color: #8895ad; }
+    .compare-profit .val {
+      font-weight: 600; font-variant-numeric: tabular-nums;
+      font-family: 'JetBrains Mono', monospace; color: #e6ecf5;
+    }
+    .compare-profit .val.green { color: #4ade80; }
+    .compare-profit .val.red   { color: #f87171; }
+    .compare-delta {
+      font-size: 11px; color: #4ade80; font-weight: 600;
+      padding: 6px 12px; background: rgba(34,197,94,0.08);
+      text-align: center; border-top: 1px solid #25304a;
+    }
+    .compare-delta .dim { color: #8895ad; font-weight: 400; }
+    .compare-delta b { font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', monospace; }
+
+    /* Guardrails + Stop decision log row (mock) */
+    .cfg-log-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      margin-top: 6px;
+    }
+    @media (max-width: 720px) { .cfg-log-row { grid-template-columns: 1fr; } }
+    .cfg, .log-card {
+      background: #121821; border: 1px solid #25304a;
+      border-radius: 8px; overflow: hidden; min-width: 0;
+    }
+    .cfg.dormant { opacity: 0.55; }
+    .cfg-head, .log-head {
+      padding: 7px 12px; border-bottom: 1px solid #25304a;
+      background: #182030;
+      font-size: 10px; font-weight: 600; color: #8895ad;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .cfg-body { padding: 8px 12px; }
+    .cfg-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 8px; padding: 3px 0; font-size: 11px;
+      border-bottom: 1px solid rgba(37,48,74,0.35); min-width: 0;
+    }
+    .cfg-row:last-child { border-bottom: none; }
+    .cfg-lbl { color: #8895ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cfg-val {
+      font-weight: 600; color: #e6ecf5;
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .log-body { max-height: 180px; overflow-y: auto; }
+    .log-body::-webkit-scrollbar { width: 4px; }
+    .log-body::-webkit-scrollbar-track { background: transparent; }
+    .log-body::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 2px; }
+    .log-row {
+      display: grid; grid-template-columns: 48px 1fr;
+      gap: 6px; padding: 5px 12px;
+      border-bottom: 1px solid rgba(37,48,74,0.35);
+      font-size: 11px; min-width: 0; align-items: start;
+    }
+    .log-row:last-child { border-bottom: none; }
+    .log-ts {
+      color: #5a6679; font-variant-numeric: tabular-nums;
+      font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      white-space: nowrap;
+    }
+    .log-desc {
+      min-width: 0; color: #cbd5e1;
+      font-size: 11px; line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .log-desc.dim { color: #8895ad; font-style: italic; }
+    .log-tag {
+      display: inline-block; font-size: 9px; font-weight: 700;
+      padding: 1px 5px; border-radius: 3px; letter-spacing: 0.3px;
+      text-transform: uppercase; margin-right: 4px;
+      vertical-align: 1px;
+    }
+    .log-tag.wall   { background: rgba(251,191,36,0.18); color: #fbbf24; }
+    .log-tag.pulled { background: rgba(239,68,68,0.18);  color: #f87171; }
+    .log-tag.tick   { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .log-empty { grid-template-columns: 1fr; }
+    .ch-stats {
+      display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 6px;
+    }
+    @media (max-width: 1200px) { .ch-stats { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+    @media (max-width: 700px)  { .ch-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+    @media (max-width: 480px)  { .ch-stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+    .ch-stat {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 6px 8px; background: #182030;
+      border-radius: 5px; min-width: 0;
+    }
+    .ch-stat-lbl { font-size: 9px; color: #8895ad; text-transform: uppercase; letter-spacing: 0.04em; }
+    .ch-stat-val {
+      font-size: 12px; font-family: 'JetBrains Mono', monospace; font-weight: 600; line-height: 1.3;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .ch-stat-val.red { color: #f87171; }
     .ch-stat-val.green { color: #4ade80; }
     .ch-stat-val.dim { color: #6b7280; }
@@ -1014,7 +1349,7 @@ Chart.register(...registerables, zoomPlugin);
 
     /* Medium screens — stack side-by-side panels */
     @media (max-width: 1024px) {
-      .equity-activity-row { flex-direction: column; }
+      .equity-activity-row { grid-template-columns: 1fr; }
       .equity-col { border-right: none; border-bottom: 1px solid #2d3148; }
       .activity-col { max-height: 200px; }
     }
@@ -1034,7 +1369,6 @@ Chart.register(...registerables, zoomPlugin);
         gap: 0.25rem 0; padding: 0.5rem 0.75rem;
       }
       .hero-item { justify-content: center; padding: 0.2rem 0; gap: 0.3em; }
-      .hero-divider { display: none; }
       .hero-value { font-size: 0.9rem; }
       .hero-label { font-size: 0.55rem; }
       .hero-pnl-fees { display: none; }
@@ -1190,7 +1524,51 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   skippingCooldown = signal(false);
   sellingPair = signal<string | null>(null);
   sellNotification = signal<{ type: string; message: string } | null>(null);
+
+  // ---- Wall-aware trail state ----
+  wallAwareBusy = signal(false);
+  orderbook = signal<MomentumOrderbookData | null>(null);
+
+  wallAware = computed(() => {
+    const s = this.status();
+    return s?.wall_aware ?? {
+      enabled: false,
+      config: {
+        min_size_vs_position: 3.0,
+        min_persistence_ms: 10000,
+        max_dist_from_peak_pct: 1.5,
+        stop_offset_pct: 0.001,
+      },
+      decision_log: [],
+      book_provider_attached: false,
+    };
+  });
+
+  // Last 6 wall-aware decision events, newest first
+  recentWallLog = computed(() => {
+    const log = this.wallAware().decision_log ?? [];
+    return [...log].slice(-6).reverse();
+  });
+
+  // Active holding's wall-aware snapshot (null when flat)
+  activeHoldingWallView = computed(() => {
+    const h = this.status()?.holdings?.[0];
+    if (!h) return null;
+    return {
+      pair: h.pair,
+      entry: h.entry_price,
+      peak: h.peak_price,
+      stop: h.stop_price,
+      priceOnly: h.price_only_stop ?? 0,
+      wallAware: h.wall_aware_stop ?? 0,
+      anchorPrice: h.active_anchor_price ?? 0,
+      anchorUsd: h.active_anchor_usd ?? 0,
+      anchorAgeSec: Math.floor((h.active_anchor_age_ms ?? 0) / 1000),
+      source: h.stop_source ?? 'price',
+    };
+  });
   private progressInterval: any;
+  private _liveStatusInterval: any;
   private _pollCountdown = signal(60);
   private _countdownInterval: any;
 
@@ -1373,9 +1751,17 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       error: () => {},
     });
 
-    // Poll warmup progress every 3s while warming up
     this.pollProgress();
-    this.progressInterval = setInterval(() => this.pollProgress(), 3000);
+    this.progressInterval = setInterval(() => this.pollProgress(), 1500);
+
+    // Poll momentum status every 1.5s so the holding card (Now / Dist / If Stop
+    // / P&L) breathes together with the L2 ladder. Engine writes status.json at
+    // 1Hz from the book-writer thread. Without this, refreshMomentumStatus only
+    // fires on the 60s countdown cycle.
+    this._liveStatusInterval = setInterval(
+      () => this.api.refreshMomentumStatus(),
+      1500,
+    );
 
     // Countdown timer — ticks every second, reloads all data on each cycle
     this._pollCountdown.set(60);
@@ -1626,6 +2012,54 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     return '$' + price.toFixed(6);
   }
 
+  formatCompactUsd(value: number): string {
+    if (!value) return '$0';
+    if (value >= 1_000_000) return '$' + (value / 1_000_000).toFixed(1) + 'M';
+    if (value >= 1_000) return '$' + (value / 1_000).toFixed(1) + 'k';
+    return '$' + value.toFixed(0);
+  }
+
+  wallStopDeltaPct(h: MomentumHoldingData): number {
+    const wa = h.wall_aware_stop ?? 0;
+    const po = h.price_only_stop ?? 0;
+    if (po <= 0 || wa <= po) return 0;
+    return ((wa - po) / po) * 100;
+  }
+
+  wallDistFromPeakPct(h: MomentumHoldingData): number {
+    const anchor = h.active_anchor_price ?? 0;
+    const peak = h.peak_price ?? 0;
+    if (peak <= 0 || anchor <= 0) return 0;
+    return ((anchor - peak) / peak) * 100;
+  }
+
+  anchorAgeDisplay(ms: number): string {
+    if (!ms || ms < 0) return '0s';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    if (m < 60) return rs > 0 ? m + 'm ' + rs + 's' : m + 'm';
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return rm > 0 ? h + 'h ' + rm + 'm' : h + 'h';
+  }
+
+  timeAgo(iso: string): string {
+    try {
+      const ms = Date.now() - new Date(iso).getTime();
+      if (ms < 0) return 'now';
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      const h = Math.floor(m / 60);
+      return h + 'h ago';
+    } catch {
+      return '';
+    }
+  }
+
   shortTime(ts: string): string {
     try {
       const d = new Date(ts);
@@ -1677,6 +2111,35 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
       error: (err: unknown) => {
         this.skippingCooldown.set(false);
         console.error('Skip cooldown failed', err);
+      },
+    });
+  }
+
+  toggleWallAware(): void {
+    if (this.wallAwareBusy()) return;
+    const next = !this.wallAware().enabled;
+    this.wallAwareBusy.set(true);
+    this.api.toggleWallAware(next).subscribe({
+      next: () => {
+        // Engine picks up the flag on its next poll tick (up to 60s).
+        // Poll status every 3s until the engine's state matches, then release busy.
+        const started = Date.now();
+        const tick = () => {
+          this.api.refreshMomentumStatus();
+          setTimeout(() => {
+            const cur = this.wallAware().enabled;
+            if (cur === next || Date.now() - started > 75_000) {
+              this.wallAwareBusy.set(false);
+              return;
+            }
+            tick();
+          }, 3000);
+        };
+        tick();
+      },
+      error: (err: unknown) => {
+        this.wallAwareBusy.set(false);
+        console.error('toggle wall-aware failed', err);
       },
     });
   }
@@ -1930,6 +2393,80 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   ifStopPnlPct(h: any): number {
     if (!h || !h.stop_price || !h.entry_price) return 0;
     return ((h.stop_price - h.entry_price) / h.entry_price) * 100;
+  }
+
+  priceOnlyIfStopDollars(h: any): number {
+    if (!h || !h.price_only_stop || !h.entry_price || !h.shares) return 0;
+    return (h.price_only_stop - h.entry_price) * h.shares;
+  }
+
+  priceOnlyIfStopPct(h: any): number {
+    if (!h || !h.price_only_stop || !h.entry_price) return 0;
+    return ((h.price_only_stop - h.entry_price) / h.entry_price) * 100;
+  }
+
+  wallAwareIfStopDollars(h: any): number {
+    if (!h || !h.wall_aware_stop || !h.entry_price || !h.shares) return 0;
+    return (h.wall_aware_stop - h.entry_price) * h.shares;
+  }
+
+  wallAwareIfStopPct(h: any): number {
+    if (!h || !h.wall_aware_stop || !h.entry_price) return 0;
+    return ((h.wall_aware_stop - h.entry_price) / h.entry_price) * 100;
+  }
+
+  compareDeltaDollars(h: any): number {
+    return this.wallAwareIfStopDollars(h) - this.priceOnlyIfStopDollars(h);
+  }
+
+  compareActiveLabel(h: any): string {
+    const enabled = this.wallAware().enabled;
+    const hasAnchor = (h?.active_anchor_usd ?? 0) > 0;
+    if (enabled && hasAnchor) return 'Wall-aware active';
+    if (enabled) return 'Price-only (no wall)';
+    return 'Price-only (toggle off)';
+  }
+
+  priceOnlyDistLabel(h: any): string {
+    const stop = h?.price_only_stop ?? 0;
+    const peak = h?.peak_price ?? h?.current_price ?? 0;
+    if (stop <= 0 || peak <= 0) return '—';
+    const pct = ((peak - stop) / peak) * 100;
+    return `${pct.toFixed(2)}% below peak`;
+  }
+
+  wallDistLabel(h: any): string {
+    const stop = h?.wall_aware_stop ?? 0;
+    const peak = h?.peak_price ?? h?.current_price ?? 0;
+    const anchorUsd = h?.active_anchor_usd ?? 0;
+    if (stop <= 0 || peak <= 0 || anchorUsd <= 0) return 'No qualifying wall right now';
+    const pct = ((peak - stop) / peak) * 100;
+    return `${pct.toFixed(2)}% below peak · hugs ${this.formatCompactUsd(anchorUsd)} wall`;
+  }
+
+  formatLogTs(ts: string): string {
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
+  logTagClass(action: string): string {
+    switch (action) {
+      case 'anchor':
+      case 'shift':
+        return 'wall';
+      case 'pulled':
+      case 'cleared':
+        return 'pulled';
+      case 'tick':
+      case 'toggle':
+        return 'tick';
+      default:
+        return '';
+    }
   }
 
   trailLayerLabel(layer: string): string {

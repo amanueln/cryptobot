@@ -2051,6 +2051,38 @@ def api_momentum_skip_cooldown():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/momentum/orderbook")
+def api_momentum_orderbook():
+    """Top N L2 levels for the currently-held pair (written by the engine)."""
+    book_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_orderbook.json")
+    if not os.path.exists(book_path):
+        return jsonify({"available": False, "reason": "No orderbook file — engine may not be holding"}), 200
+    try:
+        with open(book_path) as f:
+            book = json.load(f)
+    except Exception as e:
+        return jsonify({"available": False, "reason": f"Read error: {e}"}), 200
+    book["available"] = bool(book.get("snapshot_done"))
+    return jsonify(book)
+
+
+@app.route("/api/momentum/wall-aware/toggle", methods=["POST"])
+def api_momentum_wall_aware_toggle():
+    """Flip wall-aware trail on/off at runtime. Engine picks up the flag on next poll.
+
+    Body: {"enabled": true|false}
+    """
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get("enabled", False))
+    flag_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "wall_aware_toggle.flag")
+    try:
+        with open(flag_path, "w") as f:
+            f.write("on" if enabled else "off")
+        return jsonify({"status": "ok", "requested_enabled": enabled})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ---------- Momentum Rotation Engine endpoints ----------
 
 @app.route("/api/momentum/status")
@@ -2156,9 +2188,18 @@ def api_momentum_status():
                 "warmup_done", "was_cash", "next_rebal_hours",
                 "btc_price", "btc_ma", "entry_rejections",
                 "last_candle_ts", "ws_recorder",
-                "lockout_pair", "lockout_until", "loss_lockouts"):
+                "lockout_pair", "lockout_until", "loss_lockouts",
+                "wall_aware"):
         if key in engine_state:
             result[key] = engine_state[key]
+
+    # engine_state.holdings is persisted by the engine alongside status.json.
+    # The DB's momentum_equity.holdings column only has the lean subset written
+    # at each equity snapshot, so prefer the engine's live holdings list when
+    # available (it includes wall-aware fields: price_only_stop, wall_aware_stop,
+    # active_anchor_price, stop_source, etc.).
+    if engine_state.get("holdings"):
+        result["holdings"] = engine_state["holdings"]
 
     # Live tick count: status.json is only rewritten on hourly polls, so the
     # snapshot is stale between polls. Query ws_ticks.db directly for the
