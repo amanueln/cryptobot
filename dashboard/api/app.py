@@ -2318,29 +2318,33 @@ def api_momentum_accel():
 
     # Load engine lockout state so we can mark non-tradable pairs as blocked
     # even when their raw gates pass (e.g. AXL 24h same-coin lockout after sell).
-    locked_until: dict[str, str] = {}
+    # NOTE: engine's lockout_until field is actually the sell timestamp; real
+    # expiry is sell_time + SAME_COIN_LOCKOUT_HOURS. loss_lockouts values are
+    # already stored as expiry times.
+    SAME_COIN_LOCKOUT_HOURS = 24
+    locked_until: dict[str, datetime] = {}
     try:
         state_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "momentum_status.json")
         if os.path.exists(state_path):
             with open(state_path) as f:
                 engine_state = json.load(f)
-            now_iso = datetime.now().isoformat()
+            now = datetime.now()
             lp, lu = engine_state.get("lockout_pair"), engine_state.get("lockout_until")
-            if lp and lu and lu > now_iso:
-                locked_until[lp] = lu
+            if lp and lu:
+                expiry = datetime.fromisoformat(lu) + timedelta(hours=SAME_COIN_LOCKOUT_HOURS)
+                if expiry > now:
+                    locked_until[lp] = expiry
             for p, until in (engine_state.get("loss_lockouts") or {}).items():
-                if until and until > now_iso:
-                    locked_until[p] = until
+                if until:
+                    expiry = datetime.fromisoformat(until)
+                    if expiry > now:
+                        locked_until[p] = expiry
     except Exception:
         pass
 
-    def _lockout_label(until_iso: str) -> str:
-        try:
-            until = datetime.fromisoformat(until_iso)
-            hrs = max(0, (until - datetime.now()).total_seconds() / 3600)
-            return f"Locked out ({hrs:.1f}h left)"
-        except Exception:
-            return "Locked out"
+    def _lockout_label(until: datetime) -> str:
+        hrs = max(0.0, (until - datetime.now()).total_seconds() / 3600)
+        return f"Locked out ({hrs:.1f}h left)"
 
     scores = []
     for r in rows:

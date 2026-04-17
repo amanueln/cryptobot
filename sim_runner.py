@@ -422,6 +422,19 @@ class SimRunner:
             ).fetchone()["cnt"]
             self.momentum_engine.trade_count = trade_count
 
+            # Restore same-coin 24h lockout from the most recent sell so the
+            # engine doesn't re-buy a coin it just sold after a container restart.
+            last_sell = conn.execute(
+                "SELECT pair, timestamp FROM momentum_trades WHERE side = 'sell' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if last_sell:
+                try:
+                    self.momentum_engine._last_sold_pair = last_sell["pair"]
+                    self.momentum_engine._last_sold_time = datetime.fromisoformat(last_sell["timestamp"])
+                except Exception:
+                    pass
+
             # Set state flags based on whether we're holding
             if self.momentum_engine.holdings:
                 self.momentum_engine._was_cash = False
