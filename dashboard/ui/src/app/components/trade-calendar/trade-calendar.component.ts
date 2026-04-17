@@ -264,6 +264,57 @@ const MONTHS = ['January','February','March','April','May','June','July','August
     .tr-pct.win{color:var(--win)} .tr-pct.loss{color:var(--loss)}
     .tr-pnl{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
     .tr-pnl.win{color:var(--win)} .tr-pnl.loss{color:var(--loss)}
+
+    @media (max-width: 720px){
+      .overlay{padding:12px 8px;align-items:flex-start}
+      .modal{border-radius:10px;font-size:12px}
+      .modal-head{padding:12px 14px;flex-wrap:wrap;gap:8px}
+      .modal-title{font-size:15px}
+      .modal-nav{gap:6px}
+      .month-label{min-width:auto;font-size:13px;padding:4px 8px}
+      .nav-btn{width:32px;height:32px}
+      .close-x{padding:4px 6px;font-size:22px}
+      .picker{width:210px}
+
+      .summary{grid-template-columns:repeat(2,1fr);padding:10px 12px;gap:10px 12px}
+      .summary-cell + .summary-cell{border-left:0;padding-left:0}
+      .summary-cell:nth-child(even){border-left:1px solid var(--border);padding-left:12px}
+      .sm-value{font-size:14px}
+      .sm-label,.sm-sub{font-size:10px}
+
+      .cal-wrap{padding:12px 10px 14px}
+      .cal-dow{gap:3px;font-size:9px;letter-spacing:.4px}
+      .cal-grid{gap:3px}
+      .cal-cell{aspect-ratio:1/1;padding:3px 4px;border-radius:6px}
+      .cell-day{font-size:10px}
+      .cell-count{font-size:9px}
+      .cell-pnl{font-size:10px;line-height:1.1}
+      .cell-winrate{display:none}
+
+      .detail{padding:12px 12px 16px}
+      .detail-title{font-size:13px}
+      .detail-total{font-size:13px}
+
+      /* Trade rows: stack into two lines per trade */
+      .trade-head{display:none}
+      .trade-row{display:grid;
+                 grid-template-columns:1fr auto;
+                 grid-template-areas:"pair pnl" "prices pct" "time time";
+                 gap:2px 8px;padding:10px 0;
+                 border-top:1px solid rgba(255,255,255,.06)}
+      .tr-pair{grid-area:pair;font-size:13px}
+      .tr-pnl{grid-area:pnl;font-size:13px}
+      .tr-prices{grid-area:prices;font-size:11px}
+      .tr-pct{grid-area:pct;font-size:11px;text-align:right}
+      .tr-time{grid-area:time;font-size:10px;color:var(--dim)}
+    }
+
+    @media (max-width: 380px){
+      .cell-day{font-size:9px}
+      .cell-pnl{font-size:9px}
+      .cal-cell{padding:2px 3px}
+      .sm-value{font-size:13px}
+    }
   `]
 })
 export class TradeCalendarComponent implements OnChanges {
