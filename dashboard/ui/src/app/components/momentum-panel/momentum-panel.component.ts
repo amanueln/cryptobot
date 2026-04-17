@@ -1914,22 +1914,15 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     });
 
     // Evaluate ALL ready candidates like the engine does — find the best one
-    // Skip coins in lockout (same-coin or loss lockout) — engine won't buy them
+    // Skip coins in lockout (same-coin or loss lockout) — engine won't buy them.
+    // Lockouts aren't surfaced as tags here because they apply to the skipped coin,
+    // not the current target; showing them clutters the "Would Buy If" list.
     const lockoutPair = s?.lockout_pair ?? null;
     const lossLockouts = Object.keys(s?.loss_lockouts ?? {});
     const all = this.accelScores().filter(c =>
       c.accel > 0.20 && c.pair !== lockoutPair && !lossLockouts.includes(c.pair)
     );
 
-    // Show lockout as a visible tag if active
-    if (lockoutPair) {
-      const lockoutName = lockoutPair.replace('-USD', '');
-      tags.push({
-        text: `${lockoutName} locked out (24h)`,
-        met: false,
-        tooltip: `${lockoutName} was just sold — engine won't re-buy for 24h. Evaluating other candidates.`,
-      });
-    }
     const ready = all.filter(c => c.quality?.pass !== false && c.structural?.pass !== false);
     const candidates = ready.length > 0 ? ready : all;
 
