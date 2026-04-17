@@ -2300,15 +2300,15 @@ def api_momentum_accel():
     """
     conn = get_db()
     try:
-        # Latest gate log row per pair
+        # Latest gate log row per pair — dedupe by MAX(rowid) to handle multiple
+        # rows written at the same timestamp (prior engine versions flushed duplicates).
         rows = conn.execute("""
             SELECT pair, accel, result, blocked_by,
                    rsi, adx, green_count, body_ratio, chg3h_atr,
                    ath_dist, mom_age, time_at_level, price, timestamp
-            FROM momentum_gate_log g1
-            WHERE timestamp = (
-                SELECT MAX(timestamp) FROM momentum_gate_log g2
-                WHERE g2.pair = g1.pair
+            FROM momentum_gate_log
+            WHERE rowid IN (
+                SELECT MAX(rowid) FROM momentum_gate_log GROUP BY pair
             )
         """).fetchall()
     except Exception:
