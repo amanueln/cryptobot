@@ -547,6 +547,10 @@ class SimRunner:
             self.momentum_engine.trades = []
             self.momentum_engine.status = "cash" if not self.momentum_engine.regime_bullish else "ready"
             self.momentum_engine.status_detail = "Warmup complete — watching for signals"
+        else:
+            # Resume WS tick recording for any position we just restored on startup
+            for h in self.momentum_engine.holdings:
+                self._ws_start_recording(h.pair)
 
         # Mark warmup complete
         try:
@@ -722,8 +726,10 @@ class SimRunner:
                     short = trade.pair.replace("-USD", "")
                     if trade.side == "buy":
                         title = f"[MOM] Bought {short} at {_fmt_price(trade.price)}"
+                        self._ws_start_recording(trade.pair)
                     else:
                         title = f"[MOM] Sold {short} at {_fmt_price(trade.price)}"
+                        self._ws_stop_and_compare(trade.pair, trade)
                     self.trade_logger.log_momentum_event(
                         f"momentum_{trade.side}", title, trade.reason
                     )
