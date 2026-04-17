@@ -28,6 +28,11 @@ wall_aware_trail:
   min_persistence_ms: 10000      # wall must have sat at that price for this long (anti-spoof)
   max_dist_from_peak_pct: 1.5    # only consider walls within this % below the peak
   stop_offset_pct: 0.001         # stop sits this % below the wall price (0.1%)
+  # Wall stop is only applied if it sits at least this fraction above entry,
+  # so a wall-touch exit still clears round-trip fees. Prevents the early
+  # "wall-hugging" state from locking in a guaranteed loss before the trade
+  # has built any cushion. 0.012 = 1.2% = Coinbase round-trip taker fee.
+  min_profit_buffer_pct: 0.012
 
 # Early Momentum Scanner (alerts for manual trading)
 early_scanner:

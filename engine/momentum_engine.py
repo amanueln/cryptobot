@@ -208,6 +208,11 @@ class MomentumEngine:
         self.wall_aware_min_persistence_ms: int = int(wa.get("min_persistence_ms", 10000))
         self.wall_aware_max_dist_pct: float = float(wa.get("max_dist_from_peak_pct", 1.5))
         self.wall_aware_stop_offset_pct: float = float(wa.get("stop_offset_pct", 0.001))
+        # Wall stop must sit at least this fraction above entry before it's
+        # actually applied — stops us from "protecting" a guaranteed loss on a
+        # barely-green trade whose wall-touch exit would cost more in fees
+        # than the wall saves.
+        self.wall_aware_min_profit_buffer_pct: float = float(wa.get("min_profit_buffer_pct", 0.012))
         # Duck-typed provider — must expose find_qualifying_wall() and get_book_snapshot().
         # Set via set_book_provider() from sim_runner so engine stays decoupled from WS.
         self._book_provider = None
@@ -1084,7 +1089,12 @@ class MomentumEngine:
                 holding.active_anchor_usd = 0.0
                 holding.active_anchor_age_ms = 0
 
-            if holding.wall_aware_stop > new_stop:
+            # Only actually tighten the live stop to the wall if the wall
+            # sits far enough above entry to clear round-trip fees on exit.
+            # Before that, a wall-touch would lock in a guaranteed loss
+            # larger than what the price-only trail would cost us.
+            min_wall_stop = holding.entry_price * (1 + self.wall_aware_min_profit_buffer_pct)
+            if holding.wall_aware_stop > new_stop and holding.wall_aware_stop >= min_wall_stop:
                 new_stop = holding.wall_aware_stop
                 wall_stop_used = True
 
