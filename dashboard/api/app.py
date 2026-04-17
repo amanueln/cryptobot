@@ -2160,6 +2160,27 @@ def api_momentum_status():
         if key in engine_state:
             result[key] = engine_state[key]
 
+    # Live tick count: status.json is only rewritten on hourly polls, so the
+    # snapshot is stale between polls. Query ws_ticks.db directly for the
+    # active trade_id so the UI shows a continuously updating count.
+    ws_block = result.get("ws_recorder") or {}
+    trade_id = ws_block.get("trade_id")
+    if trade_id:
+        try:
+            ws_db = os.path.join(os.path.dirname(__file__), "..", "..", "data", "ws_ticks.db")
+            if os.path.exists(ws_db):
+                with sqlite3.connect(ws_db) as wsconn:
+                    row = wsconn.execute(
+                        "SELECT COUNT(*) FROM ws_ticks WHERE trade_id = ?",
+                        (trade_id,),
+                    ).fetchone()
+                    if row:
+                        ws_block = dict(ws_block)
+                        ws_block["tick_count"] = row[0]
+                        result["ws_recorder"] = ws_block
+        except Exception:
+            pass
+
     return jsonify(result)
 
 
