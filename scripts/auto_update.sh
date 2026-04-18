@@ -1,5 +1,8 @@
 #!/bin/bash
-cd /app
+# The git repo lives at /app/src (the rest of /app is bind-mounted volumes
+# for logs/persistent/models/config). Always cd there first — otherwise all
+# git commands fall through to "No updates available" and hide real state.
+cd /app/src || { echo "$(date): cannot cd /app/src — deploy aborted"; exit 1; }
 git fetch origin $GIT_BRANCH 2>/dev/null
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/$GIT_BRANCH)
