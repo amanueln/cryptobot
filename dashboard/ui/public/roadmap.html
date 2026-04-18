@@ -564,7 +564,7 @@
       <div class="cap-desc">Enter at the right moment, not just because a coin qualifies. Includes the "wait 1m after close" idea.</div>
       <div class="cap-foot">
         <span class="cap-status partial"><span class="dot"></span>partial</span>
-        <span>MAE · 1/16</span>
+        <span>MAE · 16/16 · need N=30</span>
       </div>
     </div>
     <div class="cap-tile" data-cap="in_trade_read">
@@ -579,8 +579,8 @@
       <div class="cap-name">Wall intelligence</div>
       <div class="cap-desc">Real L2 support/resistance — anchor stops to qualifying bid walls instead of round percentages.</div>
       <div class="cap-foot">
-        <span class="cap-status dormant"><span class="dot"></span>dormant</span>
-        <span>walls · 0</span>
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>walls firing · no exit yet</span>
       </div>
     </div>
     <div class="cap-tile" data-cap="anti_fakeout">
@@ -604,7 +604,7 @@
       <div class="cap-desc">Tighten as peak grows without getting stamped out. Progressive +6 / +8 lock-in is the live driver.</div>
       <div class="cap-foot">
         <span class="cap-status partial"><span class="dot"></span>partial</span>
-        <span>MFE unrun</span>
+        <span>MFE data · 16/30 sells</span>
       </div>
     </div>
   </div>
@@ -841,7 +841,7 @@
         <td><span class="cap-link">entry_timing</span><span class="cap-link">in_trade_read</span></td>
         <td class="mono count-cell">—</td>
         <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
-        <td>Live writer shipped in sim_runner poll loop. Powers b1 (1 m micro-entry) and n10 (sub-hourly cadence).</td>
+        <td>Live writer polls union of <span class="mono">market_tape.pairs</span> AND currently-held pairs, so every real trade gets 1m coverage (closed the AVNT-USD hole on 2026-04-18). Powers b1 (1m micro-entry) and n10 (sub-hourly cadence).</td>
       </tr>
       <tr class="schema-row" data-schema="candles_1m">
         <td colspan="5">
