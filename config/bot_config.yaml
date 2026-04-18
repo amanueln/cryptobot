@@ -38,10 +38,23 @@ wall_aware_trail:
 # snapshots on the watched pairs. Writes to data/market_tape.db (separate DB so
 # it can't contend with the engine's own writes). Dedicated thread, fail-silent.
 # Set enabled: false to kill the recorder without touching code.
+#
+# Pair list = union of (pairs that have passed gates) + (pairs we've traded) +
+# (top pairs by avg accel that were blocked). The old "liquid majors" list was
+# legacy — BTC/ETH/DOGE/AVAX/LINK/ADA/MATIC/DOT have never passed the momentum
+# gates in live scanning, so recording tape on them is wasted disk.
 market_tape:
   enabled: true
-  pairs: ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD",
-          "AVAX-USD", "LINK-USD", "ADA-USD", "MATIC-USD", "DOT-USD"]
+  pairs: [
+    # Passed gates (15): these are what the bot actually picks
+    "FARTCOIN-USD", "SAPIEN-USD", "AERO-USD", "MOODENG-USD", "SUI-USD",
+    "XRP-USD", "METIS-USD", "TRB-USD", "ONDO-USD", "ICP-USD",
+    "SOL-USD", "XLM-USD", "AAVE-USD", "ENA-USD", "AXL-USD",
+    # Recently traded but not in 36h gate log (6)
+    "MON-USD", "IRYS-USD", "VVV-USD", "WET-USD", "ZEC-USD", "ALGO-USD",
+    # High-accel but blocked — near-miss research (5)
+    "BIO-USD", "PNUT-USD", "CTSI-USD", "IP-USD", "NEAR-USD",
+  ]
   l2_snapshot_interval_sec: 5    # cadence for writing full 50-level book snapshots
   l2_snapshot_depth: 50          # levels per side per snapshot
   matches_batch_size: 100        # flush buffered matches every N messages

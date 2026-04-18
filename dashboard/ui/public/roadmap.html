@@ -586,6 +586,20 @@ const SEED = [
     subs: [], tags: ["stops", "sim"] },
 
   // ============ BACKLOG (ideas, maybe later) ============
+  { id: "b0", col: "backlog", cat: "ops", pri: "p2",
+    title: "Legacy-config + dead-code audit",
+    body: "Sweep the repo for stale configuration and code paths that no longer reflect how the bot behaves, and prune them.",
+    why: "Found market_tape.pairs hard-coded to the 10 liquid majors — a list that's been obsolete for months. Of those 10, only XRP and SOL have ever passed gates; BTC/ETH/DOGE/AVAX/LINK/ADA/MATIC/DOT had zero passes in 36 hours of scanning. We were burning L2/ws_matches disk on pairs the bot never picks, and had no tape on the names it actually trades (FARTCOIN, SAPIEN, AERO, MOODENG, METIS, TRB, ONDO, ICP). If this list drifted, other configs probably did too.",
+    solves: "Config drift — settings that were correct at setup but silently stopped matching reality. These waste disk, waste API calls, and mislead future research because the data you'd grab looks authoritative but is pointed at the wrong targets.",
+    benefit: "Catches other silent mismatches before they corrupt research datasets. Candidates to audit: warmup_days, allocation_usd, scan_interval_minutes, the pair-selection logic in early_scanner, any hard-coded pair list anywhere, unused/dead tables in candles.db (adaptations, ml_predictions, vol_accuracy, grid_cycles), any dashboard endpoint referencing the grid bot, self_check_log stopping in-file.",
+    subs: [
+      { text: "Grep all hard-coded pair lists across repo", done: false },
+      { text: "Cross-check each against actual bot behavior (gate_log, trades)", done: false },
+      { text: "Drop or fix anything that doesn't match", done: false },
+      { text: "Audit zero-row tables in candles.db — keep or drop", done: false },
+      { text: "Audit legacy grid-bot code paths still wired into the dashboard", done: false },
+    ],
+    tags: ["cleanup", "config"] },
   { id: "b1", col: "backlog", cat: "research", pri: "p3",
     title: "1-minute candle micro-entry timing",
     body: "Buy 1–5 minutes after the hourly close instead of right at close.",
