@@ -456,6 +456,15 @@ class SimRunner:
                 self.momentum_engine._peak_equity = max(
                     eq_row["equity"], self.momentum_engine.get_equity()
                 )
+                # Reconstruct hours-in-position from the oldest holding's entry_time.
+                # Without this, restart wipes the counter and both the accel-faded
+                # exit (>=4h gate) and the 72h max-hold exit silently never fire
+                # for positions that survive restarts.
+                oldest_entry = min(h.entry_time for h in self.momentum_engine.holdings.values())
+                hours_held = (datetime.now() - oldest_entry).total_seconds() / 3600
+                self.momentum_engine._hours_in_position = max(0, int(hours_held))
+                logger.info("Restored _hours_in_position=%d from oldest entry %s",
+                            self.momentum_engine._hours_in_position, oldest_entry.isoformat())
             else:
                 self.momentum_engine._was_cash = True
                 self.momentum_engine.status = "cash"
