@@ -2637,6 +2637,7 @@ def api_momentum_data_stream_counts():
     result = {
         "wall_decisions": -1,
         "momentum_trades_total": -1,
+        "momentum_trades_sells": -1,
         "mae_mfe_filled": -1,
         "regime_snapshots": -1,
         "ws_matches": -1,
@@ -2663,9 +2664,15 @@ def api_momentum_data_stream_counts():
 
             result["wall_decisions"] = count("SELECT COUNT(*) FROM wall_decisions")
             result["momentum_trades_total"] = count("SELECT COUNT(*) FROM momentum_trades")
+            # Only sells can carry MAE/MFE (buys are entry rows with no hold window).
+            # The page uses sells_total as the honest denominator for mae_mfe_filled.
+            result["momentum_trades_sells"] = count(
+                "SELECT COUNT(*) FROM momentum_trades WHERE side = 'sell'"
+            )
             result["mae_mfe_filled"] = count(
                 "SELECT COUNT(*) FROM momentum_trades "
-                "WHERE max_adverse_pct IS NOT NULL OR max_favorable_pct IS NOT NULL"
+                "WHERE side = 'sell' "
+                "AND (max_adverse_pct IS NOT NULL OR max_favorable_pct IS NOT NULL)"
             )
             result["regime_snapshots"] = count("SELECT COUNT(*) FROM regime_snapshots")
             result["candles_1m"] = count(

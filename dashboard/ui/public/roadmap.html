@@ -707,7 +707,7 @@
         <td><span class="cap-link">wall_intelligence</span><span class="cap-link">exit_timing</span></td>
         <td class="mono count-cell">—</td>
         <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
-        <td>Qualifying gate (3.0× / 10 s / 1.5 %) never fires on live pairs — decide whether to loosen after 7-day collection. See <span class="mono">decision_wall_aware_thresholds</span>.</td>
+        <td>Gate (3.0× / 10 s / 1.5 %) is firing — audit the rows: are they true qualifying walls, and did any affect an exit? Then decide tune vs hold. See <span class="mono">decision_wall_aware_thresholds</span>.</td>
       </tr>
       <tr class="schema-row" data-schema="wall_decisions">
         <td colspan="5">
@@ -737,7 +737,7 @@
         <td><span class="cap-link">entry_timing</span><span class="cap-link">trail_calibration</span></td>
         <td class="mono count-cell">—</td>
         <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
-        <td>Backfill remaining historical trades so q2 (MAE/MFE analysis) has signal to work with.</td>
+        <td>Backfill historical sells from 1m candles, then accumulate live. Row flips to <span class="mono">working</span> at 30 filled sells (N=30 CLT threshold, see <span class="mono">decision_mae_mfe_threshold</span>).</td>
       </tr>
       <tr class="schema-row" data-schema="mae_mfe">
         <td colspan="5">
@@ -887,13 +887,14 @@
     return `<span class="cap-status ${status}"><span class="dot"></span>${label}</span>`;
   }
 
+  // MAE/MFE threshold rule — see decision_mae_mfe_threshold.md.
+  // Only sells can carry MAE/MFE (buys are entry rows). Denominator must be sells_total.
+  // dormant: 0 filled. partial: 1-29 filled. working: 30+ filled (N=30 from CLT).
   function statusFor(streamId, n, extra) {
     if (n === -1 || n === null || n === undefined) return "unknown";
     if (streamId === "mae_mfe") {
-      const total = extra && extra.momentum_trades_total;
-      if (!total || total <= 0) return "dormant";
-      if (n >= total * 0.5) return "partial";
-      return "dormant";
+      if (n === 0) return "dormant";
+      return n >= 30 ? "working" : "partial";
     }
     if (n === 0) return "dormant";
     if (streamId === "wall_decisions") return n >= 50 ? "working" : "partial";
@@ -903,8 +904,8 @@
   function formatCount(streamId, n, extra) {
     if (n === -1 || n === null || n === undefined) return "unavailable";
     if (streamId === "mae_mfe") {
-      const total = extra && extra.momentum_trades_total;
-      return total > 0 ? `${fmt(n)} / ${fmt(total)}` : fmt(n);
+      const sells = extra && extra.momentum_trades_sells;
+      return sells > 0 ? `${fmt(n)} / ${fmt(sells)} sells` : fmt(n);
     }
     return fmt(n);
   }
