@@ -1339,12 +1339,25 @@ class SimRunner:
         in the most recent call. CandleStore dedupes by (pair, granularity,
         timestamp) so re-fetching the same bar is a no-op.
 
-        Budget: 26 pairs x 1 REST call = ~0.43 req/s on top of the existing
-        hourly poll, well under the 8 req/s ceiling.
+        Pair set is the union of market_tape.pairs AND any pair the momentum
+        engine currently holds. The momentum scanner's universe is broader
+        than the tape list, so a qualifying pair can trade without being in
+        tape_pairs (this happened with AVNT-USD on 2026-04-18). Including
+        held pairs here closes the permanent-data-hole risk so MAE/MFE and
+        other analyses have 1m coverage for every real trade.
+
+        Budget: ~26-30 pairs x 1 REST call = ~0.5 req/s on top of the hourly
+        poll, well under the 8 req/s ceiling.
         """
-        if not self._tape_pairs_1m:
+        pairs_to_poll = set(self._tape_pairs_1m)
+        try:
+            if self.momentum_engine and getattr(self.momentum_engine, "holdings", None):
+                pairs_to_poll.update(self.momentum_engine.holdings.keys())
+        except Exception:
+            pass
+        if not pairs_to_poll:
             return
-        for pair in self._tape_pairs_1m:
+        for pair in pairs_to_poll:
             try:
                 candles = self.client.get_latest_candles(pair, "ONE_MINUTE", count=3)
                 if candles:
