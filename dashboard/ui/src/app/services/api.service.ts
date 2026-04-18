@@ -460,6 +460,41 @@ export interface EarlyScannerStats {
   combo_stats: SignalComboStats[];
 }
 
+// DB rows and JSON state files store naive-UTC ISO strings (no 'Z', no offset).
+// new Date(iso) on a naive string parses as local time — which is wrong.
+// asUtcDate treats the string as UTC and returns a Date in browser-local TZ for display.
+export function asUtcDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const s = String(iso);
+  // If it already has timezone info (Z or +hh:mm / -hh:mm), trust it.
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s + 'Z');
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Format as 12-hour AM/PM (user preference: no military time anywhere).
+// opts.date=true prepends the local date. opts.seconds=true includes seconds.
+export function fmt12Hour(
+  iso: string | null | undefined,
+  opts: { date?: boolean; seconds?: boolean } = {},
+): string {
+  const d = asUtcDate(iso);
+  if (!d) return '--';
+  const timeOpts: Intl.DateTimeFormatOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  };
+  if (opts.seconds) timeOpts.second = '2-digit';
+  const time = d.toLocaleTimeString([], timeOpts);
+  if (!opts.date) return time;
+  const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return `${dateStr} ${time}`;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   readonly status = signal<StatusData | null>(null);

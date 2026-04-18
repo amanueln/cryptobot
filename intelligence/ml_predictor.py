@@ -640,7 +640,7 @@ class MLPredictor:
 
         metadata = ModelMetadata(
             pair=pair,
-            trained_at=datetime.now(),
+            trained_at=datetime.utcnow(),
             candle_count=len(candles),
             validation_rmse=rmse,
             validation_r2=r2,
@@ -690,7 +690,7 @@ class MLPredictor:
         if meta is None:
             return self.train(pair, candles, corr_candles) is not None
 
-        elapsed = datetime.now() - meta.trained_at
+        elapsed = datetime.utcnow() - meta.trained_at
         if elapsed < timedelta(hours=self.expiration_hours):
             return False
 
@@ -1107,7 +1107,7 @@ class MLPredictor:
         if meta is None:
             return {"status": "no_model", "needs_retrain": True}
 
-        age_h = (datetime.now() - meta.trained_at).total_seconds() / 3600
+        age_h = (datetime.utcnow() - meta.trained_at).total_seconds() / 3600
         expired = age_h > self.expiration_hours
 
         buf = self._live_predictions.get(pair, [])

@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { interval, Subscription } from 'rxjs';
 import { startWith, switchMap } from 'rxjs/operators';
-import { ApiService, PairScanData, PairScoreData, ScanProgressData, OrderBookCheck } from '../../services/api.service';
+import { ApiService, PairScanData, PairScoreData, ScanProgressData, OrderBookCheck, fmt12Hour } from '../../services/api.service';
 
 @Component({
   selector: 'app-pair-scanner',
@@ -18,7 +18,7 @@ import { ApiService, PairScanData, PairScoreData, ScanProgressData, OrderBookChe
         </div>
         <div class="scan-meta" *ngIf="latestScan() as scan">
           <span class="meta-badge">{{ scan.scan_type | uppercase }}</span>
-          <span class="meta-time">{{ scan.timestamp | date:'MMM d, HH:mm' }}</span>
+          <span class="meta-time">{{ fmt12Hour(scan.timestamp, {date: true}) }}</span>
           <span class="meta-count">{{ scan.total_pairs_scanned }} pairs scanned</span>
         </div>
       </div>
@@ -170,7 +170,7 @@ import { ApiService, PairScanData, PairScoreData, ScanProgressData, OrderBookChe
         <span class="section-title">Scan History</span>
         <div class="history-row" *ngFor="let scan of scanHistory()">
           <span class="hist-type" [class]="'type-' + scan.scan_type">{{ scan.scan_type }}</span>
-          <span class="hist-time">{{ scan.timestamp | date:'MMM d HH:mm' }}</span>
+          <span class="hist-time">{{ fmt12Hour(scan.timestamp, {date: true}) }}</span>
           <span class="hist-count">{{ scan.total_pairs_scanned }} scanned</span>
           <span class="hist-selected">
             {{ scan.selected_pairs.length }} selected:
@@ -372,6 +372,8 @@ export class PairScannerComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private sub: Subscription | null = null;
   private progressSub: any = null;
+
+  protected fmt12Hour = fmt12Hour;
 
   loading = signal(false);
   scanHistory = signal<PairScanData[]>([]);

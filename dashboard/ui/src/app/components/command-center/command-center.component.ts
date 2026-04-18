@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
 import {
   ApiService, PositionData, TradeData, VolPredictionData,
-  PairScanData, GridLevelData, EquityData,
+  PairScanData, GridLevelData, EquityData, asUtcDate,
 } from '../../services/api.service';
 import { StatusBannerComponent } from '../status-banner/status-banner.component';
 import { ActivityLogComponent } from '../activity-log/activity-log.component';
@@ -561,7 +561,7 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
     if (!ctx) return;
 
     const labels = points.map(pt =>
-      new Date(pt.time).toLocaleTimeString('en-US', {
+      (asUtcDate(pt.time) ?? new Date(pt.time)).toLocaleTimeString('en-US', {
         hour: 'numeric', minute: '2-digit', hour12: true,
       })
     );

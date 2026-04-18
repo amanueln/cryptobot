@@ -2,7 +2,7 @@ import {
   Component, inject, signal, OnInit, OnDestroy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ApiService, AdaptationData } from '../../services/api.service';
+import { ApiService, AdaptationData, asUtcDate } from '../../services/api.service';
 
 interface LoopConfig {
   label: string;
@@ -193,7 +193,7 @@ export class AdaptationsComponent implements OnInit, OnDestroy {
 
   formatRelTime(timestamp: string): string {
     try {
-      const diff = Date.now() - new Date(timestamp).getTime();
+      const diff = Date.now() - (asUtcDate(timestamp)?.getTime() ?? Date.now());
       const mins = Math.floor(diff / 60_000);
       if (mins < 1) return 'now';
       if (mins < 60) return `${mins}m`;

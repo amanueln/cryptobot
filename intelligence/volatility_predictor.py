@@ -289,7 +289,7 @@ class VolatilityPredictor:
 
         meta = VolModelMeta(
             pair=pair,
-            trained_at=datetime.now(),
+            trained_at=datetime.utcnow(),
             candle_count=len(df),
             validation_rmse=round(rmse, 4),
             validation_r2=round(r2, 4),
@@ -391,7 +391,7 @@ class VolatilityPredictor:
         importance = meta.feature_importance
 
         return VolatilityPrediction(
-            timestamp=datetime.now(),
+            timestamp=datetime.utcnow(),
             pair=pair,
             predicted_vol_12h=round(pred_vol, 2),
             current_vol_12h=round(current_vol, 2),
@@ -526,7 +526,7 @@ class VolatilityPredictor:
         """Return info for all trained volatility models."""
         info = []
         for pair, meta in self._metadata.items():
-            age_hours = (datetime.now() - meta.trained_at).total_seconds() / 3600
+            age_hours = (datetime.utcnow() - meta.trained_at).total_seconds() / 3600
             info.append({
                 "pair": pair,
                 "version": meta.version,

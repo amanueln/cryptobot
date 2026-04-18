@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-  ApiService, EarlyScannerAlert, EarlyScannerStats, SignalComboStats,
+  ApiService, EarlyScannerAlert, EarlyScannerStats, SignalComboStats, asUtcDate,
 } from '../../services/api.service';
 
 @Component({
@@ -510,7 +510,7 @@ export class EarlyScannerComponent implements OnInit {
       const tsKey = alert.timestamp;
       let group = byTs.get(tsKey);
       if (!group) {
-        group = { key: tsKey, ts: new Date(tsKey).getTime(), label: '', alerts: [], wins: 0, losses: 0, pending: 0 };
+        group = { key: tsKey, ts: asUtcDate(tsKey)?.getTime() ?? 0, label: '', alerts: [], wins: 0, losses: 0, pending: 0 };
         byTs.set(tsKey, group);
         groups.push(group);
       }
@@ -548,7 +548,7 @@ export class EarlyScannerComponent implements OnInit {
   batchLabel(ts: number, now: number): string {
     const d = new Date(ts);
     const diff = (now - ts) / 1000;
-    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
     if (diff < 60) return 'Scan just now';
     if (diff < 3600) return time + ' (' + Math.floor(diff / 60) + 'm ago)';
@@ -636,7 +636,7 @@ export class EarlyScannerComponent implements OnInit {
   }
 
   timeAgo(ts: string): string {
-    const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+    const diff = (Date.now() - (asUtcDate(ts)?.getTime() ?? Date.now())) / 1000;
     if (diff < 60) return 'just now';
     if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';

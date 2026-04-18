@@ -190,7 +190,7 @@ const PRESETS: Record<string, Partial<Record<string, number>>> = {
       </div>
 
       <div class="last-updated" *ngIf="lastUpdated()">
-        Last updated: {{ lastUpdated() | date:'HH:mm:ss' }}
+        Last updated: {{ lastUpdated() | date:'h:mm:ss a' }}
         <span *ngIf="activePreset()" class="preset-notice"> · Showing preset: <strong>{{ activePreset() }}</strong></span>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { interval, Subscription } from 'rxjs';
 import { startWith, switchMap } from 'rxjs/operators';
-import { ApiService, SelfCheckData } from '../../services/api.service';
+import { ApiService, SelfCheckData, fmt12Hour } from '../../services/api.service';
 
 @Component({
   selector: 'app-self-check',
@@ -21,7 +21,7 @@ import { ApiService, SelfCheckData } from '../../services/api.service';
       <div class="pause-banner" *ngIf="isPaused()">
         <div class="pause-icon">!!</div>
         <div class="pause-text">{{ pauseReason() }}</div>
-        <div class="pause-since">Since {{ pauseSince() | date:'MMM d, HH:mm' }}</div>
+        <div class="pause-since">Since {{ fmt12Hour(pauseSince(), {date: true}) }}</div>
       </div>
 
       <!-- Top Cards Row -->
@@ -101,7 +101,7 @@ import { ApiService, SelfCheckData } from '../../services/api.service';
               {{ e.event_type }}
             </span>
             <span class="event-details">{{ e.details }}</span>
-            <span class="event-time">{{ e.timestamp | date:'MMM d, HH:mm' }}</span>
+            <span class="event-time">{{ fmt12Hour(e.timestamp, {date: true}) }}</span>
           </div>
         </div>
       </div>
@@ -210,6 +210,8 @@ import { ApiService, SelfCheckData } from '../../services/api.service';
 export class SelfCheckComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private sub: Subscription | null = null;
+
+  protected fmt12Hour = fmt12Hour;
 
   data = signal<SelfCheckData | null>(null);
   loading = signal(false);

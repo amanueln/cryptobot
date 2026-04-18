@@ -106,7 +106,7 @@ class MomentumScanner:
                      len(candidates), MIN_VOLUME_24H // 1000)
 
         # Step 3: Verify candle history for each candidate
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - timedelta(days=90)
         qualified = []
 
@@ -139,7 +139,7 @@ class MomentumScanner:
             # BTC might be excluded as a grid pair — force it in for regime
             pairs.insert(0, 'BTC-USD')
 
-        self.last_scan_time = datetime.now()
+        self.last_scan_time = datetime.utcnow()
         self.last_scan_results = qualified[:TARGET_UNIVERSE]
         self.current_pairs = pairs
 
@@ -176,7 +176,7 @@ class MomentumScanner:
     def _log_event(self, event_type: str, title: str, detail: str):
         """Write an event to the momentum_events table."""
         try:
-            now = datetime.now().isoformat()
+            now = datetime.utcnow().isoformat()
             conn = sqlite3.connect(self.db_path)
             conn.execute(
                 "INSERT INTO momentum_events (timestamp, event_type, title, detail, created_at) "
@@ -198,7 +198,7 @@ class MomentumScanner:
                 conn.execute(
                     "INSERT INTO momentum_equity (timestamp, equity, cash, positions_value, status, holdings) "
                     "VALUES (?,?,?,?,?,?)",
-                    (datetime.now().isoformat(), starting_balance, starting_balance, 0, "scanning", "[]"),
+                    (datetime.utcnow().isoformat(), starting_balance, starting_balance, 0, "scanning", "[]"),
                 )
                 conn.commit()
             conn.close()

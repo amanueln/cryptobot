@@ -7,7 +7,7 @@ import zoomPlugin from 'chartjs-plugin-zoom';
 import {
   ApiService, MomentumStatusData, MomentumTradeData,
   MomentumEquityData, MomentumEventData, MomentumOrderbookData,
-  MomentumHoldingData,
+  MomentumHoldingData, asUtcDate, fmt12Hour,
 } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { TradeCalendarComponent } from '../trade-calendar/trade-calendar.component';
@@ -1653,7 +1653,9 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   lastScannedAgo(timestamp?: string): string {
     if (!timestamp) return '';
-    const scanned = new Date(timestamp).getTime();
+    const parsed = asUtcDate(timestamp);
+    if (!parsed) return '';
+    const scanned = parsed.getTime();
     if (isNaN(scanned)) return '';
     const diffMs = Date.now() - scanned;
     if (diffMs < 0) return 'just now';
@@ -1671,7 +1673,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
     const scores = this.accelScores();
     if (!scores.length) return { label: '', stale: false };
     const latest = scores
-      .map(s => (s.timestamp ? new Date(s.timestamp).getTime() : 0))
+      .map(s => (s.timestamp ? (asUtcDate(s.timestamp)?.getTime() ?? 0) : 0))
       .reduce((a, b) => (b > a ? b : a), 0);
     if (!latest) return { label: '', stale: false };
     const diffMs = Date.now() - latest;
@@ -1733,7 +1735,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   private _updateEngineTick(): void {
     const s = this.status();
     if (s?.status !== 'cash' || !s?.last_candle_ts) { this._engineTickDisplay.set(''); return; }
-    const last = new Date(s.last_candle_ts).getTime();
+    const last = asUtcDate(s.last_candle_ts)?.getTime() ?? Date.now();
     const elapsed = Date.now() - last;
     // Use modular arithmetic so countdown wraps around each hour
     const remaining = elapsed >= 3600000
@@ -1922,7 +1924,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
     // Format labels based on time range
     const labels = data.map(d => {
-      const dt = new Date(d.time);
+      const dt = asUtcDate(d.time) ?? new Date(d.time);
       if (hours <= 24) {
         return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       } else if (hours <= 168) {
@@ -1986,7 +1988,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
                 const idx = items[0].dataIndex;
                 const d = data[idx];
                 if (!d) return '';
-                const dt = new Date(d.time);
+                const dt = asUtcDate(d.time) ?? new Date(d.time);
                 return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
               },
               label: (item) => ` Equity: ${this.formatCurrency(item.parsed.y ?? 0)}`,
@@ -2069,7 +2071,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   timeAgo(iso: string): string {
     try {
-      const ms = Date.now() - new Date(iso).getTime();
+      const ms = Date.now() - (asUtcDate(iso)?.getTime() ?? Date.now());
       if (ms < 0) return 'now';
       const s = Math.floor(ms / 1000);
       if (s < 60) return s + 's ago';
@@ -2084,7 +2086,8 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   shortTime(ts: string): string {
     try {
-      const d = new Date(ts);
+      const d = asUtcDate(ts);
+      if (!d) return ts;
       const now = new Date();
       const diffMs = now.getTime() - d.getTime();
       const diffMin = Math.floor(diffMs / 60000);
@@ -2101,17 +2104,26 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   shortDate(ts: string): string {
     try {
-      return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const d = asUtcDate(ts);
+      if (!d) return ts;
+      // Show 12-hour local time; the date is already shown by the tradeDateLabel separator above.
+      return fmt12Hour(ts);
     } catch { return ts; }
   }
 
   tradeDate(ts: string): string {
-    try { return new Date(ts).toISOString().slice(0, 10); } catch { return ''; }
+    // Local date key (YYYY-MM-DD) so day separators align with the user's wall clock, not UTC.
+    try {
+      const d = asUtcDate(ts);
+      if (!d) return '';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    } catch { return ''; }
   }
 
   tradeDateLabel(ts: string): string {
     try {
-      const d = new Date(ts);
+      const d = asUtcDate(ts);
+      if (!d) return ts;
       const today = new Date();
       const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
       if (d.toDateString() === today.toDateString()) return 'Today';
@@ -2468,11 +2480,7 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
 
   formatLogTs(ts: string): string {
     if (!ts) return '';
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return '';
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
+    return fmt12Hour(ts);
   }
 
   logTagClass(action: string): string {

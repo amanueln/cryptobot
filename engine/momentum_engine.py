@@ -672,8 +672,8 @@ class MomentumEngine:
         _filter_entries with full gate values.
         """
         scores = []
-        now = self._last_candle_ts or datetime.now()
-        now_iso = datetime.now().isoformat()
+        now = self._last_candle_ts or datetime.utcnow()
+        now_iso = datetime.utcnow().isoformat()
         self._gate_log = []  # reset once per evaluation
         self._compute_ran_this_tick = True
 
@@ -754,7 +754,7 @@ class MomentumEngine:
         filtered = []
         # NOTE: _gate_log is populated by _compute_scores for rejected pairs; here
         # we only append entries for pairs that made it past the accel/RSI-overbought filters.
-        now_iso = datetime.now().isoformat() if qualifying else ""
+        now_iso = datetime.utcnow().isoformat() if qualifying else ""
 
         for s in qualifying:
             pair = s.pair
@@ -952,7 +952,7 @@ class MomentumEngine:
                               peak_price: float | None = None,
                               wall: dict | None = None) -> None:
         """Append a wall decision to both the UI rolling log and the persist drain."""
-        ts = datetime.now().isoformat()
+        ts = datetime.utcnow().isoformat()
         ui_entry = {"ts": ts, "pair": pair, "action": action, "detail": detail}
         self._wall_decision_log.append(ui_entry)
         if len(self._wall_decision_log) > 50:
@@ -1318,7 +1318,7 @@ class MomentumEngine:
         # Update trailing stop with current price (advances stale/delay counters)
         self._update_trail_stop(h, price)
 
-        now = datetime.now()
+        now = datetime.utcnow()
 
         # 1. Check effective stop (max of ATR floor and trailing stop)
         effective_stop = max(h.atr_stop_price, h.trail_stop_price)

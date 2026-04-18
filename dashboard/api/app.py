@@ -13,7 +13,7 @@ Usage:
 import json
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -399,7 +399,7 @@ def api_candles():
     hours = int(request.args.get("hours", 72))
     granularity = request.args.get("granularity", "ONE_HOUR")
 
-    start = (datetime.now() - timedelta(hours=hours)).isoformat()
+    start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
     conn = get_db()
     rows = conn.execute(
         """SELECT timestamp, open, high, low, close, volume
@@ -588,7 +588,7 @@ def api_trades():
 @app.route("/api/equity")
 def api_equity():
     hours = int(request.args.get("hours", 72))
-    start = (datetime.now() - timedelta(hours=hours)).isoformat()
+    start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
 
     conn = get_db()
     rows = conn.execute(
@@ -830,7 +830,7 @@ def api_indicators():
 
     # Fetch extra history for indicator warmup
     warmup_hours = hours + 220
-    start = (datetime.now() - timedelta(hours=warmup_hours)).isoformat()
+    start = (datetime.utcnow() - timedelta(hours=warmup_hours)).isoformat()
 
     conn = get_db()
     rows = conn.execute(
@@ -1364,7 +1364,7 @@ def api_self_check():
     # --- Vol accuracy (last 24h and 7d) ---
     _ensure_table(conn, "vol_accuracy")
     for label, hours in [("24h", 24), ("7d", 168)]:
-        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
         rows = conn.execute(
             "SELECT predicted_vol, actual_vol, error_pct FROM vol_accuracy WHERE timestamp >= ?",
             (cutoff,),
@@ -1452,7 +1452,10 @@ def api_self_check():
         result["trading_paused"] = {"paused": False, "reason": "", "since": ""}
 
     # --- Daily P&L ---
-    today = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+    # Roll over at LOCAL midnight (user preference): take today's local-midnight
+    # and translate to UTC for the SQL comparison, since DB rows are UTC.
+    _local_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = _local_midnight.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
     _ensure_table(conn, "equity_snapshots")
     day_start = conn.execute(
         "SELECT equity FROM equity_snapshots WHERE timestamp >= ? ORDER BY id ASC LIMIT 1",
@@ -1468,7 +1471,7 @@ def api_self_check():
         result["daily_pnl"] = 0
 
     # --- Weekly P&L ---
-    week_start = (datetime.now() - timedelta(days=7)).isoformat()
+    week_start = (datetime.utcnow() - timedelta(days=7)).isoformat()
     wk_start_row = conn.execute(
         "SELECT equity FROM equity_snapshots WHERE timestamp >= ? ORDER BY id ASC LIMIT 1",
         (week_start,),
@@ -1892,7 +1895,7 @@ def api_trigger_update():
             cwd=os.path.join(os.path.dirname(__file__), "..", ".."),
         )
         output = (result.stdout + result.stderr).strip()
-        _last_update_check = datetime.now().isoformat()
+        _last_update_check = datetime.utcnow().isoformat()
 
         if "No updates available" in output:
             _update_status = "up to date"
@@ -2258,7 +2261,7 @@ def api_momentum_status():
 def api_momentum_equity():
     """Equity history for the momentum engine."""
     hours = int(request.args.get("hours", 72))
-    start = (datetime.now() - timedelta(hours=hours)).isoformat()
+    start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
 
     conn = get_db()
     try:
@@ -2422,7 +2425,7 @@ def api_momentum_accel():
         if os.path.exists(state_path):
             with open(state_path) as f:
                 engine_state = json.load(f)
-            now = datetime.now()
+            now = datetime.utcnow()
             lp, lu = engine_state.get("lockout_pair"), engine_state.get("lockout_until")
             if lp and lu:
                 expiry = datetime.fromisoformat(lu) + timedelta(hours=SAME_COIN_LOCKOUT_HOURS)
@@ -2437,7 +2440,7 @@ def api_momentum_accel():
         pass
 
     def _lockout_label(until: datetime) -> str:
-        hrs = max(0.0, (until - datetime.now()).total_seconds() / 3600)
+        hrs = max(0.0, (until - datetime.utcnow()).total_seconds() / 3600)
         return f"Locked out ({hrs:.1f}h left)"
 
     scores = []
@@ -2791,7 +2794,7 @@ def _run_early_scan():
         if scanner:
             scanner.scan()
             scanner.evaluate_outcomes()
-            _early_scanner_last_run = datetime.now().isoformat()
+            _early_scanner_last_run = datetime.utcnow().isoformat()
     except Exception as e:
         print(f"Early scanner error: {e}")
     finally:

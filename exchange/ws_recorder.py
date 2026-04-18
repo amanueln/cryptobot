@@ -111,7 +111,7 @@ class WSRecorder:
                             "pair": ticker.get("product_id", pair),
                             "price": float(ticker.get("price", 0)),
                             "volume_24h": float(ticker.get("volume_24_h", 0)),
-                            "timestamp": datetime.now().isoformat(),
+                            "timestamp": datetime.utcnow().isoformat(),
                             "ts_epoch": time.time(),
                         }
                         self._ticks.append(tick)
@@ -450,7 +450,7 @@ class WSRecorder:
                      result.get("sell_time_poll"), result.get("sell_time_ws"),
                      result["diff_usd"], result["diff_seconds"],
                      result["total_ticks"], result["duration_seconds"],
-                     datetime.now().isoformat())
+                     datetime.utcnow().isoformat())
                 )
         except Exception as e:
             logger.error("WS comparison save error: %s", e)

@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { TradeData } from '../../services/api.service';
+import { TradeData, fmt12Hour } from '../../services/api.service';
 
 @Component({
   selector: 'app-trade-log',
@@ -203,9 +203,12 @@ export class TradeLogComponent {
   }
 
   formatTime(timestamp: string | number): string {
-    return new Date(timestamp).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-    });
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+      });
+    }
+    return fmt12Hour(timestamp, { date: true });
   }
 
   formatPrice(price: number): string {

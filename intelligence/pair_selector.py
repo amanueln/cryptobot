@@ -335,7 +335,7 @@ class PairSelector:
         if not scored:
             logger.error("No pairs could be scored")
             return PairScanResult(
-                timestamp=datetime.now(), scan_type="full",
+                timestamp=datetime.utcnow(), scan_type="full",
                 total_scanned=len(eligible), ranked=[], selected=[],
             )
 
@@ -373,7 +373,7 @@ class PairSelector:
         self._active_pairs = selected
 
         result = PairScanResult(
-            timestamp=datetime.now(), scan_type="full",
+            timestamp=datetime.utcnow(), scan_type="full",
             total_scanned=len(eligible), ranked=scored, selected=selected,
             swapped_out=swapped_out, swapped_in=swapped_in,
         )
@@ -434,7 +434,7 @@ class PairSelector:
         self._active_pairs = refreshed
 
         return PairScanResult(
-            timestamp=datetime.now(), scan_type="quick",
+            timestamp=datetime.utcnow(), scan_type="quick",
             total_scanned=len(refreshed), ranked=refreshed, selected=refreshed,
             swapped_out=swapped_out, swapped_in=swapped_in,
         )
@@ -815,7 +815,7 @@ class PairSelector:
 
     def _get_candles(self, pair: str, days: int) -> list[Candle]:
         """Get candles from cache or fetch from Coinbase."""
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - timedelta(days=days)
         granularity = "ONE_HOUR"
 

@@ -140,7 +140,7 @@ class SimRunner:
         self.trade_logger = TradeLogger("data/candles.db")
         self.engines: list[PairEngine] = []
         self.total_allocation: float = 0.0
-        self.session_start = datetime.now()
+        self.session_start = datetime.utcnow()
         self.equity_history: list[tuple[datetime, float]] = []
         self.running = False
 
@@ -228,7 +228,7 @@ class SimRunner:
         No trades are executed and no positions are created during warmup.
         """
         for engine in self.engines:
-            end = datetime.now()
+            end = datetime.utcnow()
             start = end - timedelta(days=self.warmup_days)
 
             candles = self.candle_store.get_candles(engine.pair, engine.granularity, start, end)
@@ -247,10 +247,10 @@ class SimRunner:
                 engine.trade_count = 0
                 engine.candles_fed = 0
                 # Set last_candle_ts to NOW so first live poll only picks up fresh candles
-                engine.last_candle_ts = datetime.now()
+                engine.last_candle_ts = datetime.utcnow()
                 print(f"  {engine.name:<20} warmed up with {len(candles)} candles (last: {engine.last_candle_ts})")
             else:
-                engine.last_candle_ts = datetime.now()
+                engine.last_candle_ts = datetime.utcnow()
                 print(f"  {engine.name:<20} WARNING: no warmup data")
 
     def _ws_start_recording(self, pair: str):
@@ -313,7 +313,7 @@ class SimRunner:
             # Warmup any newly added pairs so engine can evaluate them immediately
             new_pairs = set(pairs) - old_pairs
             if new_pairs:
-                end = datetime.now()
+                end = datetime.utcnow()
                 start = end - timedelta(hours=900)
                 for pair in new_pairs:
                     if len(self.momentum_engine._closes.get(pair, [])) >= 720:
@@ -331,7 +331,7 @@ class SimRunner:
         else:
             print("  Momentum scanner: no pairs found, keeping current list")
 
-        self._last_momentum_scan = datetime.now()
+        self._last_momentum_scan = datetime.utcnow()
 
     def _restore_momentum_state(self) -> bool:
         """Restore engine state from DB after a restart (not a reset).
@@ -418,7 +418,7 @@ class SimRunner:
                     pair=pair,
                     shares=h["shares"],
                     entry_price=entry_price,
-                    entry_time=datetime.fromisoformat(h["entry_time"]) if h.get("entry_time") else datetime.now(),
+                    entry_time=datetime.fromisoformat(h["entry_time"]) if h.get("entry_time") else datetime.utcnow(),
                     peak_price=h.get("peak_price", h.get("current_price", 0)),
                     atr_stop_price=saved_stop,
                     trail_stop_price=h.get("trail_stop_price", 0.0),
@@ -461,7 +461,7 @@ class SimRunner:
                 # exit (>=4h gate) and the 72h max-hold exit silently never fire
                 # for positions that survive restarts.
                 oldest_entry = min(h.entry_time for h in self.momentum_engine.holdings.values())
-                hours_held = (datetime.now() - oldest_entry).total_seconds() / 3600
+                hours_held = (datetime.utcnow() - oldest_entry).total_seconds() / 3600
                 self.momentum_engine._hours_in_position = max(0, int(hours_held))
                 logger.info("Restored _hours_in_position=%d from oldest entry %s",
                             self.momentum_engine._hours_in_position, oldest_entry.isoformat())
@@ -509,7 +509,7 @@ class SimRunner:
         pairs_to_warm = self.momentum_engine.pairs
         total = len(pairs_to_warm)
         print(f"\n  Warming up momentum rotation engine ({total} pairs)...")
-        end = datetime.now()
+        end = datetime.utcnow()
         # Need ~750 hours (31 days) for LONG_LB + ~500 for BTC MA = ~750 hours minimum
         start = end - timedelta(hours=900)
 
@@ -668,7 +668,7 @@ class SimRunner:
                 sell_pair = ""
             if sell_pair and sell_pair in self.momentum_engine.holdings:
                 trade = self.momentum_engine._sell(
-                    sell_pair, datetime.now(), "Manual sell from dashboard"
+                    sell_pair, datetime.utcnow(), "Manual sell from dashboard"
                 )
                 if trade:
                     self.momentum_engine._was_cash = not self.momentum_engine.holdings
@@ -696,7 +696,7 @@ class SimRunner:
                     import json as _json
                     eq = self.momentum_engine.get_equity()
                     self.trade_logger.log_momentum_equity(
-                        datetime.now(), eq,
+                        datetime.utcnow(), eq,
                         self.momentum_engine.cash,
                         self.momentum_engine.get_positions_value(),
                         self.momentum_engine.status,
@@ -715,7 +715,7 @@ class SimRunner:
             # Don't make the user wait for the next hourly candle — run the
             # immediate-entry evaluation now using the latest known closes.
             try:
-                forced = self.momentum_engine.force_entry_eval(datetime.now())
+                forced = self.momentum_engine.force_entry_eval(datetime.utcnow())
                 for trade in forced:
                     self.trade_logger.log_momentum_trade(trade)
                     short = trade.pair.replace("-USD", "")
@@ -742,7 +742,7 @@ class SimRunner:
 
         # Periodic rescan (every 24h)
         if (self.momentum_scanner and self._last_momentum_scan and
-                (datetime.now() - self._last_momentum_scan).total_seconds() >
+                (datetime.utcnow() - self._last_momentum_scan).total_seconds() >
                 self._momentum_scan_interval_hours * 3600):
             logger.info("Momentum scanner: periodic rescan triggered")
             self._run_momentum_scan()
@@ -793,7 +793,7 @@ class SimRunner:
                     logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ {_fmt_price(trade.price)} — {trade.reason}")
 
         # Snapshot momentum equity
-        now = datetime.now()
+        now = datetime.utcnow()
         mom = self.momentum_engine
         holdings_json = json.dumps(mom.get_holdings_info())
         self.trade_logger.log_momentum_equity(
@@ -883,7 +883,7 @@ class SimRunner:
         if not self.vol_predictor:
             return
 
-        now = datetime.now()
+        now = datetime.utcnow()
         end = now
         start = end - timedelta(hours=12)
 
@@ -937,7 +937,7 @@ class SimRunner:
 
     def _check_loss_limits(self, total_equity: float) -> bool:
         """Check daily/weekly loss limits. Returns True if trading should be paused."""
-        now = datetime.now()
+        now = datetime.utcnow()
 
         # Reset day tracker at midnight
         if self._last_day_reset is None or now.date() != self._last_day_reset.date():
@@ -1007,7 +1007,7 @@ class SimRunner:
 
         # Fetch BTC candles for cross-market features (use max window)
         btc_candles = None
-        end = datetime.now()
+        end = datetime.utcnow()
         max_window = max(self._vol_train_windows.values(), default=30)
         btc_start = end - timedelta(days=max(max_window, 30))
         btc_candles_raw = self.candle_store.get_candles("BTC-USD", "ONE_HOUR", btc_start, end)
@@ -1033,14 +1033,14 @@ class SimRunner:
             else:
                 print(f"  {engine.pair:<12} vol training failed")
 
-        self._last_vol_train = datetime.now()
+        self._last_vol_train = datetime.utcnow()
 
     def _run_vol_predictions(self):
         """Run volatility predictions for all engines and adjust grid spacing."""
         if not self.vol_predictor:
             return
 
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - timedelta(days=7)
 
         # BTC candles for cross-market feature
@@ -1097,7 +1097,7 @@ class SimRunner:
 
         print("\n  Training ML models...")
         for engine in self.engines:
-            end = datetime.now()
+            end = datetime.utcnow()
             start = end - timedelta(days=30)
             candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
             if not candles or len(candles) < 100:
@@ -1160,7 +1160,7 @@ class SimRunner:
         while self.running:
             try:
                 snapshot = self._ws_recorder.get_book_snapshot(depth=20)
-                snapshot["written_at"] = datetime.now().isoformat()
+                snapshot["written_at"] = datetime.utcnow().isoformat()
                 tmp_path = book_path + ".tmp"
                 with open(tmp_path, "w") as f:
                     json.dump(snapshot, f, default=str)
@@ -1265,7 +1265,7 @@ class SimRunner:
 
     def _poll_all(self):
         """Poll all pairs and process new candles."""
-        now = datetime.now()
+        now = datetime.utcnow()
         total_equity = 0.0
 
         for engine in self.engines:
@@ -1371,7 +1371,7 @@ class SimRunner:
             return 1.0
 
         # Get longer history for feature extraction
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - timedelta(days=7)
         history = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
         if not history or len(history) < 30:
@@ -1547,7 +1547,7 @@ class SimRunner:
                 first_dt = datetime.fromisoformat(first_trade)
             except (ValueError, TypeError):
                 continue
-            hours_active = (datetime.now() - first_dt).total_seconds() / 3600
+            hours_active = (datetime.utcnow() - first_dt).total_seconds() / 3600
             if hours_active < 48:
                 continue
 
@@ -1635,7 +1635,7 @@ class SimRunner:
 
     def _check_periodic_tasks(self):
         """Run periodic rescans and retrains."""
-        now = datetime.now()
+        now = datetime.utcnow()
 
         # Quick check every 6 hours
         if self.pair_selector and self._last_quick_check:
@@ -1671,7 +1671,7 @@ class SimRunner:
         # Retrain ML models every 24 hours
         if self.use_ml and self.ml_predictor and self._last_full_scan:
             for engine in self.engines:
-                end = datetime.now()
+                end = datetime.utcnow()
                 start = end - timedelta(days=30)
                 candles = self.candle_store.get_candles(engine.pair, "ONE_HOUR", start, end)
                 if candles and len(candles) >= 100:
@@ -1684,7 +1684,7 @@ class SimRunner:
 
         print("\n  [SCAN] Running quick check on active pairs...")
         result = self.pair_selector.quick_check(self.total_allocation)
-        self._last_quick_check = datetime.now()
+        self._last_quick_check = datetime.utcnow()
 
         if result.swapped_out:
             for swap in result.swapped_out:
@@ -1716,8 +1716,8 @@ class SimRunner:
 
         print("\n  [SCAN] Running full pair rescan...")
         result = self.pair_selector.full_scan(self.total_allocation)
-        self._last_full_scan = datetime.now()
-        self._last_quick_check = datetime.now()
+        self._last_full_scan = datetime.utcnow()
+        self._last_quick_check = datetime.utcnow()
 
         new_pairs = {s.pair for s in result.selected}
         old_pairs = {e.pair for e in self.engines}
@@ -1806,7 +1806,7 @@ class SimRunner:
 
     def _default_grid_config(self, pair: str, allocation: float) -> dict:
         """Build a fallback grid config for a pair."""
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - timedelta(days=3)
         candles = self.candle_store.get_candles(pair, "ONE_HOUR", start, end)
 
@@ -1875,7 +1875,7 @@ class SimRunner:
         pnl_pct = (pnl / self.total_allocation) * 100
         sign = "+" if pnl >= 0 else ""
 
-        now = datetime.now()
+        now = datetime.utcnow()
         parts = []
         for engine in self.engines:
             e_equity = engine.get_equity()
@@ -1911,7 +1911,7 @@ class SimRunner:
         )
 
     def _print_summary(self):
-        duration = datetime.now() - self.session_start
+        duration = datetime.utcnow() - self.session_start
         hours = duration.total_seconds() / 3600
 
         total_equity = sum(e.get_equity() for e in self.engines)
@@ -1990,8 +1990,8 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
     scan_result = selector.full_scan(starting_balance)
 
     runner.pair_selector = selector
-    runner._last_full_scan = datetime.now()
-    runner._last_quick_check = datetime.now()
+    runner._last_full_scan = datetime.utcnow()
+    runner._last_quick_check = datetime.utcnow()
 
     if not scan_result.selected:
         print("  ERROR: No pairs selected. Check internet connection.")

@@ -324,7 +324,7 @@ class TradeLogger:
                     trade.fee,
                     trade.strategy,
                     trade.reason,
-                    datetime.now().isoformat(),
+                    datetime.utcnow().isoformat(),
                     getattr(trade, 'regime', ''),
                     getattr(trade, 'adx', 0.0),
                     getattr(trade, 'rsi', 0.0),
@@ -461,7 +461,7 @@ class TradeLogger:
                 """INSERT INTO vol_accuracy
                    (timestamp, pair, predicted_vol, actual_vol, error_pct, window_hours)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (datetime.now().isoformat(), pair, predicted_vol, actual_vol,
+                (datetime.utcnow().isoformat(), pair, predicted_vol, actual_vol,
                  error_pct, window_hours),
             )
             conn.commit()
@@ -480,7 +480,7 @@ class TradeLogger:
                    (timestamp, pair, buy_price, sell_price, amount, pnl_usd,
                     spacing_pct, vol_regime, spacing_multiplier, hold_seconds)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (datetime.now().isoformat(), pair, buy_price, sell_price, amount,
+                (datetime.utcnow().isoformat(), pair, buy_price, sell_price, amount,
                  pnl_usd, spacing_pct, vol_regime, spacing_multiplier, hold_seconds),
             )
             conn.commit()
@@ -495,7 +495,7 @@ class TradeLogger:
                 """INSERT INTO self_check_log
                    (timestamp, event_type, details)
                    VALUES (?, ?, ?)""",
-                (datetime.now().isoformat(), event_type, details),
+                (datetime.utcnow().isoformat(), event_type, details),
             )
             conn.commit()
         finally:
@@ -503,7 +503,7 @@ class TradeLogger:
 
     def log_event(self, event_type: str, title: str, detail: str = "", pair: str = "") -> None:
         """Log a bot event for the activity feed (trade, ATR adjust, scan, etc.)."""
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute(
@@ -552,7 +552,7 @@ class TradeLogger:
                 (
                     trade.timestamp.isoformat(), trade.pair, trade.side,
                     trade.price, trade.amount, trade.cost_usd, trade.fee,
-                    trade.reason, datetime.now().isoformat(),
+                    trade.reason, datetime.utcnow().isoformat(),
                 ),
             )
             conn.commit()
@@ -632,7 +632,7 @@ class TradeLogger:
             rows = conn.execute("""
                 SELECT id, timestamp, pair, price FROM momentum_gate_log
                 WHERE price IS NOT NULL AND pnl_24h IS NULL
-                AND created_at < datetime('now', 'localtime', '-25 hours')
+                AND created_at < datetime('now', '-25 hours')
             """).fetchall()
 
             for row in rows:
@@ -675,7 +675,7 @@ class TradeLogger:
         """Log gate evaluation results for every candidate each scan cycle."""
         if not gates:
             return
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.executemany(
@@ -711,7 +711,7 @@ class TradeLogger:
         """
         if not decisions:
             return
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.executemany(
@@ -751,7 +751,7 @@ class TradeLogger:
         Expected keys: btc_price, btc_ma, regime_state, regime_bullish,
         btc_4h_return, btc_24h_return, scans_pass, scans_fail, holdings_count.
         """
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute(
@@ -779,7 +779,7 @@ class TradeLogger:
             conn.close()
 
     def log_momentum_event(self, event_type: str, title: str, detail: str = "") -> None:
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute(
@@ -804,7 +804,7 @@ class TradeLogger:
                 """INSERT INTO adaptations
                    (timestamp, pair, loop_type, description, old_value, new_value)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (datetime.now().isoformat(), pair, loop_type, description,
+                (datetime.utcnow().isoformat(), pair, loop_type, description,
                  old_value, new_value),
             )
             conn.commit()
@@ -813,7 +813,7 @@ class TradeLogger:
 
     def get_spacing_stats(self, pair: str, since_days: int = 7) -> list[dict]:
         """Get avg profit per cycle grouped by spacing bucket."""
-        cutoff = (datetime.now() - timedelta(days=since_days)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(days=since_days)).isoformat()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -850,7 +850,7 @@ class TradeLogger:
 
     def get_pair_actual_pnl(self, pair: str, since_hours: int = 48) -> float:
         """Get total P&L from completed grid cycles in the last N hours."""
-        cutoff = (datetime.now() - timedelta(hours=since_hours)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(hours=since_hours)).isoformat()
         conn = sqlite3.connect(self.db_path)
         try:
             row = conn.execute(

@@ -1,6 +1,6 @@
 import { Component, inject, computed, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ApiService, PositionData, ScanProgressData, PnlAttribution, HealthData } from '../../services/api.service';
+import { ApiService, PositionData, ScanProgressData, PnlAttribution, HealthData, asUtcDate } from '../../services/api.service';
 
 const REGIME_CONFIG: Record<string, { label: string; bg: string; text: string; ring: string }> = {
   RANGING:       { label: 'RANGING',        bg: '#14532d', text: '#4ade80', ring: '#16a34a' },
@@ -536,7 +536,8 @@ export class StatsBarComponent implements OnInit {
   formatLastTrade(ts: string | null): string {
     if (!ts) return 'None';
     try {
-      const date = new Date(ts);
+      const date = asUtcDate(ts);
+      if (!date) return ts;
       const now  = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMin = Math.floor(diffMs / 60_000);

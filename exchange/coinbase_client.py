@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import threading
 import time
 from datetime import datetime, timedelta
@@ -79,13 +80,13 @@ class CoinbaseClient:
     def get_latest_candles(self, pair: str, granularity: str, count: int = 5) -> list[Candle]:
         """Fetch the most recent N candles. Used for live polling in simulate mode."""
         interval = GRANULARITY_MAP.get(granularity, timedelta(hours=1))
-        end = datetime.now()
+        end = datetime.utcnow()
         start = end - interval * count
 
         url = f"{BASE_URL}/{pair}/candles"
         params = {
-            "start": str(int(start.timestamp())),
-            "end": str(int(end.timestamp())),
+            "start": str(calendar.timegm(start.utctimetuple())),
+            "end": str(calendar.timegm(end.utctimetuple())),
             "granularity": granularity,
         }
 
@@ -102,7 +103,7 @@ class CoinbaseClient:
             candles.append(Candle(
                 pair=pair,
                 granularity=granularity,
-                timestamp=datetime.fromtimestamp(int(raw["start"])),
+                timestamp=datetime.utcfromtimestamp(int(raw["start"])),
                 open=float(raw["open"]),
                 high=float(raw["high"]),
                 low=float(raw["low"]),
@@ -131,8 +132,8 @@ class CoinbaseClient:
 
             url = f"{BASE_URL}/{pair}/candles"
             params = {
-                "start": str(int(chunk_start.timestamp())),
-                "end": str(int(chunk_end.timestamp())),
+                "start": str(calendar.timegm(chunk_start.utctimetuple())),
+                "end": str(calendar.timegm(chunk_end.utctimetuple())),
                 "granularity": granularity,
             }
 
@@ -149,7 +150,7 @@ class CoinbaseClient:
                 all_candles.append(Candle(
                     pair=pair,
                     granularity=granularity,
-                    timestamp=datetime.fromtimestamp(int(raw["start"])),
+                    timestamp=datetime.utcfromtimestamp(int(raw["start"])),
                     open=float(raw["open"]),
                     high=float(raw["high"]),
                     low=float(raw["low"]),

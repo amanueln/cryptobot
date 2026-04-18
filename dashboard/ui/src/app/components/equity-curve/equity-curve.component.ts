@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Chart, registerables, ChartConfiguration } from 'chart.js';
-import { ApiService, EquityData, TradeData, PositionData } from '../../services/api.service';
+import { ApiService, EquityData, TradeData, PositionData, asUtcDate } from '../../services/api.service';
 import { TradeLogComponent } from '../trade-log/trade-log.component';
 import { PositionCardsComponent } from '../position-cards/position-cards.component';
 import { Subscription, forkJoin } from 'rxjs';
@@ -451,7 +451,7 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private get labels(): string[] {
     return this.equityPoints.map(pt =>
-      new Date(pt.time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      (asUtcDate(pt.time) ?? new Date(pt.time)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     );
   }
 
@@ -485,11 +485,11 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
     const trades = this.allTrades();
     if (!trades.length || !this.equityPoints.length) return [];
 
-    const eqTimes = this.equityPoints.map(pt => new Date(pt.time).getTime());
+    const eqTimes = this.equityPoints.map(pt => asUtcDate(pt.time)?.getTime() ?? 0);
     const markers: { idx: number; y: number; color: string }[] = [];
 
     for (const t of trades) {
-      const tt = new Date(t.timestamp).getTime();
+      const tt = asUtcDate(t.timestamp)?.getTime() ?? 0;
       let best = 0;
       let bestD = Infinity;
       for (let i = 0; i < eqTimes.length; i++) {
@@ -732,7 +732,7 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
   formatHoldSince(holdSince: string | null): string {
     if (!holdSince) return '—';
     try {
-      const then = new Date(holdSince).getTime();
+      const then = asUtcDate(holdSince)?.getTime() ?? Date.now();
       const now = Date.now();
       const diffSeconds = Math.floor((now - then) / 1000);
       if (diffSeconds < 0) return '—';

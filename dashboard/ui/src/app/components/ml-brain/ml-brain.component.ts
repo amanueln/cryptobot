@@ -7,6 +7,7 @@ import {
   ApiService,
   VolPredictionData,
   MLModelInfo,
+  fmt12Hour,
 } from '../../services/api.service';
 
 @Component({
@@ -54,7 +55,7 @@ import {
             </div>
           </div>
           <div class="model-trained">
-            Trained: {{ m.trained_at | date:'short' }}
+            Trained: {{ fmt12Hour(m.trained_at, {date: true}) }}
             &middot; {{ m.age_hours | number:'1.1-1' }}h ago
           </div>
         </div>
@@ -68,7 +69,7 @@ import {
             <span class="regime-badge" [class]="'regime-' + v.vol_regime">
               {{ v.vol_regime | uppercase }}
             </span>
-            <span class="vol-time">{{ v.timestamp | date:'MMM d, HH:mm' }}</span>
+            <span class="vol-time">{{ fmt12Hour(v.timestamp, {date: true}) }}</span>
           </div>
 
           <div class="vol-metrics">
@@ -155,7 +156,7 @@ import {
           </thead>
           <tbody>
             <tr *ngFor="let p of volHistory().slice(0, 30)">
-              <td>{{ p.timestamp | date:'MMM d HH:mm' }}</td>
+              <td>{{ fmt12Hour(p.timestamp, {date: true}) }}</td>
               <td>{{ p.pair }}</td>
               <td class="highlight">{{ p.predicted_vol_12h | number:'1.1-1' }}%</td>
               <td>{{ p.current_vol_12h | number:'1.1-1' }}%</td>
@@ -315,6 +316,8 @@ import {
 export class MlBrainComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private sub: Subscription | null = null;
+
+  protected fmt12Hour = fmt12Hour;
 
   selectedPair = '';
   availablePairs = signal<string[]>([]);

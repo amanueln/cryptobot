@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-  ApiService, MomentumOrderbookData, MomentumOrderbookLevel, MomentumHoldingData,
+  ApiService, MomentumOrderbookData, MomentumOrderbookLevel, MomentumHoldingData, asUtcDate,
 } from '../../services/api.service';
 
 interface Row {
@@ -243,7 +243,7 @@ export class OrderbookLadderComponent implements OnInit, OnDestroy {
     this.tickSignal();
     const w = this.ob()?.written_at;
     if (!w) return 999;
-    return (Date.now() - new Date(w).getTime()) / 1000;
+    return (Date.now() - (asUtcDate(w)?.getTime() ?? Date.now())) / 1000;
   });
 
   ageDisplay = computed(() => {

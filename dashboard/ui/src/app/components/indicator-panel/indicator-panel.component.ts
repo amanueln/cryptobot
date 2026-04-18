@@ -1,6 +1,6 @@
 import { Component, input, effect, ElementRef, viewChild, OnDestroy } from '@angular/core';
 import { Chart, registerables } from 'chart.js';
-import { IndicatorData } from '../../services/api.service';
+import { IndicatorData, asUtcDate } from '../../services/api.service';
 
 Chart.register(...registerables);
 
@@ -133,8 +133,8 @@ export class IndicatorPanelComponent implements OnDestroy {
 
   private drawCharts(data: IndicatorData[]): void {
     const labels = data.map(d => {
-      const date = new Date(d.time);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const date = asUtcDate(d.time) ?? new Date(d.time);
+      return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
     });
 
     this.drawAdxChart(data, labels);

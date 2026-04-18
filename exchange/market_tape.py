@@ -222,7 +222,7 @@ class MarketTapeRecorder:
 
     def _handle_matches(self, events: list[dict]) -> None:
         now_epoch = time.time()
-        now_iso = datetime.now().isoformat()
+        now_iso = datetime.utcnow().isoformat()
         new_rows: list[dict] = []
         for event in events:
             # Coinbase Advanced Trade sends matches under "trades".
@@ -324,7 +324,7 @@ class MarketTapeRecorder:
 
     def _write_l2_snapshots(self) -> None:
         now_epoch = time.time()
-        now_iso = datetime.now().isoformat()
+        now_iso = datetime.utcnow().isoformat()
         rows: list[dict] = []
         with self._book_lock:
             for pair in self._pairs:

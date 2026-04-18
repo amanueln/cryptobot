@@ -1,6 +1,6 @@
 import { Component, input, output, signal, computed, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MomentumTradeData } from '../../services/api.service';
+import { MomentumTradeData, asUtcDate, fmt12Hour } from '../../services/api.service';
 
 interface RoundTrip {
   pair: string;
@@ -360,7 +360,11 @@ export class TradeCalendarComponent implements OnChanges {
           pnl,
           pct: entry > 0 ? ((exit - entry) / entry) * 100 : 0,
         };
-        const key = t.timestamp.slice(0, 10); // YYYY-MM-DD of the SELL
+        // Bucket by LOCAL date so day cells align with user's wall clock, not UTC.
+        const sellDate = asUtcDate(t.timestamp);
+        const key = sellDate
+          ? `${sellDate.getFullYear()}-${String(sellDate.getMonth() + 1).padStart(2, '0')}-${String(sellDate.getDate()).padStart(2, '0')}`
+          : t.timestamp.slice(0, 10);
         if (!byDay[key]) byDay[key] = { trades: [], pnl: 0, count: 0, winrate: null };
         byDay[key].trades.push(trip);
       }
@@ -528,8 +532,6 @@ export class TradeCalendarComponent implements OnChanges {
   }
 
   fmtTime(ts: string): string {
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return ts.slice(11, 16);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return fmt12Hour(ts);
   }
 }
