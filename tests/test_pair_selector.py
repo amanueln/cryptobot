@@ -49,9 +49,9 @@ def make_candles(pair: str, n: int = 336, base_price: float = 1.0,
 
 
 MOCK_PRODUCTS = [
-    # Good USD spot pair
+    # Good USD spot pair — volume_usd = 0.09 * 10M = 900k, above default 500k min.
     {"product_id": "DOGE-USD", "product_type": "SPOT", "price": "0.09",
-     "volume_24h": "5000000", "is_disabled": False, "trading_disabled": False},
+     "volume_24h": "10000000", "is_disabled": False, "trading_disabled": False},
     # Good USD spot pair
     {"product_id": "SOL-USD", "product_type": "SPOT", "price": "150.0",
      "volume_24h": "2000000", "is_disabled": False, "trading_disabled": False},

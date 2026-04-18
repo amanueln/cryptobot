@@ -45,7 +45,9 @@ def test_first_candle_buys_below_open():
     from strategies.grid_strategy import GridStrategy
 
     gs = GridStrategy()
-    gs.configure(GRID_CONFIG)
+    # Disable profit-filter so the assertion "hits 2 levels" isn't
+    # filtered out by the default min-spacing check.
+    gs.configure({**GRID_CONFIG, "fee_pct": 0.0, "slippage_pct": 0.0})
     # Grid levels with 10 grids between 80000-90000:
     # 80000, 81111.11, 82222.22, 83333.33, 84444.44, 85555.56, 86666.67, 87777.78, 88888.89, 90000
     # Open at 85000, low at 83000 => should buy at levels 84444.44 and 83333.33
@@ -394,6 +396,14 @@ GRID_CONFIG_RANGE_ONLY = {
     "ema_convergence_pct": 1.5,  # lower threshold for short-period test EMAs
     "ema_fast_period": 3,
     "ema_slow_period": 5,
+    # Disable profit-filter so every geometric grid level stays active;
+    # otherwise the ~1.3% spacing is filtered below the default 1.5% min.
+    "fee_pct": 0.0,
+    "slippage_pct": 0.0,
+    # Trailing shifts lower_price down on declines and would push the
+    # stop-loss trigger (lower_price * 0.85) out of reach during the
+    # divergence scenario; keep the grid pinned for deterministic tests.
+    "trailing_enabled": False,
 }
 
 
@@ -631,6 +641,13 @@ def test_min_spacing_floor_no_effect_on_wide_range():
 GRID_CONFIG_TRADE_CAP = {
     **GRID_CONFIG,
     "max_trades_per_day": 4,
+    # Disable profit-filter so all 10 grid levels stay active; trade-cap
+    # assertions assume enough levels trigger to hit the 4-trade cap.
+    "fee_pct": 0.0,
+    "slippage_pct": 0.0,
+    # Trailing would shift the grid out from under the cap/stop-loss
+    # scenarios — tests assume lower_price stays pinned at 80000.
+    "trailing_enabled": False,
 }
 
 
@@ -676,8 +693,10 @@ def test_trade_cap_resets_after_24h():
     gs.on_candle(c1)
     assert gs._trade_cap_paused is True
 
-    # Advance 25 hours — cap should reset
-    c2 = make_candle(open_=85000, high=85500, low=84500, close=85000, hour=25)
+    # Advance 25 hours — cap should reset. Use a flat candle below all sell
+    # targets (~81k) so it doesn't cross any holding-level sell prices and
+    # immediately re-fill the cap. We're isolating the 24h-expiry behavior.
+    c2 = make_candle(open_=79500, high=79500, low=79000, close=79200, hour=25)
     gs.on_candle(c2)
     assert gs._trade_cap_paused is False
 
