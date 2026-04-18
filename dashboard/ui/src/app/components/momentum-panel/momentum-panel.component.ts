@@ -723,6 +723,14 @@ Chart.register(...registerables, zoomPlugin);
       margin-left: auto; font-size: 10px; color: #6b7280;
       font-family: 'JetBrains Mono', monospace;
     }
+    .engine-version {
+      margin-left: 8px; padding: 3px 10px; font-size: 10px; font-weight: 600;
+      background: rgba(52,211,153,0.12); color: #34d399;
+      border: 1px solid rgba(52,211,153,0.35); border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      box-shadow: 0 0 0 1px rgba(52,211,153,0.08), 0 0 8px rgba(52,211,153,0.15);
+      letter-spacing: 0.02em;
+    }
     .guide-btn {
       margin-left: auto; padding: 3px 10px; font-size: 10px; font-weight: 600;
       background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3);
