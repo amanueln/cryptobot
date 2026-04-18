@@ -39,7 +39,7 @@ Chart.register(...registerables, zoomPlugin);
             <span class="knob"></span>
           </button>
         </div>
-        <span class="engine-version" title="Running git commit">v: {{ commitSha() || '...' }}</span>
+        <span class="engine-version" title="Running git commit">version: {{ commitSha() || '...' }}</span>
         <a class="guide-btn" href="/momentum_guide.html" target="_blank" rel="noopener" title="How the bot thinks — interactive guide">Guide</a>
         <a class="todo-btn" href="/roadmap.html" target="_blank" rel="noopener" title="Project roadmap — what we've built and what's next">Todo</a>
         <a class="export-btn" href="/api/download-db" download="candles.db" title="Download database">Export DB</a>
