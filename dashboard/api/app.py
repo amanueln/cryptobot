@@ -2628,9 +2628,11 @@ def api_momentum_gate_stats():
 
 @app.route("/api/momentum/data-stream-counts")
 def api_momentum_data_stream_counts():
-    """Live row counts for the 6 data-collection streams feeding the roadmap scorecard.
-    Returns -1 for a stream if its DB/table is missing (honest, not fabricated)."""
+    """Live row counts + storage footprint for the 6 data-collection streams
+    feeding the roadmap scorecard. Returns -1 for any value we can't determine
+    (missing DB/table) — never a fabricated zero."""
     from datetime import datetime, timezone
+    import shutil
 
     result = {
         "wall_decisions": -1,
@@ -2640,6 +2642,11 @@ def api_momentum_data_stream_counts():
         "ws_matches": -1,
         "l2_snapshots": -1,
         "candles_1m": -1,
+        "storage": {
+            "candles_db": {"path": None, "size_bytes": -1},
+            "market_tape_db": {"path": None, "size_bytes": -1},
+            "disk": {"mount": None, "total_bytes": -1, "used_bytes": -1, "free_bytes": -1},
+        },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -2670,8 +2677,8 @@ def api_momentum_data_stream_counts():
         pass
 
     # market_tape.db — ws_matches, l2_snapshots
+    tape_path = os.path.join(os.path.dirname(DB_PATH), "market_tape.db")
     try:
-        tape_path = os.path.join(os.path.dirname(DB_PATH), "market_tape.db")
         if os.path.exists(tape_path):
             tconn = sqlite3.connect(tape_path)
             try:
@@ -2685,6 +2692,46 @@ def api_momentum_data_stream_counts():
                 result["l2_snapshots"] = tcount("SELECT COUNT(*) FROM l2_snapshots")
             finally:
                 tconn.close()
+    except Exception:
+        pass
+
+    # Storage footprint — absolute paths + file sizes + disk-level usage.
+    # Include WAL/SHM sidecar sizes so the reported "candles_db" reflects what
+    # SQLite actually has committed-to + in-flight (a hot WAL can be many MBs).
+    def _file_set_size(path):
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            p = path + suffix
+            try:
+                if os.path.exists(p):
+                    total += os.path.getsize(p)
+            except Exception:
+                pass
+        return total
+
+    try:
+        abs_candles = os.path.abspath(DB_PATH)
+        abs_tape = os.path.abspath(tape_path)
+        result["storage"]["candles_db"] = {
+            "path": abs_candles,
+            "size_bytes": _file_set_size(DB_PATH) if os.path.exists(DB_PATH) else -1,
+        }
+        result["storage"]["market_tape_db"] = {
+            "path": abs_tape,
+            "size_bytes": _file_set_size(tape_path) if os.path.exists(tape_path) else -1,
+        }
+        # Disk-level — the mount backing the data directory
+        data_dir = os.path.dirname(abs_candles)
+        try:
+            du = shutil.disk_usage(data_dir)
+            result["storage"]["disk"] = {
+                "mount": data_dir,
+                "total_bytes": du.total,
+                "used_bytes": du.used,
+                "free_bytes": du.free,
+            }
+        except Exception:
+            pass
     except Exception:
         pass
 

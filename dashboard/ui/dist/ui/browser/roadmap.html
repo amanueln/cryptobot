@@ -439,6 +439,36 @@
   .counts-ts { color: var(--text-faint); font-style: italic; }
   .counts-err { color: var(--red); font-size: 11px; }
 
+  /* Storage footprint block */
+  .storage-block {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 10px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    font-size: 11px;
+  }
+  .storage-cell .label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-faint); margin-bottom: 4px;
+  }
+  .storage-cell .value {
+    font-family: 'JetBrains Mono', monospace; color: var(--text); font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .storage-cell .path {
+    font-family: 'JetBrains Mono', monospace; color: var(--text-ghost);
+    font-size: 10px; word-break: break-all;
+  }
+  .storage-cell .usage-bar {
+    height: 5px; background: var(--bg-1); border-radius: 3px;
+    overflow: hidden; margin: 5px 0 4px;
+  }
+  .storage-cell .usage-fill {
+    height: 100%; background: var(--purple); transition: width 400ms ease;
+  }
+  .storage-cell .usage-fill.warn { background: var(--amber); }
+  .storage-cell .usage-fill.danger { background: var(--red); }
+  @media (max-width: 900px) { .storage-block { grid-template-columns: 1fr; } }
+
   /* Schema expand */
   .schema-toggle {
     background: none; border: 0; padding: 0 6px 0 0; cursor: pointer;
@@ -642,6 +672,24 @@
     <button type="button" id="refresh-counts" class="refresh-btn">Refresh counts</button>
     <span id="counts-timestamp" class="counts-ts">Loading…</span>
     <span id="counts-error" class="counts-err" style="display:none"></span>
+  </div>
+  <div class="storage-block" id="storage-block">
+    <div class="storage-cell" data-store="candles_db">
+      <div class="label">candles.db (with WAL)</div>
+      <div class="value">—</div>
+      <div class="path">path unknown until live fetch</div>
+    </div>
+    <div class="storage-cell" data-store="market_tape_db">
+      <div class="label">market_tape.db (with WAL)</div>
+      <div class="value">—</div>
+      <div class="path">path unknown until live fetch</div>
+    </div>
+    <div class="storage-cell" data-store="disk">
+      <div class="label">Host disk backing data/</div>
+      <div class="value">—</div>
+      <div class="usage-bar"><div class="usage-fill" style="width: 0%"></div></div>
+      <div class="path">mount unknown until live fetch</div>
+    </div>
   </div>
   <table class="data-table">
     <thead>
@@ -861,6 +909,52 @@
     return fmt(n);
   }
 
+  function fmtBytes(n) {
+    if (n === -1 || n === null || n === undefined) return "—";
+    if (n < 1024) return n + " B";
+    const units = ["KB", "MB", "GB", "TB"];
+    let v = n / 1024;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + " " + units[i];
+  }
+
+  function renderStorage(storage) {
+    if (!storage) return;
+    const setCell = (sel, size, pathText) => {
+      const cell = document.querySelector(`.storage-cell[data-store="${sel}"]`);
+      if (!cell) return;
+      cell.querySelector(".value").textContent = size;
+      const p = cell.querySelector(".path");
+      if (p) p.textContent = pathText || "—";
+    };
+    const cdb = storage.candles_db || {};
+    const tdb = storage.market_tape_db || {};
+    setCell("candles_db", fmtBytes(cdb.size_bytes), cdb.path || "—");
+    setCell("market_tape_db", fmtBytes(tdb.size_bytes), tdb.path || "—");
+
+    const disk = storage.disk || {};
+    const diskCell = document.querySelector('.storage-cell[data-store="disk"]');
+    if (diskCell) {
+      const total = disk.total_bytes;
+      const used = disk.used_bytes;
+      const free = disk.free_bytes;
+      if (total && total > 0 && used >= 0) {
+        const pct = Math.round((used / total) * 100);
+        diskCell.querySelector(".value").textContent =
+          `${fmtBytes(used)} used · ${fmtBytes(free)} free · ${pct}%`;
+        const fill = diskCell.querySelector(".usage-fill");
+        fill.style.width = pct + "%";
+        fill.classList.toggle("warn", pct >= 75 && pct < 90);
+        fill.classList.toggle("danger", pct >= 90);
+        diskCell.querySelector(".path").textContent = disk.mount || "—";
+      } else {
+        diskCell.querySelector(".value").textContent = "—";
+        diskCell.querySelector(".path").textContent = disk.mount || "—";
+      }
+    }
+  }
+
   async function refresh() {
     const ts = document.getElementById("counts-timestamp");
     const err = document.getElementById("counts-error");
@@ -878,6 +972,7 @@
         row.querySelector(".count-cell").textContent = formatCount(s.id, n, d);
         row.querySelector(".status-cell").innerHTML = pill(st);
       }
+      renderStorage(d.storage);
       const when = d.timestamp ? new Date(d.timestamp) : new Date();
       ts.textContent = "Last refreshed " + when.toLocaleTimeString();
     } catch (e) {
