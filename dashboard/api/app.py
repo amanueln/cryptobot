@@ -2403,7 +2403,7 @@ def api_momentum_accel():
             WHERE rowid IN (
                 SELECT MAX(rowid) FROM momentum_gate_log GROUP BY pair
             )
-            AND created_at >= datetime('now', '-5 minutes')
+            AND created_at >= datetime('now', 'localtime', '-5 minutes')
         """).fetchall()
     except Exception:
         return jsonify([])

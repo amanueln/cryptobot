@@ -632,7 +632,7 @@ class TradeLogger:
             rows = conn.execute("""
                 SELECT id, timestamp, pair, price FROM momentum_gate_log
                 WHERE price IS NOT NULL AND pnl_24h IS NULL
-                AND created_at < datetime('now', '-25 hours')
+                AND created_at < datetime('now', 'localtime', '-25 hours')
             """).fetchall()
 
             for row in rows:
