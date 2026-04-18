@@ -25,9 +25,13 @@ HOURS_OFFSET = 4  # EDT → UTC
 # Each entry: (db_relpath, table, column, where_clause_or_None)
 JOBS: list[tuple[str, str, str, str | None]] = [
     # --- data/candles.db ---
-    # candles: all rows EXCEPT AVNT-USD ONE_MINUTE
-    ("data/candles.db", "candles", "timestamp",
-     "NOT (pair = 'AVNT-USD' AND granularity = 'ONE_MINUTE')"),
+    # NOTE: the `candles` table is INTENTIONALLY NOT migrated. Its 9M+ rows
+    # are OHLCV bars; a row-by-row +4h shift hits UNIQUE(pair, granularity,
+    # timestamp) collisions because the hourly series is dense (hour N+4
+    # already exists as a different bar). Mis-labeling bars by 4h does not
+    # change their content, and new writes post-deploy will be UTC. If a
+    # clean candles TZ is needed later, re-backfill from Coinbase.
+
     # sim_trades
     ("data/candles.db", "sim_trades", "timestamp", None),
     ("data/candles.db", "sim_trades", "created_at", None),
