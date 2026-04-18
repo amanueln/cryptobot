@@ -192,6 +192,11 @@ class SimRunner:
         # Lazy-init in run() so we can read bot_config.yaml; None until then.
         self._market_tape = None
 
+        # Live 1m candle writer — reuses market_tape.pairs so historical
+        # backfill (scripts/backfill_1m.py) and live polling share one universe.
+        # Populated in run() after tape_cfg is loaded.
+        self._tape_pairs_1m: list[str] = []
+
     def add_pair(
         self,
         name: str,
@@ -1213,6 +1218,9 @@ class SimRunner:
             import yaml
             with open("config/bot_config.yaml") as _f:
                 _tape_cfg = (yaml.safe_load(_f) or {}).get("market_tape", {}) or {}
+            # Live 1m poller uses the same pair list regardless of whether the
+            # WS tape itself is enabled — 1m candles are REST-fetched, not WS.
+            self._tape_pairs_1m = list(_tape_cfg.get("pairs", []) or [])
             if _tape_cfg.get("enabled", True):
                 from exchange.market_tape import MarketTapeRecorder
                 self._market_tape = MarketTapeRecorder(
@@ -1304,7 +1312,36 @@ class SimRunner:
         # Poll momentum engine (independent from grid)
         self._poll_momentum()
 
+        # Live 1m candle collection (fail-silent — analysis-only dataset,
+        # never gates trading). Shares pair list with market_tape config so
+        # historical backfill + live stream are one continuous series.
+        try:
+            self._poll_1m_candles()
+        except Exception as e:
+            logger.error("[1M] poll failed: %s", e)
+
         self._print_dashboard(total_equity)
+
+    def _poll_1m_candles(self):
+        """Fetch the last few 1m candles for each market_tape pair + persist.
+
+        Runs once per poll (~60s). A 3-candle window covers boundary cases
+        where the poll lands a second late and the just-closed bar isn't
+        in the most recent call. CandleStore dedupes by (pair, granularity,
+        timestamp) so re-fetching the same bar is a no-op.
+
+        Budget: 26 pairs x 1 REST call = ~0.43 req/s on top of the existing
+        hourly poll, well under the 8 req/s ceiling.
+        """
+        if not self._tape_pairs_1m:
+            return
+        for pair in self._tape_pairs_1m:
+            try:
+                candles = self.client.get_latest_candles(pair, "ONE_MINUTE", count=3)
+                if candles:
+                    self.candle_store.save_candles(pair, "ONE_MINUTE", candles)
+            except Exception as e:
+                logger.debug("[1M] %s fetch failed: %s", pair, e)
 
     def _run_ml_prediction(self, engine: PairEngine, candles: list[Candle]) -> float:
         """Run ML prediction for a pair. Returns size multiplier."""
