@@ -126,8 +126,12 @@ def main() -> int:
             if candles:
                 lows = [c["low"] for c in candles]
                 highs = [c["high"] for c in candles]
-                trough_price = min(lows)
-                peak_price = max(highs)
+                # Bracket by entry_price so trough never exceeds entry and peak never
+                # falls below it — matches the live writer's semantics (trough_price
+                # and peak_price are initialised to entry_price at fill). MAE <= 0,
+                # MFE >= 0 by construction.
+                trough_price = min(entry_price, min(lows))
+                peak_price = max(entry_price, max(highs))
                 coverage = f"{len(candles)}/{expected_min}m" if expected_min > 0 else f"{len(candles)}m"
             else:
                 # Sub-minute hold or missing candles — fall back to the two prices we know.
