@@ -427,6 +427,41 @@ class SimRunner:
                 )
                 self.momentum_engine.holdings[pair] = holding
 
+                # Reconcile peak/trough against the warmed 1h candle history
+                # since entry_time. The saved peak comes from live 1Hz ticks
+                # which can miss intra-hour spikes; the candle highs don't.
+                # Without this, the first post-restart tick attributes the
+                # missed spike to peak_price and ratchets trail_stop above
+                # current price, firing a sell that *should* have fired hours
+                # ago during continuous operation (at a better price).
+                ts_list = self.momentum_engine._timestamps.get(pair, [])
+                hi_list = self.momentum_engine._highs.get(pair, [])
+                lo_list = self.momentum_engine._lows.get(pair, [])
+                if ts_list and hi_list and holding.entry_time:
+                    since_entry_highs = [hi for ts, hi in zip(ts_list, hi_list)
+                                         if ts >= holding.entry_time]
+                    since_entry_lows = [lo for ts, lo in zip(ts_list, lo_list)
+                                        if ts >= holding.entry_time]
+                    if since_entry_highs:
+                        true_peak = max(since_entry_highs)
+                        if true_peak > holding.peak_price:
+                            logger.info("Reconciled %s peak %.6f -> %.6f from warmed candle history",
+                                        pair, holding.peak_price, true_peak)
+                            holding.peak_price = true_peak
+                    if since_entry_lows:
+                        true_trough = min(since_entry_lows)
+                        if holding.trough_price <= 0 or true_trough < holding.trough_price:
+                            holding.trough_price = true_trough
+
+                # Recompute trail_stop_price from the reconciled peak so the
+                # saved stop reflects what continuous operation would have
+                # produced. Engine-native logic handles tier selection.
+                try:
+                    cur_price = self.momentum_engine._closes.get(pair, [None])[-1] or entry_price
+                    self.momentum_engine._update_trail_stop(holding, cur_price)
+                except Exception as e:
+                    logger.warning("Could not recompute trail stop for %s on restore: %s", pair, e)
+
             # Restore trade count
             trade_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM momentum_trades"
