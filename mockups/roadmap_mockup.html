@@ -304,10 +304,183 @@
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
 
+  /* ===== Mission + Capability Scorecard ===== */
+  .mission {
+    max-width: 1600px; margin: 14px auto 10px; padding: 14px 22px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: linear-gradient(180deg, rgba(167,139,250,0.06), rgba(167,139,250,0.02));
+  }
+  .mission .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--purple); font-weight: 700; margin-bottom: 4px;
+  }
+  .mission .sentence { font-size: 15px; line-height: 1.4; color: var(--text); }
+  .mission .scope-note {
+    font-size: 11px; color: var(--text-faint); margin-top: 6px;
+    font-style: italic;
+  }
+
+  .scorecard {
+    max-width: 1600px; margin: 10px auto 14px; padding: 0 22px;
+  }
+  .scorecard-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .scorecard-head h2 {
+    margin: 0; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-dim);
+  }
+  .scorecard-head .legend {
+    font-size: 10px; color: var(--text-faint); display: flex; gap: 10px;
+  }
+  .scorecard-head .legend .l { display: inline-flex; align-items: center; gap: 5px; }
+  .scorecard-head .legend .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+
+  .cap-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+  }
+  .cap-tile {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 11px;
+    display: flex; flex-direction: column; gap: 6px;
+    cursor: pointer; transition: all 0.15s;
+    min-height: 118px;
+  }
+  .cap-tile:hover { border-color: var(--purple); transform: translateY(-1px); }
+  .cap-tile.active { border-color: var(--purple); background: rgba(167,139,250,0.08); }
+  .cap-tile .cap-name {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    line-height: 1.2;
+  }
+  .cap-tile .cap-desc {
+    font-size: 10px; color: var(--text-faint); line-height: 1.35;
+    flex: 1;
+  }
+  .cap-tile .cap-foot {
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    font-size: 9px; font-family: 'JetBrains Mono', monospace;
+    color: var(--text-ghost);
+  }
+  .cap-status {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; padding: 2px 7px; border-radius: 10px;
+  }
+  .cap-status .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .cap-status.working  { color: var(--green);  background: rgba(74,222,128,0.12); }
+  .cap-status.working  .dot { background: var(--green); }
+  .cap-status.partial  { color: var(--amber);  background: rgba(251,191,36,0.12); }
+  .cap-status.partial  .dot { background: var(--amber); }
+  .cap-status.not-yet  { color: var(--text-faint); background: var(--bg-2); border: 1px solid var(--line); }
+  .cap-status.not-yet  .dot { background: var(--text-faint); }
+  .cap-status.dormant  { color: var(--red);    background: rgba(248,113,113,0.12); }
+  .cap-status.dormant  .dot { background: var(--red); }
+  .cap-status.unknown  { color: var(--text-ghost); background: var(--bg-2); border: 1px dashed var(--line); }
+  .cap-status.unknown  .dot { background: var(--text-ghost); }
+
+  .scorecard-head .legend .dot.working { background: var(--green); }
+  .scorecard-head .legend .dot.partial { background: var(--amber); }
+  .scorecard-head .legend .dot.dormant { background: var(--red); }
+  .scorecard-head .legend .dot.not-yet { background: var(--text-faint); }
+  .scorecard-head .legend .dot.unknown { background: var(--text-ghost); }
+
+  /* ===== Data Collection Accountability ===== */
+  .data-accountability {
+    max-width: 1600px; margin: 22px auto 0; padding: 0 22px;
+  }
+  .data-accountability h2 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-dim);
+  }
+  .data-accountability .sub {
+    font-size: 11px; color: var(--text-faint); margin-bottom: 10px;
+    font-style: italic;
+  }
+  .data-table {
+    width: 100%; border-collapse: collapse;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden;
+  }
+  .data-table th, .data-table td {
+    padding: 10px 12px; text-align: left; font-size: 11px;
+    border-bottom: 1px solid var(--line);
+  }
+  .data-table th {
+    background: var(--card); color: var(--text-faint);
+    font-weight: 600; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .data-table tbody tr:last-child td { border-bottom: 0; }
+  .data-table tbody tr:hover { background: rgba(167,139,250,0.03); }
+  .data-table .mono { font-family: 'JetBrains Mono', monospace; }
+  .data-table .count-zero { color: var(--red); }
+  .data-table .count-known { color: var(--text); }
+  .data-table .count-unknown { color: var(--text-ghost); font-style: italic; }
+  .data-table .cap-link {
+    font-size: 9px; padding: 1px 7px; border-radius: 8px;
+    background: rgba(167,139,250,0.1); color: var(--purple);
+    margin-right: 4px; white-space: nowrap;
+  }
+  .data-table .count-cell { color: var(--text); }
+  .live-controls {
+    display: flex; align-items: center; gap: 10px;
+    margin: 6px 0 10px; font-size: 11px;
+  }
+  .refresh-btn {
+    background: var(--card); border: 1px solid var(--line); color: var(--text-dim);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 11px; font-family: inherit;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .refresh-btn:hover { background: var(--bg-2); color: var(--text); }
+  .counts-ts { color: var(--text-faint); font-style: italic; }
+  .counts-err { color: var(--red); font-size: 11px; }
+
+  /* Schema expand */
+  .schema-toggle {
+    background: none; border: 0; padding: 0 6px 0 0; cursor: pointer;
+    color: var(--text-faint); font-family: inherit; font-size: 10px;
+    transition: transform 120ms ease, color 120ms ease;
+    display: inline-block;
+  }
+  .schema-toggle:hover { color: var(--text); }
+  .schema-toggle.open { transform: rotate(90deg); color: var(--purple); }
+  .schema-row { display: none; background: var(--bg-1); }
+  .schema-row.open { display: table-row; }
+  .schema-row td {
+    padding: 12px 18px 14px 34px !important;
+    border-bottom: 1px solid var(--line);
+  }
+  .schema-row .schema-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-faint); margin-bottom: 8px;
+  }
+  .schema-row .schema-title .mono { color: var(--text-dim); text-transform: none; letter-spacing: 0; }
+  .schema-row dl {
+    display: grid;
+    grid-template-columns: max-content max-content 1fr;
+    gap: 4px 14px;
+    margin: 0; font-size: 11px;
+  }
+  .schema-row dt {
+    font-family: 'JetBrains Mono', monospace; color: var(--purple);
+    font-weight: 600;
+  }
+  .schema-row .col-type {
+    font-family: 'JetBrains Mono', monospace; color: var(--text-faint);
+    font-size: 10px;
+  }
+  .schema-row dd { margin: 0; color: var(--text-dim); }
+
   @media (max-width: 1200px) {
     .board { grid-template-columns: 1fr 1fr; }
+    .cap-grid { grid-template-columns: repeat(4, 1fr); }
   }
   @media (max-width: 700px) {
+    .cap-grid { grid-template-columns: repeat(2, 1fr); }
     .board { grid-template-columns: 1fr; }
     .topbar { padding: 12px 14px; flex-direction: column; align-items: flex-start; }
     .toolbar { padding: 0 14px; }
@@ -327,6 +500,83 @@
     <span class="stat-pill queued"><b id="cQueued">0</b>queued</span>
     <span class="stat-pill active"><b id="cActive">0</b>active</span>
     <span class="stat-pill shipped"><b id="cShipped">0</b>shipped</span>
+  </div>
+</div>
+
+<div class="mission">
+  <div class="label">Mission · momentum bot</div>
+  <div class="sentence">Rotate into strong momentum coins, ride them without giving back peak, and exit before the thesis dies.</div>
+  <div class="scope-note">This roadmap covers only the acceleration / momentum rotation engine. Early-scanner Discord alerts, grid bot, and unrelated dashboard features are tracked elsewhere.</div>
+</div>
+
+<div class="scorecard">
+  <div class="scorecard-head">
+    <h2>Capability scorecard · what the bot must do well</h2>
+    <div class="legend">
+      <span class="l"><span class="dot working"></span>working</span>
+      <span class="l"><span class="dot partial"></span>partial</span>
+      <span class="l"><span class="dot dormant"></span>dormant</span>
+      <span class="l"><span class="dot not-yet"></span>not yet</span>
+      <span class="l"><span class="dot unknown"></span>unknown</span>
+    </div>
+  </div>
+  <div class="cap-grid" id="capGrid">
+    <div class="cap-tile" data-cap="scan">
+      <div class="cap-name">Acceleration scan</div>
+      <div class="cap-desc">Engine's own per-pair accel + ADX/RSI/candle/structural gates that pick entry candidates.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>gate_log, n1</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="entry_timing">
+      <div class="cap-name">Entry timing</div>
+      <div class="cap-desc">Enter at the right moment, not just because a coin qualifies. Includes the "wait 1m after close" idea.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>MAE · 1/16</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="in_trade_read">
+      <div class="cap-name">In-trade read</div>
+      <div class="cap-desc">Know what price / volume / book is doing WHILE in a position. 1 Hz holding card + 1 m candle stream.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>ws_matches</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="wall_intelligence">
+      <div class="cap-name">Wall intelligence</div>
+      <div class="cap-desc">Real L2 support/resistance — anchor stops to qualifying bid walls instead of round percentages.</div>
+      <div class="cap-foot">
+        <span class="cap-status dormant"><span class="dot"></span>dormant</span>
+        <span>walls · 0</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="anti_fakeout">
+      <div class="cap-name">Anti-fakeout</div>
+      <div class="cap-desc">Avoid spoofed walls + stop-hunts. Persistence gate + fee buffer + min_size_vs_position.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>q4 unrun</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="exit_timing">
+      <div class="cap-name">Exit timing</div>
+      <div class="cap-desc">Get out before giveback, not after. Accel-fade + ATR stop + 72 h cap (dormant) + regime exit.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>max-hold idle</span>
+      </div>
+    </div>
+    <div class="cap-tile" data-cap="trail_calibration">
+      <div class="cap-name">Trail calibration</div>
+      <div class="cap-desc">Tighten as peak grows without getting stamped out. Progressive +6 / +8 lock-in is the live driver.</div>
+      <div class="cap-foot">
+        <span class="cap-status partial"><span class="dot"></span>partial</span>
+        <span>MFE unrun</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -384,6 +634,281 @@
   </div>
 
 </div>
+
+<div class="data-accountability">
+  <h2>Data streams · is each one earning its keep?</h2>
+  <div class="sub">Each collection dataset should serve a capability above. If rows stay at zero or the analysis that consumes it never runs, it's not earning its disk. Row counts below are pulled live from the dashboard API.</div>
+  <div class="live-controls">
+    <button type="button" id="refresh-counts" class="refresh-btn">Refresh counts</button>
+    <span id="counts-timestamp" class="counts-ts">Loading…</span>
+    <span id="counts-error" class="counts-err" style="display:none"></span>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Dataset</th>
+        <th>Serves</th>
+        <th>Rows on Zima</th>
+        <th>Status</th>
+        <th>Next checkpoint</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-stream="wall_decisions">
+        <td class="mono"><button class="schema-toggle" data-toggle="wall_decisions" aria-label="Show schema">▸</button>wall_decisions</td>
+        <td><span class="cap-link">wall_intelligence</span><span class="cap-link">exit_timing</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Qualifying gate (3.0× / 10 s / 1.5 %) never fires on live pairs — decide whether to loosen after 7-day collection. See <span class="mono">decision_wall_aware_thresholds</span>.</td>
+      </tr>
+      <tr class="schema-row" data-schema="wall_decisions">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">candles.db / wall_decisions</span> — one row per wall-aware trail decision</div>
+          <dl>
+            <dt>id</dt><span class="col-type">INTEGER PK</span><dd>auto-increment row id</dd>
+            <dt>timestamp</dt><span class="col-type">TEXT (ISO)</span><dd>when the wall-aware trail made this decision</dd>
+            <dt>pair</dt><span class="col-type">TEXT</span><dd>trading pair (e.g. <span class="mono">BTC-USD</span>)</dd>
+            <dt>action</dt><span class="col-type">TEXT</span><dd>what the decision was: <span class="mono">anchor</span> / <span class="mono">raise</span> / <span class="mono">clear</span> / <span class="mono">hold</span></dd>
+            <dt>detail</dt><span class="col-type">TEXT</span><dd>human-readable reason (e.g. "wall persisted 12 s at 3.4× size")</dd>
+            <dt>current_price</dt><span class="col-type">REAL</span><dd>coin price at the moment of decision</dd>
+            <dt>wall_aware_stop</dt><span class="col-type">REAL</span><dd>stop price chosen by the wall-aware logic</dd>
+            <dt>entry_price</dt><span class="col-type">REAL</span><dd>our entry price on the open position</dd>
+            <dt>peak_price</dt><span class="col-type">REAL</span><dd>highest price seen since entry</dd>
+            <dt>wall_price</dt><span class="col-type">REAL</span><dd>price level of the qualifying bid wall</dd>
+            <dt>wall_usd</dt><span class="col-type">REAL</span><dd>USD size of that wall (must clear <span class="mono">min_size_vs_position</span>)</dd>
+            <dt>wall_age_ms</dt><span class="col-type">INTEGER</span><dd>how long (ms) the wall has persisted — persistence gate</dd>
+            <dt>book_bids</dt><span class="col-type">TEXT (JSON)</span><dd>snapshot of top bids at decision time</dd>
+            <dt>book_asks</dt><span class="col-type">TEXT (JSON)</span><dd>snapshot of top asks at decision time</dd>
+            <dt>created_at</dt><span class="col-type">TEXT</span><dd>DB insert time</dd>
+          </dl>
+        </td>
+      </tr>
+
+      <tr data-stream="mae_mfe">
+        <td class="mono"><button class="schema-toggle" data-toggle="mae_mfe" aria-label="Show schema">▸</button>MAE / MFE</td>
+        <td><span class="cap-link">entry_timing</span><span class="cap-link">trail_calibration</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Backfill remaining historical trades so q2 (MAE/MFE analysis) has signal to work with.</td>
+      </tr>
+      <tr class="schema-row" data-schema="mae_mfe">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">candles.db / momentum_trades</span> — MAE/MFE columns added to exit rows (sell side)</div>
+          <dl>
+            <dt>entry_price</dt><span class="col-type">REAL</span><dd>our fill price on the matching buy</dd>
+            <dt>exit_price</dt><span class="col-type">REAL</span><dd>our fill price on the sell</dd>
+            <dt>pnl_pct</dt><span class="col-type">REAL</span><dd>realized percent P&L for the trade</dd>
+            <dt>hold_hours</dt><span class="col-type">REAL</span><dd>total hold duration in hours</dd>
+            <dt>peak_price</dt><span class="col-type">REAL</span><dd>highest price reached during the hold</dd>
+            <dt>peak_pnl_pct</dt><span class="col-type">REAL</span><dd>highest unrealized pnl % reached (MFE upper bound)</dd>
+            <dt>trough_price</dt><span class="col-type">REAL</span><dd>lowest price reached during the hold</dd>
+            <dt>max_adverse_pct</dt><span class="col-type">REAL</span><dd><b>MAE</b>: worst pct underwater during the hold (negative number)</dd>
+            <dt>max_favorable_pct</dt><span class="col-type">REAL</span><dd><b>MFE</b>: best pct in profit during the hold</dd>
+            <dt>drawdown_from_peak</dt><span class="col-type">REAL</span><dd>pct giveback from peak to exit — key trail-calibration signal</dd>
+            <dt>trail_stop</dt><span class="col-type">REAL</span><dd>stop price at exit (whichever trail layer was tightest)</dd>
+            <dt>atr_stop</dt><span class="col-type">REAL</span><dd>ATR floor stop at exit — never crossed by other layers</dd>
+            <dt>exit_accel / exit_reason_detail</dt><span class="col-type">REAL / TEXT</span><dd>momentum acceleration and text reason at exit</dd>
+            <dt>exit_green_count</dt><span class="col-type">INTEGER</span><dd>consecutive green 1h candles at exit time</dd>
+            <dt>exit_body_ratio / exit_ath_dist</dt><span class="col-type">REAL</span><dd>candle quality + distance-from-ATH at exit</dd>
+            <dt>exit_time_at_level / ticks_since_new_peak</dt><span class="col-type">INTEGER</span><dd>flat-line duration and minutes since last new high</dd>
+          </dl>
+        </td>
+      </tr>
+
+      <tr data-stream="regime_snapshots">
+        <td class="mono"><button class="schema-toggle" data-toggle="regime_snapshots" aria-label="Show schema">▸</button>regime_snapshots</td>
+        <td><span class="cap-link">anti_fakeout</span><span class="cap-link">exit_timing</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Drives q3 regime-edge analysis once 7-day run completes.</td>
+      </tr>
+      <tr class="schema-row" data-schema="regime_snapshots">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">candles.db / regime_snapshots</span> — one row per regime evaluation (hourly)</div>
+          <dl>
+            <dt>id</dt><span class="col-type">INTEGER PK</span><dd>auto-increment row id</dd>
+            <dt>timestamp</dt><span class="col-type">TEXT (ISO)</span><dd>when the regime was evaluated</dd>
+            <dt>btc_price</dt><span class="col-type">REAL</span><dd>BTC close at evaluation</dd>
+            <dt>btc_ma</dt><span class="col-type">REAL</span><dd>500-hour BTC SMA (<span class="mono">REGIME_MA = 500</span>)</dd>
+            <dt>regime_state</dt><span class="col-type">TEXT</span><dd>label: <span class="mono">bullish</span> / <span class="mono">bearish</span> (with hysteresis)</dd>
+            <dt>regime_bullish</dt><span class="col-type">INTEGER</span><dd>1 if we may enter new trades, 0 = cash-only</dd>
+            <dt>btc_4h_return</dt><span class="col-type">REAL</span><dd>BTC 4-hour return % — short-term regime pulse</dd>
+            <dt>btc_24h_return</dt><span class="col-type">REAL</span><dd>BTC 24-hour return %</dd>
+            <dt>scans_pass</dt><span class="col-type">INTEGER</span><dd>how many pairs passed entry gates this scan</dd>
+            <dt>scans_fail</dt><span class="col-type">INTEGER</span><dd>how many pairs failed (gate-level block count)</dd>
+            <dt>holdings_count</dt><span class="col-type">INTEGER</span><dd>open momentum positions at snapshot time</dd>
+            <dt>created_at</dt><span class="col-type">TEXT</span><dd>DB insert time</dd>
+          </dl>
+        </td>
+      </tr>
+
+      <tr data-stream="ws_matches">
+        <td class="mono"><button class="schema-toggle" data-toggle="ws_matches" aria-label="Show schema">▸</button>ws_matches</td>
+        <td><span class="cap-link">in_trade_read</span><span class="cap-link">anti_fakeout</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Feeds q1 signal-persistence + q4 spoof detection. Both queued.</td>
+      </tr>
+      <tr class="schema-row" data-schema="ws_matches">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">market_tape.db / ws_matches</span> — one row per tape-reading match from Coinbase WebSocket</div>
+          <dl>
+            <dt>id</dt><span class="col-type">INTEGER PK</span><dd>auto-increment row id</dd>
+            <dt>ts</dt><span class="col-type">TEXT (ISO)</span><dd>trade time as ISO string</dd>
+            <dt>ts_epoch</dt><span class="col-type">REAL</span><dd>trade time as unix seconds (for fast range queries)</dd>
+            <dt>pair</dt><span class="col-type">TEXT</span><dd>pair the trade occurred on</dd>
+            <dt>trade_id</dt><span class="col-type">TEXT</span><dd>exchange trade id (dedup key)</dd>
+            <dt>price</dt><span class="col-type">REAL</span><dd>fill price</dd>
+            <dt>size</dt><span class="col-type">REAL</span><dd>fill size in base units</dd>
+            <dt>side</dt><span class="col-type">TEXT</span><dd>aggressor side: <span class="mono">buy</span> or <span class="mono">sell</span></dd>
+          </dl>
+        </td>
+      </tr>
+
+      <tr data-stream="l2_snapshots">
+        <td class="mono"><button class="schema-toggle" data-toggle="l2_snapshots" aria-label="Show schema">▸</button>l2_snapshots</td>
+        <td><span class="cap-link">wall_intelligence</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Raw L2 — tells us what walls EXIST even when qualifying gate rejects them. Use this to decide how to loosen wall_decisions thresholds.</td>
+      </tr>
+      <tr class="schema-row" data-schema="l2_snapshots">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">market_tape.db / l2_snapshots</span> — periodic order-book snapshots</div>
+          <dl>
+            <dt>id</dt><span class="col-type">INTEGER PK</span><dd>auto-increment row id</dd>
+            <dt>ts</dt><span class="col-type">TEXT (ISO)</span><dd>snapshot time (ISO)</dd>
+            <dt>ts_epoch</dt><span class="col-type">REAL</span><dd>snapshot time (unix seconds)</dd>
+            <dt>pair</dt><span class="col-type">TEXT</span><dd>pair snapshot covers</dd>
+            <dt>mid</dt><span class="col-type">REAL</span><dd>midprice = (best bid + best ask) / 2</dd>
+            <dt>spread_bps</dt><span class="col-type">REAL</span><dd>bid-ask spread in basis points (10 bps = 0.1%)</dd>
+            <dt>bids</dt><span class="col-type">TEXT (JSON)</span><dd>top-N bid ladder as JSON list of [price, size]</dd>
+            <dt>asks</dt><span class="col-type">TEXT (JSON)</span><dd>top-N ask ladder as JSON list of [price, size]</dd>
+          </dl>
+        </td>
+      </tr>
+
+      <tr data-stream="candles_1m">
+        <td class="mono"><button class="schema-toggle" data-toggle="candles_1m" aria-label="Show schema">▸</button>1m candles</td>
+        <td><span class="cap-link">entry_timing</span><span class="cap-link">in_trade_read</span></td>
+        <td class="mono count-cell">—</td>
+        <td class="status-cell"><span class="cap-status unknown"><span class="dot"></span>unknown</span></td>
+        <td>Live writer shipped in sim_runner poll loop. Powers b1 (1 m micro-entry) and n10 (sub-hourly cadence).</td>
+      </tr>
+      <tr class="schema-row" data-schema="candles_1m">
+        <td colspan="5">
+          <div class="schema-title">Schema · <span class="mono">candles.db / candles</span> — 1-minute bars use this shared table with <span class="mono">granularity = 'ONE_MINUTE'</span></div>
+          <dl>
+            <dt>pair</dt><span class="col-type">TEXT</span><dd>trading pair (e.g. <span class="mono">ETH-USD</span>)</dd>
+            <dt>granularity</dt><span class="col-type">TEXT</span><dd>bar size — filter to <span class="mono">ONE_MINUTE</span> for this stream</dd>
+            <dt>timestamp</dt><span class="col-type">TEXT (ISO)</span><dd>bar start time (minute boundary)</dd>
+            <dt>open</dt><span class="col-type">REAL</span><dd>first trade price in the minute</dd>
+            <dt>high</dt><span class="col-type">REAL</span><dd>highest trade price in the minute</dd>
+            <dt>low</dt><span class="col-type">REAL</span><dd>lowest trade price in the minute</dd>
+            <dt>close</dt><span class="col-type">REAL</span><dd>last trade price in the minute</dd>
+            <dt>volume</dt><span class="col-type">REAL</span><dd>total traded size in base units</dd>
+            <dt class="mono" style="grid-column: 1 / -1; font-style: italic; color: var(--text-faint); font-weight: 400;">UNIQUE(pair, granularity, timestamp) — dedup key</dt>
+          </dl>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  const STREAMS = [
+    { id: "wall_decisions", key: "wall_decisions" },
+    { id: "mae_mfe",        key: "mae_mfe"        },
+    { id: "regime_snapshots", key: "regime_snapshots" },
+    { id: "ws_matches",     key: "ws_matches"     },
+    { id: "l2_snapshots",   key: "l2_snapshots"   },
+    { id: "candles_1m",     key: "candles_1m"     },
+  ];
+
+  function fmt(n) {
+    if (n === -1 || n === null || n === undefined) return "—";
+    return Number(n).toLocaleString();
+  }
+
+  function pill(status) {
+    const label = status === "working" ? "working"
+                : status === "partial" ? "partial"
+                : status === "dormant" ? "dormant"
+                : "unknown";
+    return `<span class="cap-status ${status}"><span class="dot"></span>${label}</span>`;
+  }
+
+  function statusFor(streamId, n, extra) {
+    if (n === -1 || n === null || n === undefined) return "unknown";
+    if (streamId === "mae_mfe") {
+      const total = extra && extra.momentum_trades_total;
+      if (!total || total <= 0) return "dormant";
+      if (n >= total * 0.5) return "partial";
+      return "dormant";
+    }
+    if (n === 0) return "dormant";
+    if (streamId === "wall_decisions") return n >= 50 ? "working" : "partial";
+    return "partial";
+  }
+
+  function formatCount(streamId, n, extra) {
+    if (n === -1 || n === null || n === undefined) return "unavailable";
+    if (streamId === "mae_mfe") {
+      const total = extra && extra.momentum_trades_total;
+      return total > 0 ? `${fmt(n)} / ${fmt(total)}` : fmt(n);
+    }
+    return fmt(n);
+  }
+
+  async function refresh() {
+    const ts = document.getElementById("counts-timestamp");
+    const err = document.getElementById("counts-error");
+    ts.textContent = "Loading…";
+    err.style.display = "none";
+    try {
+      const r = await fetch("/api/momentum/data-stream-counts", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      for (const s of STREAMS) {
+        const row = document.querySelector(`tr[data-stream="${s.id}"]`);
+        if (!row) continue;
+        const n = d[s.key];
+        const st = statusFor(s.id, n, d);
+        row.querySelector(".count-cell").textContent = formatCount(s.id, n, d);
+        row.querySelector(".status-cell").innerHTML = pill(st);
+      }
+      const when = d.timestamp ? new Date(d.timestamp) : new Date();
+      ts.textContent = "Last refreshed " + when.toLocaleTimeString();
+    } catch (e) {
+      err.textContent = "Live counts unavailable (" + (e && e.message || e) + ")";
+      err.style.display = "inline";
+      ts.textContent = "—";
+    }
+  }
+
+  function wireSchemaToggles() {
+    document.querySelectorAll(".schema-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.toggle;
+        const row = document.querySelector(`tr.schema-row[data-schema="${id}"]`);
+        if (!row) return;
+        const open = row.classList.toggle("open");
+        btn.classList.toggle("open", open);
+        btn.textContent = open ? "▾" : "▸";
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("refresh-counts");
+    if (btn) btn.addEventListener("click", refresh);
+    wireSchemaToggles();
+    refresh();
+    setInterval(refresh, 60000);
+  });
+})();
+</script>
 
 <!-- Drawer -->
 <div class="drawer-overlay" id="overlay"></div>

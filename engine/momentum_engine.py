@@ -48,7 +48,7 @@ TOP_N = 1                 # concentrate on single best coin
 REBAL_HOURS = 168         # weekly
 SHORT_LB = 336            # 14 days in hours
 LONG_LB = 720             # 30 days in hours
-REGIME_MA = 500            # BTC SMA period (hourly)
+REGIME_MA = 500            # BTC SMA period (hourly). Rationale + warmup coupling: memory/decision_structural_constants.md
 REGIME_HYSTERESIS = 0.05   # 5% band — BTC must be 5% above SMA to go bullish
 REENTRY_THRESHOLD = 0.10   # 10% — enter on strong signals (20% was too restrictive for normal markets)
 ACCEL_ENTRY = 0.20         # 20% — threshold for freshness gate (how long has accel been above this)
@@ -56,19 +56,20 @@ FEE_RATE = 0.006           # Coinbase taker fee
 RSI_MAX = 65               # block entries when RSI > 65 (overbought)
 RSI_PERIOD = 14            # RSI lookback
 EQUITY_TRAIL_PCT = 0.15    # emergency backstop — portfolio-level (should rarely fire now)
-EXIT_COOLDOWN = 1          # hours to wait after exit before re-entering (was 4h, sim shows 1h optimal)
+EXIT_COOLDOWN = 1          # hours to wait after exit before re-entering. History 48h→4h→1h + revisit triggers: memory/decision_cooldown.md
 MIN_HOLD_HOURS = 0         # no minimum hold — hysteresis prevents whipsaw
 ATR_PERIOD = 24            # ATR lookback for smart stop calculation
 
 # New exit rules (Round 3 winner: +51.8% avg across 3 market conditions, 3/3 profitable)
 ATR_STOP_MULT = 2.5        # stop at entry - 2.5 * ATR (adapts to each coin's volatility)
 ATR_STOP_LOOKBACK = 24     # hours of ATR to measure coin's volatility
-ACCEL_EXIT_THRESH = 0.05   # exit when momentum acceleration fades below 5%
+ACCEL_EXIT_THRESH = 0.05   # exit when momentum acceleration fades below 5%. Rationale + gaps: memory/decision_accel_exit.md
 ACCEL_EXIT_MIN_HOLD = 4    # don't check accel exit until held for 4 hours
-MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed
+MAX_HOLD_HOURS = 72        # force exit after 3 days — prevents slow bleed. Rationale + dormancy note: memory/decision_max_hold_hours.md
 
 # Delayed+Stale trailing stop — validated on 159 scanner alerts + 9 momentum trades
 # Captures 70-90% of big moves while capping dud losses at initial stop
+# Full rationale + progressive-tier derivation + revisit triggers: memory/decision_progressive_trail.md
 TRAIL_WIDE_PCT = 5.0       # Layer 1: wide trail when peak >= activation (breathing room)
 TRAIL_ACTIVATE_PCT = 2.0   # peak PnL% needed to activate wide trail
 TRAIL_TIGHT_PCT = 2.5      # Layer 2: tighter trail after delay period above threshold
@@ -81,6 +82,7 @@ TRAIL_STALE_PCT = 2.0      # Layer 3: tightest trail when peak goes stale (no ne
 TRAIL_STALE_TICKS = 30     # ticks (minutes) with no new high = stale peak
 
 # New entry filters (Round 1 winner: only strategy profitable in choppy markets)
+# Cluster rationale across 343e90f + debfa65 + 8fb0aa6: memory/decision_entry_quality_gates.md
 ADX_FILTER_THRESH = 25     # only enter when ADX > 25 (confirmed trend strength)
 RSI_TREND_THRESH = 50      # only enter when RSI > 50 (uptrend confirmed)
 LOCKOUT_HOURS = 24         # after selling a coin, don't re-buy it for 24h

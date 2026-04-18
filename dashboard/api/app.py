@@ -2626,6 +2626,71 @@ def api_momentum_gate_stats():
         conn.close()
 
 
+@app.route("/api/momentum/data-stream-counts")
+def api_momentum_data_stream_counts():
+    """Live row counts for the 6 data-collection streams feeding the roadmap scorecard.
+    Returns -1 for a stream if its DB/table is missing (honest, not fabricated)."""
+    from datetime import datetime, timezone
+
+    result = {
+        "wall_decisions": -1,
+        "momentum_trades_total": -1,
+        "mae_mfe_filled": -1,
+        "regime_snapshots": -1,
+        "ws_matches": -1,
+        "l2_snapshots": -1,
+        "candles_1m": -1,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # candles.db — wall_decisions, momentum_trades, regime_snapshots, candles(1m)
+    try:
+        conn = get_db()
+        try:
+            def count(sql, params=()):
+                try:
+                    row = conn.execute(sql, params).fetchone()
+                    return int(row[0]) if row else 0
+                except Exception:
+                    return -1
+
+            result["wall_decisions"] = count("SELECT COUNT(*) FROM wall_decisions")
+            result["momentum_trades_total"] = count("SELECT COUNT(*) FROM momentum_trades")
+            result["mae_mfe_filled"] = count(
+                "SELECT COUNT(*) FROM momentum_trades "
+                "WHERE max_adverse_pct IS NOT NULL OR max_favorable_pct IS NOT NULL"
+            )
+            result["regime_snapshots"] = count("SELECT COUNT(*) FROM regime_snapshots")
+            result["candles_1m"] = count(
+                "SELECT COUNT(*) FROM candles WHERE granularity = 'ONE_MINUTE'"
+            )
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # market_tape.db — ws_matches, l2_snapshots
+    try:
+        tape_path = os.path.join(os.path.dirname(DB_PATH), "market_tape.db")
+        if os.path.exists(tape_path):
+            tconn = sqlite3.connect(tape_path)
+            try:
+                def tcount(sql):
+                    try:
+                        row = tconn.execute(sql).fetchone()
+                        return int(row[0]) if row else 0
+                    except Exception:
+                        return -1
+                result["ws_matches"] = tcount("SELECT COUNT(*) FROM ws_matches")
+                result["l2_snapshots"] = tcount("SELECT COUNT(*) FROM l2_snapshots")
+            finally:
+                tconn.close()
+    except Exception:
+        pass
+
+    return jsonify(result)
+
+
 # ---------- Early Momentum Scanner ----------
 
 import threading
