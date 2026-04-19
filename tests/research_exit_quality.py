@@ -59,6 +59,23 @@ def freshness_report(con: duckdb.DuckDBPyConnection) -> str:
     return "## Snapshot freshness\n\n| source | latest row |\n|---|---|\n" + "\n".join(rows) + "\n"
 
 
+def iso_to_epoch(ts_iso: str) -> float:
+    """Parse an ISO timestamp to UTC epoch seconds.
+
+    candles.db stores timestamps as UTC-naive ISO text (e.g. '2026-04-17T02:54:56').
+    Treat naive strings as UTC, not local. An explicit offset/Z is honored.
+    """
+    d = dt.datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=dt.timezone.utc)
+    return d.timestamp()
+
+
+def epoch_to_iso(ts_epoch: float) -> str:
+    """Format a UTC epoch as a naive UTC ISO string matching candles.db format."""
+    return dt.datetime.fromtimestamp(ts_epoch, tz=dt.timezone.utc).replace(tzinfo=None).isoformat()
+
+
 @dataclass
 class SignalResult:
     score: Optional[float]   # in [-1, +1], or None if no data
@@ -125,7 +142,7 @@ def signal_book_imbalance(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: f
 
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
-    ts_epoch = dt.datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).timestamp()
+    ts_epoch = iso_to_epoch(ts_iso)
     print(f"probe {pair} @ {ts_iso} (epoch {ts_epoch:.0f})")
     for name, fn in [
         ("tape_balance", signal_tape_balance),
