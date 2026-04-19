@@ -337,6 +337,64 @@ def label_trade(path: dict) -> str:
     return "ambiguous"
 
 
+def emit_case_study(
+    con: duckdb.DuckDBPyConnection,
+    trade_id: int,
+) -> str:
+    """Emit a markdown block for one trade: signals at 7 offsets + post-exit path."""
+    t = con.execute("""
+        SELECT id, timestamp, pair, entry_price, exit_price, pnl_pct, hold_hours,
+               peak_pnl_pct, reason
+        FROM candles_db.momentum_trades
+        WHERE id = ? AND side = 'sell'
+    """, [trade_id]).fetchone()
+    if t is None:
+        return f"## Trade {trade_id}\n\n*(not found)*\n"
+    (tid, ts_iso, pair, entry_px, exit_px, pnl, hold_h, peak_pnl, reason) = t
+    exit_epoch = iso_to_epoch(ts_iso)
+
+    offsets_min = [-5, -1, 0, 1, 5, 30, 360]
+    lines = [
+        f"## Case: trade #{tid} — {pair}",
+        f"- entry: ${entry_px}  exit: ${exit_px}  pnl: {pnl:+.2f}%  peak_pnl: {peak_pnl:+.2f}%  hold: {hold_h}h",
+        f"- reason: `{reason}`",
+        f"- exit_ts: `{ts_iso}`",
+        "",
+        "### Signals at key offsets",
+        "| offset | composite | tape | book | micro | wall | regime |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for off in offsets_min:
+        probe_epoch = exit_epoch + off * 60
+        c = compute_composite(con, pair, probe_epoch, entry_px)
+        def fmt(s):
+            if s.score is None:
+                return "–"
+            return f"{s.score:+.2f}"
+        comp = f"{c.composite:+.2f}" if c.composite is not None else "–"
+        lines.append(
+            f"| T{off:+d}m | {comp} | "
+            f"{fmt(c.signals['tape_balance'])} | "
+            f"{fmt(c.signals['book_imbalance'])} | "
+            f"{fmt(c.signals['micro_trend'])} | "
+            f"{fmt(c.signals['wall_state'])} | "
+            f"{fmt(c.signals['regime'])} |"
+        )
+
+    p = post_exit_path(con, pair, exit_epoch, exit_px)
+    up_s = f"{p['max_up_pct']:+.2f}%" if p.get("n", 0) > 0 else "–"
+    dn_s = f"{p['max_down_pct']:+.2f}%" if p.get("n", 0) > 0 else "–"
+    lines += [
+        "",
+        "### Post-exit price path",
+        f"- max_up (6h): {up_s} · max_down (6h): {dn_s}",
+        f"- +15m: {p.get('p_15min')}  +30m: {p.get('p_30min')}  +1h: {p.get('p_1h')}  +3h: {p.get('p_3h')}  +6h: {p.get('p_6h')}",
+        f"- **label: `{label_trade(p)}`**",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: float = 0.0) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
@@ -369,6 +427,17 @@ def main() -> None:
             print(f"  {name}: {s.score}")
         print(f"post-exit: {p}")
         print(f"label: {label_trade(p)}")
+        return
+    if len(sys.argv) >= 2 and sys.argv[1] == "phase1":
+        # usage: phase1 <id1> [<id2> ...]
+        ids = [int(x) for x in sys.argv[2:]]
+        stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
+        out_path = OUT_DIR / f"exit_quality_phase1_{stamp}.md"
+        blocks = [f"# Phase 1 Case Study — {stamp}\n", freshness_report(con)]
+        for tid in ids:
+            blocks.append(emit_case_study(con, tid))
+        out_path.write_text("\n".join(blocks), encoding="utf-8")
+        print(f"Wrote {out_path}")
         return
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
     out_path = OUT_DIR / f"exit_quality_{stamp}.md"
