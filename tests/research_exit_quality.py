@@ -89,13 +89,47 @@ def signal_tape_balance(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: flo
     return SignalResult(score, {"n_trades": n, "buy_usd": buy_usd, "sell_usd": sell_usd})
 
 
+def signal_book_imbalance(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float) -> SignalResult:
+    """Signal 2: nearest L2 snapshot, bid-vs-ask USD within ±2% of mid.
+
+    bids/asks are JSON '[[price,size],...]' strings. Score = (bid_usd - ask_usd) / total.
+    None if no snapshot within 5 min before ts_epoch.
+    """
+    max_age_s = 300.0
+    row = con.execute("""
+        SELECT ts_epoch, mid, bids, asks
+        FROM tape_db.l2_snapshots
+        WHERE pair = ?
+          AND ts_epoch BETWEEN ? AND ?
+        ORDER BY ts_epoch DESC
+        LIMIT 1
+    """, [pair, ts_epoch - max_age_s, ts_epoch]).fetchone()
+    if row is None:
+        return SignalResult(None, {"reason": "no_snapshot_within_5min"})
+    snap_ts, mid, bids_json, asks_json = row
+    if mid is None or mid <= 0:
+        return SignalResult(None, {"reason": "bad_mid", "ts_epoch": snap_ts})
+    band_lo = mid * 0.98
+    band_hi = mid * 1.02
+    bids = json.loads(bids_json)
+    asks = json.loads(asks_json)
+    bid_usd = sum(p * s for p, s in bids if band_lo <= p <= mid)
+    ask_usd = sum(p * s for p, s in asks if mid <= p <= band_hi)
+    total = bid_usd + ask_usd
+    if total <= 0:
+        return SignalResult(None, {"reason": "no_liquidity_in_band", "mid": mid})
+    score = (bid_usd - ask_usd) / total
+    snap_age = ts_epoch - snap_ts
+    return SignalResult(score, {"bid_usd": bid_usd, "ask_usd": ask_usd, "mid": mid, "snap_age_s": snap_age})
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = dt.datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).timestamp()
     print(f"probe {pair} @ {ts_iso} (epoch {ts_epoch:.0f})")
     for name, fn in [
         ("tape_balance", signal_tape_balance),
-        # others added in later tasks
+        ("book_imbalance", signal_book_imbalance),
     ]:
         r = fn(con, pair, ts_epoch)
         print(f"  {name}: score={r.score} raw={r.raw}")
