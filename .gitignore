@@ -48,6 +48,7 @@ tests/research_*.py
 tests/sim_*.py
 tests/backfill_candles.py
 tests/replay_zima.py
+tests/out/
 
 # Old files
 archive/
