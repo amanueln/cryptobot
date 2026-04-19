@@ -104,7 +104,7 @@ def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
 def main() -> None:
     con = connect()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    if len(sys.argv) >= 3 and sys.argv[1] == "probe":
+    if len(sys.argv) >= 4 and sys.argv[1] == "probe":
         # usage: python research_exit_quality.py probe <PAIR> <ISO_TS>
         _probe(con, sys.argv[2], sys.argv[3])
         return
