@@ -288,6 +288,8 @@ def post_exit_path(
     con: duckdb.DuckDBPyConnection, pair: str, exit_ts_epoch: float, exit_price: float,
 ) -> dict:
     """Pull 1m closes for the 6 hours AFTER exit; return key offsets + max up/down."""
+    if not exit_price or exit_price <= 0:
+        return {"n": 0, "reason": "no_exit_price"}
     ts_iso_start = epoch_to_iso(exit_ts_epoch)
     ts_iso_end   = epoch_to_iso(exit_ts_epoch + 6 * 3600)
     rows = con.execute("""
