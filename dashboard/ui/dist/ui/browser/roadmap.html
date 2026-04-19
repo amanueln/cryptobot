@@ -1393,6 +1393,19 @@ const SEED = [
     solves: "Latency between \"setup is real\" and \"bot notices.\"",
     benefit: "Cheap experiment. Needs the 1m/15m backfill (which we already have).",
     subs: [], tags: ["entries", "cadence"] },
+  { id: "n11", col: "backlog", cat: "analysis", pri: "p2",
+    title: "Weekend-vs-weekday performance split",
+    body: "Group all momentum trades by day-of-week of the BUY. Compare win-rate, avg P&L, accel-faded exit rate, and trail-stop hit rate for Sat/Sun vs Mon–Fri. Gate: ≥15 trades in each bucket before drawing conclusions.",
+    why: "Crypto trades 24/7 but volume doesn't. Institutional desks and market-makers scale back on weekends → wider spreads, choppier price action, more false breakouts. Momentum strategies specifically rely on follow-through volume, which is exactly what weekends lack. Hypothesis surfaced 2026-04-18 after a Saturday full of losses (AVNT, FARTCOIN, AERO manual).",
+    solves: "\"Are we systematically losing money on Sat/Sun that we'd keep on Mon–Fri?\" If yes, we have actionable levers (pause entries on weekends, raise ADX/accel threshold on Sat/Sun, or reduce allocation).",
+    benefit: "Zero new data collection — runs entirely off momentum_trades. If weekend edge is clearly negative, gating entries by day-of-week is a one-line config change with real expected value. If weekend performance matches weekday, rules out a recurring worry.",
+    subs: [
+      { text: "Wait for ≥15 trades with BUY on Sat/Sun AND ≥15 with BUY on Mon–Fri", done: false },
+      { text: "SQL group-by to compare win-rate, avg P&L, exit-reason distribution", done: false },
+      { text: "Cross-check against BTC volume + ATR on same days (is the effect coin-specific or market-wide?)", done: false },
+      { text: "If weekend edge < weekday edge by a statistically meaningful margin, propose gate (pause / threshold bump / alloc cut)", done: false }
+    ],
+    tags: ["performance", "regime", "entries"] },
 ];
 
 /* ===================================================
