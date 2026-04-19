@@ -140,6 +140,60 @@ def signal_book_imbalance(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: f
     return SignalResult(score, {"bid_usd": bid_usd, "ask_usd": ask_usd, "mid": mid, "snap_age_s": snap_age})
 
 
+def _ema(values: list[float], period: int) -> list[float]:
+    """Simple EMA. Returns list same length as input; first (period-1) entries padded with None."""
+    if len(values) < period:
+        return []
+    k = 2.0 / (period + 1)
+    out = [sum(values[:period]) / period]
+    for v in values[period:]:
+        out.append(out[-1] + k * (v - out[-1]))
+    # pad front with Nones so index aligns with input
+    return [None] * (period - 1) + out
+
+
+def signal_micro_trend(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float) -> SignalResult:
+    """Signal 3: 1m EMA5 vs EMA20 over the last 60 minutes before ts_epoch.
+
+    Score = sign(EMA5 - EMA20) * min(1, abs(slope_per_min)/0.001),
+    where slope_per_min is (EMA5_now - EMA5_60min_ago) / 60 / close_now.
+    None if fewer than 25 1m candles available (need enough for EMA20 + slope window).
+    """
+    ts_iso = epoch_to_iso(ts_epoch)
+    rows = con.execute("""
+        SELECT timestamp, close
+        FROM candles_db.candles
+        WHERE pair = ?
+          AND granularity = 'ONE_MINUTE'
+          AND timestamp <= ?
+        ORDER BY timestamp DESC
+        LIMIT 60
+    """, [pair, ts_iso]).fetchall()
+    if len(rows) < 25:
+        return SignalResult(None, {"reason": "insufficient_candles", "n": len(rows)})
+    # reverse to chronological
+    rows = rows[::-1]
+    closes = [r[1] for r in rows]
+    ema5 = _ema(closes, 5)
+    ema20 = _ema(closes, 20)
+    if ema5[-1] is None or ema20[-1] is None:
+        return SignalResult(None, {"reason": "ema_not_computed"})
+    ema5_now, ema20_now = ema5[-1], ema20[-1]
+    ema5_ago = ema5[max(0, len(ema5) - 60)] if len(ema5) >= 60 and ema5[len(ema5)-60] is not None else ema5[20]
+    close_now = closes[-1]
+    if close_now <= 0:
+        return SignalResult(None, {"reason": "bad_close"})
+    window_min = max(1, len(ema5) - 1 - max(0, len(ema5) - 60))
+    slope_per_min = (ema5_now - ema5_ago) / window_min / close_now
+    direction = 1.0 if ema5_now > ema20_now else -1.0 if ema5_now < ema20_now else 0.0
+    magnitude = min(1.0, abs(slope_per_min) / 0.001)
+    score = direction * magnitude
+    return SignalResult(score, {
+        "ema5": ema5_now, "ema20": ema20_now, "close": close_now,
+        "slope_per_min": slope_per_min, "n_candles": len(rows),
+    })
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
@@ -147,6 +201,7 @@ def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
     for name, fn in [
         ("tape_balance", signal_tape_balance),
         ("book_imbalance", signal_book_imbalance),
+        ("micro_trend", signal_micro_trend),
     ]:
         r = fn(con, pair, ts_epoch)
         print(f"  {name}: score={r.score} raw={r.raw}")
