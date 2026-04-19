@@ -203,8 +203,10 @@ def signal_wall_state(
     +1 if action in ('anchor','shift') AND wall_aware_stop >= entry_price * 1.012 (fee buffer).
      0 if observed but below fee buffer (can't actually protect profit).
     -1 if action = 'cleared' (wall evaporated).
-    None if no rows for this pair ever.
+    None if no rows for this pair ever, or if entry_price <= 0 (can't compute buffer).
     """
+    if entry_price <= 0:
+        return SignalResult(None, {"reason": "no_entry_price"})
     ts_iso = epoch_to_iso(ts_epoch)
     row = con.execute("""
         SELECT timestamp, action, wall_aware_stop, wall_price, wall_usd, wall_age_ms
