@@ -59,12 +59,57 @@ def freshness_report(con: duckdb.DuckDBPyConnection) -> str:
     return "## Snapshot freshness\n\n| source | latest row |\n|---|---|\n" + "\n".join(rows) + "\n"
 
 
+@dataclass
+class SignalResult:
+    score: Optional[float]   # in [-1, +1], or None if no data
+    raw: dict
+
+
+def signal_tape_balance(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float) -> SignalResult:
+    """Signal 1: tape-order-flow balance over the 10 min before ts_epoch.
+
+    (buy_usd - sell_usd) / total_usd using ws_matches.side uppercase BUY/SELL.
+    Score in [-1, +1]. None if no trades in window.
+    """
+    lookback_s = 600.0
+    row = con.execute("""
+        SELECT
+            SUM(CASE WHEN UPPER(side)='BUY'  THEN price*size ELSE 0 END) AS buy_usd,
+            SUM(CASE WHEN UPPER(side)='SELL' THEN price*size ELSE 0 END) AS sell_usd,
+            COUNT(*) AS n
+        FROM tape_db.ws_matches
+        WHERE pair = ?
+          AND ts_epoch BETWEEN ? AND ?
+    """, [pair, ts_epoch - lookback_s, ts_epoch]).fetchone()
+    buy_usd, sell_usd, n = (row[0] or 0.0), (row[1] or 0.0), row[2]
+    total = buy_usd + sell_usd
+    if n == 0 or total <= 0:
+        return SignalResult(None, {"n_trades": n, "reason": "no_trades_in_window"})
+    score = (buy_usd - sell_usd) / total
+    return SignalResult(score, {"n_trades": n, "buy_usd": buy_usd, "sell_usd": sell_usd})
+
+
+def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
+    """Print every signal's value at (pair, ts_iso). For smoke-testing."""
+    ts_epoch = dt.datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).timestamp()
+    print(f"probe {pair} @ {ts_iso} (epoch {ts_epoch:.0f})")
+    for name, fn in [
+        ("tape_balance", signal_tape_balance),
+        # others added in later tasks
+    ]:
+        r = fn(con, pair, ts_epoch)
+        print(f"  {name}: score={r.score} raw={r.raw}")
+
+
 def main() -> None:
     con = connect()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    if len(sys.argv) >= 3 and sys.argv[1] == "probe":
+        # usage: python research_exit_quality.py probe <PAIR> <ISO_TS>
+        _probe(con, sys.argv[2], sys.argv[3])
+        return
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
     out_path = OUT_DIR / f"exit_quality_{stamp}.md"
-
     lines = [f"# Exit-Quality Analysis — {stamp}\n", freshness_report(con)]
     out_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Wrote {out_path}")
