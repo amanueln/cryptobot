@@ -233,6 +233,34 @@ def signal_wall_state(
     return SignalResult(0.0, {"action": action, "ts": ts, "reason": "other_action"})
 
 
+def signal_regime(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float) -> SignalResult:
+    """Signal 5: BTC-keyed regime snapshot (most recent ≤ ts_epoch).
+
+    +1 if regime_bullish=1 AND btc_4h_return > 0.
+    -1 if regime_bullish=0 AND btc_4h_return < 0.
+     0 otherwise (mixed signals).
+    None if no snapshot found.
+    """
+    ts_iso = epoch_to_iso(ts_epoch)
+    row = con.execute("""
+        SELECT timestamp, regime_bullish, btc_4h_return, btc_24h_return
+        FROM candles_db.regime_snapshots
+        WHERE timestamp <= ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+    """, [ts_iso]).fetchone()
+    if row is None:
+        return SignalResult(None, {"reason": "no_regime_snapshot"})
+    ts, bullish, r4h, r24h = row
+    if bullish == 1 and (r4h or 0) > 0:
+        score = 1.0
+    elif bullish == 0 and (r4h or 0) < 0:
+        score = -1.0
+    else:
+        score = 0.0
+    return SignalResult(score, {"ts": ts, "bullish": bullish, "btc_4h": r4h, "btc_24h": r24h})
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: float = 0.0) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
@@ -241,6 +269,7 @@ def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: 
     print(f"  book_imbalance: {signal_book_imbalance(con, pair, ts_epoch)}")
     print(f"  micro_trend:    {signal_micro_trend(con, pair, ts_epoch)}")
     print(f"  wall_state:     {signal_wall_state(con, pair, ts_epoch, entry_price)}")
+    print(f"  regime:         {signal_regime(con, pair, ts_epoch)}")
 
 
 def main() -> None:
