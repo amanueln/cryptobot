@@ -261,6 +261,80 @@ def signal_regime(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float) ->
     return SignalResult(score, {"ts": ts, "bullish": bullish, "btc_4h": r4h, "btc_24h": r24h})
 
 
+@dataclass
+class CompositeResult:
+    composite: Optional[float]  # mean of non-None signal scores, or None if all None
+    signals: dict               # name -> SignalResult
+    n_available: int
+
+
+def compute_composite(
+    con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float, entry_price: float,
+) -> CompositeResult:
+    """Compute all 5 signals and return equal-weighted mean over available ones."""
+    sigs = {
+        "tape_balance":   signal_tape_balance(con, pair, ts_epoch),
+        "book_imbalance": signal_book_imbalance(con, pair, ts_epoch),
+        "micro_trend":    signal_micro_trend(con, pair, ts_epoch),
+        "wall_state":     signal_wall_state(con, pair, ts_epoch, entry_price),
+        "regime":         signal_regime(con, pair, ts_epoch),
+    }
+    scores = [s.score for s in sigs.values() if s.score is not None]
+    composite = sum(scores) / len(scores) if scores else None
+    return CompositeResult(composite, sigs, len(scores))
+
+
+def post_exit_path(
+    con: duckdb.DuckDBPyConnection, pair: str, exit_ts_epoch: float, exit_price: float,
+) -> dict:
+    """Pull 1m closes for the 6 hours AFTER exit; return key offsets + max up/down."""
+    ts_iso_start = epoch_to_iso(exit_ts_epoch)
+    ts_iso_end   = epoch_to_iso(exit_ts_epoch + 6 * 3600)
+    rows = con.execute("""
+        SELECT timestamp, close, high, low
+        FROM candles_db.candles
+        WHERE pair = ?
+          AND granularity = 'ONE_MINUTE'
+          AND timestamp BETWEEN ? AND ?
+        ORDER BY timestamp
+    """, [pair, ts_iso_start, ts_iso_end]).fetchall()
+    if not rows:
+        return {"n": 0, "reason": "no_post_exit_candles"}
+    highs = [r[2] for r in rows]
+    lows  = [r[3] for r in rows]
+    def pct(p): return (p - exit_price) / exit_price * 100.0
+    def at_offset(offset_min: int) -> Optional[float]:
+        target = exit_ts_epoch + offset_min * 60
+        target_iso = epoch_to_iso(target)
+        for ts, close, *_ in rows:
+            if ts >= target_iso:
+                return close
+        return None
+    return {
+        "n": len(rows),
+        "p_15min":  at_offset(15),
+        "p_30min":  at_offset(30),
+        "p_1h":     at_offset(60),
+        "p_3h":     at_offset(180),
+        "p_6h":     at_offset(360),
+        "max_up_pct":   pct(max(highs)),
+        "max_down_pct": pct(min(lows)),
+    }
+
+
+def label_trade(path: dict) -> str:
+    """Label a trade as freak-out / legit / ambiguous per post-exit price action."""
+    if path.get("n", 0) == 0:
+        return "no_data"
+    up = path["max_up_pct"]
+    down = path["max_down_pct"]
+    if up > FREAK_OUT_UP_PCT:
+        return "freak-out"
+    if down < -LEGIT_DOWN_PCT:
+        return "legit"
+    return "ambiguous"
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: float = 0.0) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
@@ -278,6 +352,21 @@ def main() -> None:
     if len(sys.argv) >= 4 and sys.argv[1] == "probe":
         entry = float(sys.argv[4]) if len(sys.argv) >= 5 else 0.0
         _probe(con, sys.argv[2], sys.argv[3], entry)
+        return
+    if len(sys.argv) >= 6 and sys.argv[1] == "composite":
+        # usage: composite <PAIR> <EXIT_ISO> <ENTRY_PRICE> <EXIT_PRICE>
+        pair = sys.argv[2]
+        ts_iso = sys.argv[3]
+        entry_px = float(sys.argv[4])
+        exit_px = float(sys.argv[5])
+        ts_epoch = iso_to_epoch(ts_iso)
+        c = compute_composite(con, pair, ts_epoch, entry_px)
+        p = post_exit_path(con, pair, ts_epoch, exit_px)
+        print(f"composite={c.composite}  available={c.n_available}/5")
+        for name, s in c.signals.items():
+            print(f"  {name}: {s.score}")
+        print(f"post-exit: {p}")
+        print(f"label: {label_trade(p)}")
         return
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
     out_path = OUT_DIR / f"exit_quality_{stamp}.md"
