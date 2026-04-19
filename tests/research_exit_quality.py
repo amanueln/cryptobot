@@ -194,25 +194,59 @@ def signal_micro_trend(con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: floa
     })
 
 
-def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str) -> None:
+def signal_wall_state(
+    con: duckdb.DuckDBPyConnection, pair: str, ts_epoch: float,
+    entry_price: float,
+) -> SignalResult:
+    """Signal 4: most recent wall_decisions row for this pair before ts_epoch.
+
+    +1 if action in ('anchor','shift') AND wall_aware_stop >= entry_price * 1.012 (fee buffer).
+     0 if observed but below fee buffer (can't actually protect profit).
+    -1 if action = 'cleared' (wall evaporated).
+    None if no rows for this pair ever.
+    """
+    ts_iso = epoch_to_iso(ts_epoch)
+    row = con.execute("""
+        SELECT timestamp, action, wall_aware_stop, wall_price, wall_usd, wall_age_ms
+        FROM candles_db.wall_decisions
+        WHERE pair = ?
+          AND timestamp <= ?
+        ORDER BY timestamp DESC
+        LIMIT 1
+    """, [pair, ts_iso]).fetchone()
+    if row is None:
+        return SignalResult(None, {"reason": "no_wall_history"})
+    ts, action, wall_stop, wall_px, wall_usd, wall_age = row
+    buffer_price = entry_price * (1 + FEE_BUFFER_PCT)
+    if action == "cleared":
+        return SignalResult(-1.0, {"action": action, "ts": ts, "wall_stop": wall_stop})
+    if action in ("anchor", "shift"):
+        if wall_stop is not None and wall_stop >= buffer_price:
+            return SignalResult(1.0, {"action": action, "ts": ts, "wall_stop": wall_stop,
+                                      "buffer_price": buffer_price, "wall_usd": wall_usd,
+                                      "wall_age_ms": wall_age})
+        return SignalResult(0.0, {"action": action, "ts": ts, "wall_stop": wall_stop,
+                                  "buffer_price": buffer_price, "reason": "below_fee_buffer"})
+    # toggle or other — treat as neutral
+    return SignalResult(0.0, {"action": action, "ts": ts, "reason": "other_action"})
+
+
+def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: float = 0.0) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
-    print(f"probe {pair} @ {ts_iso} (epoch {ts_epoch:.0f})")
-    for name, fn in [
-        ("tape_balance", signal_tape_balance),
-        ("book_imbalance", signal_book_imbalance),
-        ("micro_trend", signal_micro_trend),
-    ]:
-        r = fn(con, pair, ts_epoch)
-        print(f"  {name}: score={r.score} raw={r.raw}")
+    print(f"probe {pair} @ {ts_iso} entry={entry_price} (epoch {ts_epoch:.0f})")
+    print(f"  tape_balance:   {signal_tape_balance(con, pair, ts_epoch)}")
+    print(f"  book_imbalance: {signal_book_imbalance(con, pair, ts_epoch)}")
+    print(f"  micro_trend:    {signal_micro_trend(con, pair, ts_epoch)}")
+    print(f"  wall_state:     {signal_wall_state(con, pair, ts_epoch, entry_price)}")
 
 
 def main() -> None:
     con = connect()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if len(sys.argv) >= 4 and sys.argv[1] == "probe":
-        # usage: python research_exit_quality.py probe <PAIR> <ISO_TS>
-        _probe(con, sys.argv[2], sys.argv[3])
+        entry = float(sys.argv[4]) if len(sys.argv) >= 5 else 0.0
+        _probe(con, sys.argv[2], sys.argv[3], entry)
         return
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
     out_path = OUT_DIR / f"exit_quality_{stamp}.md"
