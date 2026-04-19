@@ -1,0 +1,82 @@
+{
+  "FARTCOIN-USD": null,
+  "SAPIEN-USD": {
+    "binance_symbol": "SAPIENUSDT",
+    "quote": "USDT"
+  },
+  "AERO-USD": null,
+  "MOODENG-USD": null,
+  "SUI-USD": {
+    "binance_symbol": "SUIUSDT",
+    "quote": "USDT"
+  },
+  "XRP-USD": {
+    "binance_symbol": "XRPUSDT",
+    "quote": "USDT"
+  },
+  "METIS-USD": {
+    "binance_symbol": "METISUSDT",
+    "quote": "USDT"
+  },
+  "TRB-USD": {
+    "binance_symbol": "TRBUSDT",
+    "quote": "USDT"
+  },
+  "ONDO-USD": {
+    "binance_symbol": "ONDOUSDT",
+    "quote": "USDT"
+  },
+  "ICP-USD": {
+    "binance_symbol": "ICPUSDT",
+    "quote": "USDT"
+  },
+  "SOL-USD": {
+    "binance_symbol": "SOLUSDT",
+    "quote": "USDT"
+  },
+  "XLM-USD": {
+    "binance_symbol": "XLMUSDT",
+    "quote": "USDT"
+  },
+  "AAVE-USD": {
+    "binance_symbol": "AAVEUSDT",
+    "quote": "USDT"
+  },
+  "ENA-USD": {
+    "binance_symbol": "ENAUSDT",
+    "quote": "USDT"
+  },
+  "AXL-USD": {
+    "binance_symbol": "AXLUSDT",
+    "quote": "USDT"
+  },
+  "MON-USD": null,
+  "IRYS-USD": null,
+  "VVV-USD": null,
+  "WET-USD": null,
+  "ZEC-USD": {
+    "binance_symbol": "ZECUSDT",
+    "quote": "USDT"
+  },
+  "ALGO-USD": {
+    "binance_symbol": "ALGOUSDT",
+    "quote": "USDT"
+  },
+  "BIO-USD": {
+    "binance_symbol": "BIOUSDT",
+    "quote": "USDT"
+  },
+  "PNUT-USD": {
+    "binance_symbol": "PNUTUSDT",
+    "quote": "USDT"
+  },
+  "CTSI-USD": {
+    "binance_symbol": "CTSIUSDT",
+    "quote": "USDT"
+  },
+  "IP-USD": null,
+  "NEAR-USD": {
+    "binance_symbol": "NEARUSDT",
+    "quote": "USDT"
+  }
+}

@@ -26,6 +26,9 @@ data/ws_ticks.db-wal
 data/*.json
 data/.totp_secret
 data/.flask_secret
+data/candles_zima_fresh.db
+data/binance/
+data/binance_smoke/
 
 # Logs
 logs/
