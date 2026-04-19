@@ -395,6 +395,77 @@ def emit_case_study(
     return "\n".join(lines)
 
 
+def emit_phase2_table(con: duckdb.DuckDBPyConnection, lookback_days: int = LOOKBACK_DAYS) -> str:
+    """Emit a markdown table: one row per closed trade in lookback window."""
+    cutoff_iso = (dt.datetime.now() - dt.timedelta(days=lookback_days)).isoformat()
+    trades = con.execute("""
+        SELECT id, timestamp, pair, entry_price, exit_price, pnl_pct, peak_pnl_pct, hold_hours, reason
+        FROM candles_db.momentum_trades
+        WHERE side = 'sell'
+          AND pnl_pct IS NOT NULL
+          AND timestamp >= ?
+        ORDER BY timestamp DESC
+    """, [cutoff_iso]).fetchall()
+
+    header = [
+        "## Phase 2 — all closed trades (last 14d)",
+        "",
+        "| id | exit_ts | pair | pnl% | peak% | comp | tape | book | micro | wall | regime | max_up | max_down | label |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    rows = []
+    label_counts = {"freak-out": 0, "legit": 0, "ambiguous": 0, "no_data": 0}
+    per_signal_by_label: dict[str, dict[str, list[float]]] = {}
+    for t in trades:
+        tid, ts_iso, pair, entry_px, exit_px, pnl, peak_pnl, hold_h, _reason = t
+        exit_epoch = iso_to_epoch(ts_iso)
+        c = compute_composite(con, pair, exit_epoch, entry_px)
+        p = post_exit_path(con, pair, exit_epoch, exit_px)
+        lbl = label_trade(p)
+        label_counts[lbl] = label_counts.get(lbl, 0) + 1
+        per_signal_by_label.setdefault(lbl, {"tape":[], "book":[], "micro":[], "wall":[], "regime":[]})
+        for short, full in [("tape","tape_balance"),("book","book_imbalance"),
+                             ("micro","micro_trend"),("wall","wall_state"),("regime","regime")]:
+            s = c.signals[full].score
+            if s is not None:
+                per_signal_by_label[lbl][short].append(s)
+        def fmt(s): return f"{s.score:+.2f}" if s.score is not None else "–"
+        comp_s = f"{c.composite:+.2f}" if c.composite is not None else "–"
+        up_s = f"{p['max_up_pct']:+.2f}" if p.get("n", 0) > 0 else "–"
+        dn_s = f"{p['max_down_pct']:+.2f}" if p.get("n", 0) > 0 else "–"
+        rows.append(
+            f"| {tid} | {ts_iso[:16]} | {pair} | {pnl:+.2f} | {peak_pnl:+.2f} | "
+            f"{comp_s} | "
+            f"{fmt(c.signals['tape_balance'])} | {fmt(c.signals['book_imbalance'])} | "
+            f"{fmt(c.signals['micro_trend'])} | {fmt(c.signals['wall_state'])} | "
+            f"{fmt(c.signals['regime'])} | "
+            f"{up_s} | {dn_s} | "
+            f"**{lbl}** |"
+        )
+
+    summary = [
+        "",
+        "### Summary",
+        "",
+        f"- n_trades analyzed: {len(trades)}",
+        f"- label counts: {label_counts}",
+        "",
+        "### Mean signal scores by label",
+        "",
+        "| label | n | tape | book | micro | wall | regime |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for lbl, buckets in per_signal_by_label.items():
+        def mean(xs): return f"{sum(xs)/len(xs):+.2f}" if xs else "–"
+        n = label_counts.get(lbl, 0)
+        summary.append(
+            f"| {lbl} | {n} | {mean(buckets['tape'])} | {mean(buckets['book'])} | "
+            f"{mean(buckets['micro'])} | {mean(buckets['wall'])} | {mean(buckets['regime'])} |"
+        )
+
+    return "\n".join(header + rows + summary) + "\n"
+
+
 def _probe(con: duckdb.DuckDBPyConnection, pair: str, ts_iso: str, entry_price: float = 0.0) -> None:
     """Print every signal's value at (pair, ts_iso). For smoke-testing."""
     ts_epoch = iso_to_epoch(ts_iso)
@@ -436,6 +507,15 @@ def main() -> None:
         blocks = [f"# Phase 1 Case Study — {stamp}\n", freshness_report(con)]
         for tid in ids:
             blocks.append(emit_case_study(con, tid))
+        out_path.write_text("\n".join(blocks), encoding="utf-8")
+        print(f"Wrote {out_path}")
+        return
+    if len(sys.argv) >= 2 and sys.argv[1] == "phase2":
+        stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M")
+        out_path = OUT_DIR / f"exit_quality_phase2_{stamp}.md"
+        blocks = [f"# Phase 2 — last {LOOKBACK_DAYS}d closed trades — {stamp}\n",
+                  freshness_report(con),
+                  emit_phase2_table(con)]
         out_path.write_text("\n".join(blocks), encoding="utf-8")
         print(f"Wrote {out_path}")
         return
