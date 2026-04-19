@@ -25,11 +25,11 @@ Each signal is a pure function `(pair: str, ts_epoch: int) → (score: float in 
 
 | # | Signal | Source table | Lookback | Score formula |
 |---|---|---|---|---|
-| 1 | **Tape balance** | `market_tape.ws_matches` | 10 min before ts | `(buy_usd - sell_usd) / total_usd` |
-| 2 | **Book imbalance** | `market_tape.l2_snapshots` | most recent snapshot ≤ ts | `(bid_usd - ask_usd) / total_usd` within ±2% of mid |
-| 3 | **Micro-trend** | `candles.candles_1m` | 60 min before ts | `sign(EMA5 - EMA20) × min(1, abs(slope_per_min) / 0.001)` |
-| 4 | **Wall state** | `trades.wall_decisions` | most recent row ≤ ts, same pair | +1 if `action in (anchor, shift)` **and** `wall_aware_stop >= entry_price * 1.012`; 0 if observed but below fee buffer; −1 if `action = cleared` |
-| 5 | **Regime** | `trades.regime_snapshots` | most recent ≤ ts | +1 if `regime_bullish=1 and btc_4h_return > 0`; −1 if `regime_bullish=0 and btc_4h_return < 0`; else 0 |
+| 1 | **Tape balance** | `market_tape.db : ws_matches` | 10 min before ts | `(buy_usd - sell_usd) / total_usd` — note `side` column is uppercase `BUY`/`SELL` |
+| 2 | **Book imbalance** | `market_tape.db : l2_snapshots` | most recent snapshot ≤ ts | `(bid_usd - ask_usd) / total_usd` within ±2% of mid; `bids`/`asks` are JSON `[[price,size],...]` |
+| 3 | **Micro-trend** | `candles.db : candles` filter `granularity='1m'` | 60 min before ts | `sign(EMA5 - EMA20) × min(1, abs(slope_per_min) / 0.001)` |
+| 4 | **Wall state** | `candles.db : wall_decisions` | most recent row ≤ ts, same pair | +1 if `action in (anchor, shift)` **and** `wall_aware_stop >= entry_price * 1.012`; 0 if observed but below fee buffer; −1 if `action = cleared` |
+| 5 | **Regime** | `candles.db : regime_snapshots` | most recent ≤ ts | +1 if `regime_bullish=1 and btc_4h_return > 0`; −1 if `regime_bullish=0 and btc_4h_return < 0`; else 0 |
 
 **Composite score:** unweighted arithmetic mean of the five. Range [-1, +1]. Positive = signals agree price wants to continue up (freak-out risk if we exit); negative = signals agree price wants to roll over (legit exit).
 
@@ -73,7 +73,14 @@ Summary section at the top: counts per label, mean composite per label, per-sign
 
 **Single script** — `tests/research_exit_quality.py`. No new modules. If signal code grows unwieldy (>400 lines), split into `tests/exit_quality/` package but not before.
 
-**Query engine** — DuckDB with `ATTACH` to the three SQLite databases (trades, market_tape, candles). Matches our storage decision: DuckDB reads live SQLite for analytics; live writes stay on SQLite.
+**Query engine** — DuckDB with `ATTACH` to **two** SQLite databases: `candles.db` (holds `momentum_trades`, `wall_decisions`, `regime_snapshots`, `candles`) and `market_tape.db` (holds `ws_matches`, `l2_snapshots`). Matches our storage decision: DuckDB reads live SQLite for analytics; live writes stay on SQLite.
+
+**Important schema notes (verified against local snapshot 2026-04-18):**
+- `momentum_trades` is **transaction-style** (one row per buy + one row per sell). Closed-trade query: `WHERE side='sell' AND pnl_pct IS NOT NULL`. Entry price is on the sell row (`entry_price` column); entry time derivable from `timestamp - hold_hours * 3600`.
+- All timestamps in `candles.db` tables are ISO TEXT, not epoch. Convert for window arithmetic.
+- `ws_matches.side` values are uppercase `'BUY'`/`'SELL'` — case-sensitive match required.
+- `candles.db:candles` holds multiple granularities in one table; always filter `granularity='1m'` for signal 3.
+- `l2_snapshots.bids`/`.asks` are JSON strings of `[[price, size], ...]` — parse before summing.
 
 **Data source** — local snapshots pulled from Zima at analysis-start. Per `feedback_fresh_data_for_sims`: script prints DB freshness at top of output (max `ts_epoch` per table, age in hours). Warn if >1h, don't block — this is offline research, user can re-pull if they care.
 
