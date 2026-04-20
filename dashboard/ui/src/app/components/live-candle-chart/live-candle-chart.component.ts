@@ -32,7 +32,7 @@ export class LiveCandleChartComponent implements OnDestroy {
   private chart: IChartApi | null = null;
   private candleSeries: ISeriesApi<'Candlestick'> | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  private pollTimer: any = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private visHandler: (() => void) | null = null;
   private currentTf: '1m' | '5m' | '15m' | '1h' = '1m';
   private lastLiveBucketMs = 0;
@@ -70,6 +70,7 @@ export class LiveCandleChartComponent implements OnDestroy {
   }
 
   private loadData(pair: string, tf: '1m' | '5m' | '15m' | '1h'): void {
+    this.lastLiveBucketMs = 0;
     this.api.fetchLiveCandles(pair, tf, 200).subscribe({
       next: (resp) => {
         this.setAllBars(resp.bars, resp.live);
@@ -122,13 +123,13 @@ export class LiveCandleChartComponent implements OnDestroy {
         }
         // Otherwise just update the live-forming bar in place.
         if (live) {
-          this.candleSeries!.update({
+          this.candleSeries?.update({
             time: (live.t / 1000) as Time,
             open: live.open, high: live.high, low: live.low, close: live.close,
           });
           if (!this.lastLiveBucketMs) this.lastLiveBucketMs = live.t;
         } else if (newestHistorical) {
-          this.candleSeries!.update({
+          this.candleSeries?.update({
             time: (newestHistorical.t / 1000) as Time,
             open: newestHistorical.open, high: newestHistorical.high,
             low: newestHistorical.low, close: newestHistorical.close,
@@ -143,6 +144,7 @@ export class LiveCandleChartComponent implements OnDestroy {
     this.stopPolling();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.candleSeries = null;
     if (this.chart) { this.chart.remove(); this.chart = null; }
   }
 }
