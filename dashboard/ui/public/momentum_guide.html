@@ -1800,6 +1800,14 @@ const CONTENT = {
         <li><b>Hold</b> — time held / 72h max.</li>
         <li><b>Accel</b> (purple) — current acceleration. If this drops below 5% after 4h, the exit-on-fade rule triggers.</li>
       </ul>
+      <h3>Live candle chart</h3>
+      <p>Every open holding now includes an embedded candle chart that polls at 1 Hz. Three price lines are overlaid on the scale:</p>
+      <ul>
+        <li><b style="color:#3b82f6">entry</b> (blue dashed) — your fill price.</li>
+        <li><b style="color:#fbbf24">now</b> (amber dashed) — current mid.</li>
+        <li><b style="color:#ef4444">trail</b> (red dashed) — active stop.</li>
+      </ul>
+      <p>Entry and trail are folded into the Y axis range so they never get clipped, even when the candle range is tight. Timeframe toggles: <code>1m</code> / <code>5m</code> / <code>15m</code> / <code>1h</code>. Time axis is 12-hour AM/PM. Click the chart to open a larger modal; card polling pauses while the modal is open to avoid double-polling. The <code>▾ chart</code> toggle next to Sell collapses the chart per-pair if you just want the numbers.</p>
     `
   },
   "8": {

@@ -1136,6 +1136,13 @@ const SEED = [
     solves: "\"How does the bot actually decide?\" — answered once, referenceable forever.",
     benefit: "Makes every other card on this board easier to reason about. The Guide button in the dashboard links straight to it.",
     subs: [], tags: ["ui", "docs"] },
+  { id: "s8", col: "shipped", cat: "feature", pri: "p2",
+    title: "Holding-card live candle chart",
+    body: "1m/5m/15m/1h candle chart embedded on every holding, polling 1 Hz, with entry / trail-stop / now price lines overlaid and a collapse toggle.",
+    why: "Numbers on a card tell you WHERE the position is; the candles tell you HOW it got there. You can't eyeball whether a dip is real without seeing the shape.",
+    solves: "The \"is this just a wick or a real reversal?\" anxiety — without having to open Coinbase on the side.",
+    benefit: "Entry/trail/now lines are folded into the Y range so they never get clipped. Click-to-expand opens a larger modal; card polling pauses while modal is open to avoid double-polling. Axis is 12-hour AM/PM.",
+    subs: [], tags: ["ui"] },
 
   // ============ ACTIVE ============
   { id: "a1", col: "active", cat: "research", pri: "p1",
