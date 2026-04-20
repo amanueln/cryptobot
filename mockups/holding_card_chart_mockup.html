@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Holding card live chart — mockup v2</title>
+<style>
+  :root {
+    --bg:#0b0f17;
+    --card:#161926;
+    --card-2:#1c2030;
+    --border:#2d3148;
+    --text:#e6ecf5;
+    --muted:#8895ad;
+    --dim:#5a6679;
+    --green:#22c55e;
+    --amber:#fbbf24;
+    --red:#ef4444;
+    --accent:#3b82f6;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0;padding:0;
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg);color:var(--text);font-size:14px;
+  }
+  .page{max-width:1200px;margin:24px auto;padding:0 16px}
+  h1{font-size:20px;margin:0 0 4px;color:#fff}
+  .sub{color:var(--muted);margin-bottom:20px;font-size:13px}
+  .tip{color:var(--muted);font-size:12px;margin-top:4px}
+  .tip kbd{
+    background:var(--card-2);border:1px solid var(--border);
+    border-radius:3px;padding:1px 5px;font-size:11px;
+  }
+
+  .cards{display:flex;flex-wrap:wrap;gap:16px}
+
+  .pos-card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-left:3px solid var(--green);
+    border-radius:8px;
+    padding:12px 14px;
+    min-width:380px;
+    flex:1 1 380px;
+    max-width:540px;
+  }
+  .pos-card.down{border-left-color:var(--red)}
+
+  .pos-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .pos-pair{font-weight:600;font-size:15px;letter-spacing:.3px}
+  .pos-qty{color:var(--muted);font-size:12px}
+
+  .pos-details{color:var(--muted);font-size:12px;margin-bottom:4px}
+  .pos-details strong{color:var(--text);font-weight:600}
+  .sep{color:var(--dim);margin:0 6px}
+
+  .pos-current{margin-bottom:4px;font-size:13px}
+  .pos-current strong{font-weight:600}
+
+  .pos-pnl{font-size:13px;font-weight:600;margin-bottom:10px}
+
+  /* ---------- chart ---------- */
+  .chart-box{
+    background:#0f1117;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:4px 6px 6px;
+    position:relative;
+  }
+  .chart-top{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:2px 2px 4px;
+  }
+  .tf-group{display:flex;gap:2px}
+  .tf-btn{
+    background:transparent;color:var(--muted);
+    border:1px solid var(--border);border-radius:3px;
+    padding:2px 8px;font-size:11px;cursor:pointer;
+    font-family:inherit;
+  }
+  .tf-btn:hover{border-color:var(--accent);color:var(--text)}
+  .tf-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .live-pill{
+    background:rgba(34,197,94,.15);color:var(--green);
+    padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;
+    letter-spacing:.5px;
+  }
+  .live-pill::before{
+    content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:var(--green);margin-right:5px;
+    animation:pulse 1s infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  .chart-box canvas{display:block;width:100%;height:160px;cursor:grab}
+  .chart-box canvas.dragging{cursor:grabbing}
+  .jump-live{
+    display:none;
+    background:var(--green);color:#0b0f17;
+    border:1px solid var(--green);border-radius:10px;
+    padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;
+    font-family:inherit;letter-spacing:.3px;
+    margin-left:6px;
+  }
+  .jump-live.show{display:inline-block}
+  .jump-live:hover{background:#16a34a;border-color:#16a34a}
+
+  .chart-tools{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:4px 2px 0;font-size:11px;color:var(--muted);
+  }
+  .chart-tools .legend{display:flex;gap:10px;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:4px}
+  .dot.entry{background:#3b82f6}
+  .dot.stop{background:#ef4444}
+  .dot.price{background:#fbbf24}
+  .zoom-hint{color:var(--dim);font-size:10px}
+
+  .expand-btn{
+    background:rgba(0,0,0,.4);color:var(--text);
+    border:1px solid var(--border);border-radius:4px;
+    padding:2px 8px;font-size:11px;cursor:pointer;
+    margin-left:6px;
+  }
+  .expand-btn:hover{background:rgba(0,0,0,.7);border-color:var(--accent)}
+
+  /* ---------- modal ---------- */
+  .modal-backdrop{
+    display:none;
+    position:fixed;inset:0;background:rgba(0,0,0,.75);
+    justify-content:center;align-items:center;z-index:10;
+  }
+  .modal-backdrop.open{display:flex}
+  .modal{
+    background:var(--card);border:1px solid var(--border);
+    border-radius:10px;padding:18px;
+    width:min(92vw,1100px);
+  }
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .modal-title{font-size:18px;font-weight:600}
+  .modal-close{
+    background:none;border:1px solid var(--border);color:var(--text);
+    padding:4px 10px;border-radius:4px;cursor:pointer;
+  }
+  .modal .chart-box canvas{height:460px}
+
+  .modal-info{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+    margin-top:12px;font-size:12px;
+  }
+  .modal-info .cell{
+    background:var(--card-2);border:1px solid var(--border);
+    border-radius:6px;padding:8px 10px;
+  }
+  .modal-info .cell .label{color:var(--muted);font-size:11px;margin-bottom:2px}
+  .modal-info .cell .value{font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Holding card — live chart mockup v2</h1>
+  <div class="sub">
+    Fixed window of the most recent ~50 bars · new bars slide in from the right · old ones slide off the left (chart does NOT accumulate all day)
+  </div>
+  <div class="tip">
+    Pan: <kbd>click + drag</kbd> the chart left/right
+    &nbsp;·&nbsp; Zoom: <kbd>scroll wheel</kbd>
+    &nbsp;·&nbsp; Timeframe: click <kbd>1m</kbd> <kbd>5m</kbd> <kbd>15m</kbd> <kbd>1h</kbd>
+    &nbsp;·&nbsp; Expand: click the ⤢ button (dragging alone won't expand)
+  </div>
+  <br>
+
+  <div class="cards">
+
+    <!-- ===== Card 1: FARTCOIN ===== -->
+    <div class="pos-card">
+      <div class="pos-header">
+        <span class="pos-pair">FARTCOIN-USD</span>
+        <span class="pos-qty">18804.1608 units</span>
+      </div>
+      <div class="pos-details">
+        Bought at <strong>0.199000</strong>
+        <span class="sep">&rarr;</span>
+        target <strong>0.214920</strong>
+      </div>
+      <div class="pos-current">
+        Current <strong id="c1-now">0.199600</strong> &mdash;
+        <span style="color:var(--green)">needs +7.67% to sell</span>
+      </div>
+      <div class="pos-pnl" style="color:var(--green)">
+        PnL: +11.26 USD (+0.30%)
+      </div>
+
+      <div class="chart-box">
+        <div class="chart-top">
+          <div class="tf-group" data-chart="c1">
+            <button class="tf-btn active" data-tf="1m">1m</button>
+            <button class="tf-btn" data-tf="5m">5m</button>
+            <button class="tf-btn" data-tf="15m">15m</button>
+            <button class="tf-btn" data-tf="1h">1h</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="live-pill">LIVE · 1Hz</span>
+            <button class="expand-btn" onclick="openModal('c1')">⤢</button>
+          </div>
+        </div>
+        <canvas id="c1" width="500" height="160"></canvas>
+        <div class="chart-tools">
+          <div class="legend">
+            <span><span class="dot entry"></span>entry 0.1990</span>
+            <span><span class="dot stop"></span>trail 0.1995</span>
+            <span><span class="dot price"></span>now<button class="jump-live" data-jump="c1">● go live</button></span>
+          </div>
+          <span class="zoom-hint" id="c1-zoom">50 bars visible</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Card 2: AVNT ===== -->
+    <div class="pos-card">
+      <div class="pos-header">
+        <span class="pos-pair">AVNT-USD</span>
+        <span class="pos-qty">1243.887 units</span>
+      </div>
+      <div class="pos-details">
+        Bought at <strong>2.4120</strong>
+        <span class="sep">&rarr;</span>
+        target <strong>2.6050</strong>
+      </div>
+      <div class="pos-current">
+        Current <strong id="c2-now">2.4820</strong> &mdash;
+        <span style="color:var(--green)">needs +4.95% to sell</span>
+      </div>
+      <div class="pos-pnl" style="color:var(--green)">
+        PnL: +87.07 USD (+2.90%)
+      </div>
+
+      <div class="chart-box">
+        <div class="chart-top">
+          <div class="tf-group" data-chart="c2">
+            <button class="tf-btn active" data-tf="1m">1m</button>
+            <button class="tf-btn" data-tf="5m">5m</button>
+            <button class="tf-btn" data-tf="15m">15m</button>
+            <button class="tf-btn" data-tf="1h">1h</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="live-pill">LIVE · 1Hz</span>
+            <button class="expand-btn" onclick="openModal('c2')">⤢</button>
+          </div>
+        </div>
+        <canvas id="c2" width="500" height="160"></canvas>
+        <div class="chart-tools">
+          <div class="legend">
+            <span><span class="dot entry"></span>entry 2.412</span>
+            <span><span class="dot stop"></span>trail 2.453</span>
+            <span><span class="dot price"></span>now<button class="jump-live" data-jump="c2">● go live</button></span>
+          </div>
+          <span class="zoom-hint" id="c2-zoom">50 bars visible</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============= modal ============= -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">—</div>
+      <button class="modal-close" onclick="closeModal()">close</button>
+    </div>
+    <div class="chart-box">
+      <div class="chart-top">
+        <div class="tf-group" data-chart="modal">
+          <button class="tf-btn active" data-tf="1m">1m</button>
+          <button class="tf-btn" data-tf="5m">5m</button>
+          <button class="tf-btn" data-tf="15m">15m</button>
+          <button class="tf-btn" data-tf="1h">1h</button>
+        </div>
+        <span class="live-pill">LIVE · 1Hz</span>
+      </div>
+      <canvas id="modal-canvas" width="1080" height="460"></canvas>
+      <div class="chart-tools">
+        <div class="legend">
+          <span><span class="dot entry"></span>entry</span>
+          <span><span class="dot stop"></span>wall-aware trail</span>
+          <span><span class="dot price"></span>now<button class="jump-live" data-jump="modal">● go live</button></span>
+        </div>
+        <span class="zoom-hint" id="modal-zoom">100 bars visible</span>
+      </div>
+    </div>
+    <div class="modal-info">
+      <div class="cell"><div class="label">Entry</div><div class="value" id="mi-entry">—</div></div>
+      <div class="cell"><div class="label">Now</div><div class="value" id="mi-now">—</div></div>
+      <div class="cell"><div class="label">Trail stop</div><div class="value" id="mi-stop" style="color:var(--red)">—</div></div>
+      <div class="cell"><div class="label">Peak (session)</div><div class="value" id="mi-peak" style="color:var(--green)">—</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- time helpers ---------- */
+const TF_MINUTES = {'1m':1, '5m':5, '15m':15, '1h':60};
+
+function fmtTime(date, tf) {
+  const h24 = date.getHours();
+  const ampm = h24 >= 12 ? 'p' : 'a';
+  const h12 = ((h24 + 11) % 12) + 1;
+  const mm = String(date.getMinutes()).padStart(2,'0');
+  if (tf === '1h') return h12 + ampm;
+  return h12 + ':' + mm + ampm;
+}
+
+/* generate N bars of history for a timeframe, ending "now".
+   Each bar is {t: Date, open, high, low, close} */
+function makeCandles(tf, startPrice, n, volatility, now) {
+  const step = TF_MINUTES[tf] * 60 * 1000;
+  const candles = [];
+  let price = startPrice;
+  for (let i = n-1; i >= 0; i--) {
+    const t = new Date(now.getTime() - i*step);
+    const open = price;
+    const drift = (Math.random() - 0.48) * volatility;
+    const close = Math.max(0.0001, open * (1 + drift));
+    const high = Math.max(open, close) * (1 + Math.random() * volatility * 0.4);
+    const low  = Math.min(open, close) * (1 - Math.random() * volatility * 0.4);
+    candles.push({t, open, high, low, close});
+    price = close;
+  }
+  return candles;
+}
+
+/* ---------- chart state ---------- */
+const now = new Date();
+
+function makeDataset(entryPrice) {
+  const vol = {'1m':0.003, '5m':0.006, '15m':0.01, '1h':0.015};
+  const d = {};
+  for (const tf of ['1m','5m','15m','1h']) {
+    d[tf] = makeCandles(tf, entryPrice*0.997, 600, vol[tf], now);
+    // make last bar the live-forming bar
+    const last = d[tf][d[tf].length-1];
+    d[tf].live = {t: new Date(now.getTime()), open: last.close, high: last.close, low: last.close, close: last.close};
+  }
+  return d;
+}
+
+const charts = {
+  c1: {
+    canvas: document.getElementById('c1'),
+    pair: 'FARTCOIN-USD',
+    entry: 0.199000,
+    stop: 0.199500,
+    tf: '1m',
+    visible: 50,
+    rightOffset: 0,   // bars from the most-recent bar hidden to the right; 0 = live bar visible
+    data: makeDataset(0.199000),
+    nowEl: document.getElementById('c1-now'),
+    zoomEl: document.getElementById('c1-zoom'),
+  },
+  c2: {
+    canvas: document.getElementById('c2'),
+    pair: 'AVNT-USD',
+    entry: 2.4120,
+    stop: 2.4530,
+    tf: '1m',
+    visible: 50,
+    rightOffset: 0,
+    data: makeDataset(2.4120),
+    nowEl: document.getElementById('c2-now'),
+    zoomEl: document.getElementById('c2-zoom'),
+  },
+};
+
+/* ---------- renderer ---------- */
+function drawChart(ctx, w, h, state, axisSize) {
+  const tfData = state.data[state.tf];
+  const all = tfData.concat([tfData.live]);
+  const visibleN = Math.min(state.visible, all.length);
+  // rightOffset is a float in bars (0 = live bar is rightmost)
+  const off = Math.max(0, Math.min(all.length - 1, state.rightOffset || 0));
+  const isAtLive = off < 0.5;
+
+  const pad = {l: 44, r: 52, t: 6, b: axisSize};
+  const cw = w - pad.l - pad.r;
+  const ch = h - pad.t - pad.b;
+
+  // Index math: rightIdx is the fractional index of the rightmost visible point.
+  // leftIdx is the fractional index of the leftmost visible point.
+  // Both can be non-integer, giving smooth pan.
+  const rightIdx = (all.length - 1) - off;
+  const leftIdx  = rightIdx - (visibleN - 1);
+  const bw = cw / visibleN;
+  // We render bars from firstBar..lastBar inclusive (a couple of extras so
+  // partial bars at the window edges are drawn and then clipped).
+  const firstBar = Math.max(0, Math.floor(leftIdx) - 1);
+  const lastBar  = Math.min(all.length - 1, Math.ceil(rightIdx) + 1);
+
+  // price range over what's currently visible
+  let lo = Infinity, hi = -Infinity;
+  const lFloor = Math.max(0, Math.floor(leftIdx));
+  const rCeil  = Math.min(all.length - 1, Math.ceil(rightIdx));
+  for (let i = lFloor; i <= rCeil; i++) {
+    lo = Math.min(lo, all[i].low);
+    hi = Math.max(hi, all[i].high);
+  }
+  if (!isFinite(lo)) { lo = state.entry; hi = state.entry; }
+  lo = Math.min(lo, state.entry, state.stop);
+  hi = Math.max(hi, state.entry, state.stop);
+  const rpad = (hi-lo)*0.08 || state.entry*0.01;
+  lo -= rpad; hi += rpad;
+
+  const xFor = (idx) => pad.l + (idx - leftIdx) * bw + bw/2;
+
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0f1117';
+  ctx.fillRect(0,0,w,h);
+
+  // y grid
+  ctx.strokeStyle = '#1f2333';
+  ctx.lineWidth = 1;
+  for (let g=0; g<=4; g++) {
+    const y = pad.t + ch * g/4;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+cw, y); ctx.stroke();
+    const price = hi - (hi-lo) * g/4;
+    ctx.fillStyle = '#5a6679';
+    ctx.font = '10px -apple-system,Segoe UI,Roboto';
+    ctx.textAlign = 'right';
+    ctx.fillText(price.toFixed(4), pad.l-4, y+3);
+  }
+
+  // clip to the chart plot area so partial-edge bars are cut cleanly
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad.l, pad.t, cw, ch);
+  ctx.clip();
+
+  // candles
+  for (let i = firstBar; i <= lastBar; i++) {
+    const c = all[i];
+    const x = xFor(i);
+    const isUp = c.close >= c.open;
+    const color = isUp ? '#22c55e' : '#ef4444';
+    const yH = pad.t + (1 - (c.high-lo)/(hi-lo)) * ch;
+    const yL = pad.t + (1 - (c.low-lo)/(hi-lo))  * ch;
+    const yO = pad.t + (1 - (c.open-lo)/(hi-lo)) * ch;
+    const yC = pad.t + (1 - (c.close-lo)/(hi-lo)) * ch;
+
+    ctx.strokeStyle = color;
+    ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+
+    ctx.fillStyle = color;
+    const bodyTop = Math.min(yO, yC);
+    const bodyH = Math.max(1, Math.abs(yC-yO));
+    const bodyW = Math.max(1, bw*0.7);
+    ctx.fillRect(x - bodyW/2, bodyTop, bodyW, bodyH);
+  }
+
+  // highlight live bar (only when viewport includes it)
+  if (isAtLive) {
+    const lastX = xFor(all.length - 1);
+    ctx.strokeStyle = 'rgba(251,191,36,.5)';
+    ctx.lineWidth = 1.5;
+    const bw2 = Math.max(2, bw*0.8);
+    ctx.strokeRect(lastX - bw2/2, pad.t+1, bw2, ch-2);
+    ctx.lineWidth = 1;
+  }
+  ctx.restore();
+
+  // x-axis time labels aligned to bar indices (clean integer steps)
+  const targetLabels = 5;
+  const labelStep = Math.max(1, Math.floor(visibleN/targetLabels));
+  ctx.fillStyle = '#8895ad';
+  ctx.font = '10px -apple-system,Segoe UI,Roboto';
+  ctx.textAlign = 'center';
+  const startIdx = Math.ceil(leftIdx / labelStep) * labelStep;
+  for (let i = startIdx; i <= Math.floor(rightIdx); i += labelStep) {
+    if (i < 0 || i >= all.length) continue;
+    const x = xFor(i);
+    if (x < pad.l - 10 || x > pad.l+cw+10) continue;
+    const lbl = fmtTime(all[i].t, state.tf);
+    ctx.fillText(lbl, x, pad.t + ch + 11);
+    ctx.strokeStyle = '#2d3148';
+    ctx.beginPath(); ctx.moveTo(x, pad.t+ch); ctx.lineTo(x, pad.t+ch+3); ctx.stroke();
+  }
+
+  // entry line
+  const yEntry = pad.t + (1 - (state.entry-lo)/(hi-lo)) * ch;
+  ctx.strokeStyle = '#3b82f6'; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(pad.l, yEntry); ctx.lineTo(pad.l+cw, yEntry); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#3b82f6';
+  ctx.fillRect(pad.l+cw, yEntry-7, pad.r-2, 14);
+  ctx.fillStyle = '#fff'; ctx.font = '10px -apple-system'; ctx.textAlign='left';
+  ctx.fillText(state.entry.toFixed(4), pad.l+cw+3, yEntry+3);
+
+  // trail stop line
+  const yStop = pad.t + (1 - (state.stop-lo)/(hi-lo)) * ch;
+  ctx.strokeStyle = '#ef4444'; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(pad.l, yStop); ctx.lineTo(pad.l+cw, yStop); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(pad.l+cw, yStop-7, pad.r-2, 14);
+  ctx.fillStyle = '#fff'; ctx.font = '10px -apple-system'; ctx.textAlign='left';
+  ctx.fillText(state.stop.toFixed(4), pad.l+cw+3, yStop+3);
+
+  // live "now" hairline + right-edge price label (always shown so live price is
+  // always legible even when panned away; dot + bar highlight only at live edge)
+  const nowP = tfData.live.close;
+  const yNow = pad.t + (1 - (nowP-lo)/(hi-lo)) * ch;
+  if (yNow >= pad.t && yNow <= pad.t+ch) {
+    ctx.strokeStyle = 'rgba(251,191,36,.25)'; ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(pad.l, yNow); ctx.lineTo(pad.l+cw, yNow); ctx.stroke();
+    ctx.setLineDash([]);
+    if (isAtLive) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath(); ctx.arc(pad.l+cw, yNow, 4, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(pad.l+cw, yNow-7, pad.r-2, 14);
+    ctx.fillStyle = '#0b0f17'; ctx.font = 'bold 10px -apple-system'; ctx.textAlign='left';
+    ctx.fillText(nowP.toFixed(4), pad.l+cw+3, yNow+3);
+  }
+}
+
+function render(id) {
+  const s = charts[id];
+  const c = s.canvas;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = c.clientWidth, cssH = c.clientHeight;
+  if (c.width !== cssW*dpr) { c.width = cssW*dpr; c.height = cssH*dpr; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawChart(ctx, cssW, cssH, s, 18);
+  s.nowEl.textContent = s.data[s.tf].live.close.toFixed(4);
+  const panBit = s.rightOffset > 0.5 ? (' · panned -' + Math.round(s.rightOffset)) : '';
+  s.zoomEl.textContent = s.visible + ' bars · ' + s.tf + ' · window ≈ ' + formatWindow(s.visible, s.tf) + panBit;
+  const jump = document.querySelector('[data-jump="'+id+'"]');
+  if (jump) jump.classList.toggle('show', (s.rightOffset||0) > 0.5);
+}
+
+function formatWindow(bars, tf) {
+  const mins = bars * TF_MINUTES[tf];
+  if (mins < 60) return mins + 'm';
+  const h = Math.floor(mins/60), m = mins%60;
+  return m ? (h + 'h' + m + 'm') : (h + 'h');
+}
+
+/* ---------- 1Hz tick simulation (ticks every live-forming bar across all TFs) ---------- */
+setInterval(() => {
+  Object.keys(charts).forEach(id => {
+    const s = charts[id];
+    for (const tf of ['1m','5m','15m','1h']) {
+      const live = s.data[tf].live;
+      const tick = live.close * (1 + (Math.random()-0.5)*0.0015);
+      live.close = tick;
+      live.high = Math.max(live.high, tick);
+      live.low  = Math.min(live.low, tick);
+    }
+    render(id);
+    if (modalState.id === id) renderModal();
+  });
+}, 1000);
+
+/* every 15s close the 1m live bar (fake "minute close"). In prod this fires
+   on actual minute boundary; here it's just for demo. When panned away from
+   the live edge, keep the user's pan position stable instead of auto-advancing. */
+setInterval(() => {
+  Object.values(charts).forEach(s => {
+    const series = s.data['1m'];
+    series.push(series.live);
+    series.shift();
+    const last = series[series.length-1];
+    series.live = {t: new Date(), open: last.close, high: last.close, low: last.close, close: last.close};
+    // if user is panned away, keep them looking at the same historical bars
+    // (a new bar appended on the right means their offset needs to grow by 1).
+    if ((s.rightOffset||0) > 0) s.rightOffset += 1;
+  });
+}, 15000);
+
+/* ---------- timeframe switch ---------- */
+document.querySelectorAll('.tf-group').forEach(group => {
+  const chart = group.getAttribute('data-chart');
+  group.querySelectorAll('.tf-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tf = btn.getAttribute('data-tf');
+      if (chart === 'modal') {
+        if (modalState.id) {
+          charts[modalState.id].tf = tf;
+          render(modalState.id);
+          renderModal();
+          syncModalTfButtons();
+        }
+      } else {
+        charts[chart].tf = tf;
+        render(chart);
+      }
+    });
+  });
+});
+
+function syncModalTfButtons() {
+  if (!modalState.id) return;
+  const tf = charts[modalState.id].tf;
+  document.querySelectorAll('[data-chart="modal"] .tf-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-tf') === tf);
+  });
+}
+
+/* ---------- wheel zoom ---------- */
+function attachZoom(id, minBars, maxBars) {
+  const s = charts[id] || {};
+  const canvas = id === 'modal' ? document.getElementById('modal-canvas') : s.canvas;
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const target = id === 'modal' ? charts[modalState.id] : s;
+    if (!target) return;
+    const delta = e.deltaY > 0 ? 5 : -5;
+    target.visible = Math.max(minBars, Math.min(maxBars, target.visible + delta));
+    if (id === 'modal') { renderModal(); } else { render(id); }
+  }, {passive:false});
+}
+attachZoom('c1', 10, 150);
+attachZoom('c2', 10, 150);
+
+/* ---------- click+drag pan (smooth, sub-bar pixel-accurate) ---------- */
+function attachDrag(id) {
+  const isModal = id === 'modal';
+  const canvas = isModal ? document.getElementById('modal-canvas') : charts[id].canvas;
+  let dragging = false, startX = 0, startOffset = 0, moved = 0;
+  let pointerId = null;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const target = isModal ? charts[modalState.id] : charts[id];
+    if (!target) return;
+    if (e.button !== 0) return;  // left-click only
+    dragging = true;
+    startX = e.clientX;
+    startOffset = target.rightOffset || 0;
+    moved = 0;
+    pointerId = e.pointerId;
+    canvas.classList.add('dragging');
+    canvas.setPointerCapture(pointerId);
+    canvas.dataset.dragMoved = '0';  // reset flag at start of each interaction
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const target = isModal ? charts[modalState.id] : charts[id];
+    if (!target) return;
+    const tfData = target.data[target.tf];
+    const total = tfData.length + 1;  // +1 for live bar
+    const cssW = canvas.clientWidth;
+    const bw = (cssW - 44 - 52) / Math.max(1, target.visible);
+    const deltaPx = e.clientX - startX;
+    moved = Math.abs(deltaPx);
+    // Drag RIGHT (deltaPx > 0) → offset grows → older bars come into view.
+    // Offset is a FLOAT so sub-bar panning is smooth.
+    const newOffset = Math.max(0, Math.min(total - target.visible, startOffset + deltaPx / bw));
+    target.rightOffset = newOffset;
+    if (isModal) renderModal(); else render(id);
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.classList.remove('dragging');
+    if (pointerId !== null) {
+      try { canvas.releasePointerCapture(pointerId); } catch(_){}
+      pointerId = null;
+    }
+    canvas.dataset.dragMoved = moved > 4 ? '1' : '0';
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerleave', () => { /* keep capturing, rely on up */ });
+}
+attachDrag('c1');
+attachDrag('c2');
+
+/* click on small chart body = expand (but not if we just dragged) */
+['c1','c2'].forEach(id => {
+  charts[id].canvas.addEventListener('click', () => {
+    if (charts[id].canvas.dataset.dragMoved === '1') return;
+    openModal(id);
+  });
+  /* double-click = snap back to live */
+  charts[id].canvas.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    charts[id].rightOffset = 0;
+    render(id);
+  });
+});
+/* modal also supports double-click to snap back */
+document.getElementById('modal-canvas').addEventListener('dblclick', (e) => {
+  e.stopPropagation();
+  if (!modalState.id) return;
+  charts[modalState.id].rightOffset = 0;
+  renderModal();
+});
+
+/* ---------- jump-live ---------- */
+document.querySelectorAll('.jump-live').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = btn.getAttribute('data-jump');
+    const target = id === 'modal' ? charts[modalState.id] : charts[id];
+    if (!target) return;
+    target.rightOffset = 0;
+    if (id === 'modal') renderModal(); else render(id);
+  });
+});
+
+/* initial render */
+['c1','c2'].forEach(id => render(id));
+
+/* ---------- modal ---------- */
+const modalState = {id: null, visible: 100};
+
+function openModal(id) {
+  modalState.id = id;
+  const s = charts[id];
+  s.visible_small = s.visible; // stash
+  s.visible = 100; // bigger default in modal
+  document.getElementById('modal-title').textContent = s.pair + '  ·  ' + s.tf;
+  document.getElementById('modal').classList.add('open');
+  syncModalTfButtons();
+  renderModal();
+}
+function closeModal() {
+  if (modalState.id) {
+    const s = charts[modalState.id];
+    if (s.visible_small) s.visible = s.visible_small;
+    render(modalState.id);
+  }
+  modalState.id = null;
+  document.getElementById('modal').classList.remove('open');
+}
+function renderModal() {
+  const s = charts[modalState.id];
+  if (!s) return;
+  const c = document.getElementById('modal-canvas');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = c.clientWidth, cssH = c.clientHeight;
+  if (c.width !== cssW*dpr) { c.width = cssW*dpr; c.height = cssH*dpr; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  drawChart(ctx, cssW, cssH, s, 20);
+
+  const tfData = s.data[s.tf];
+  const peak = Math.max(...tfData.map(c => c.high), tfData.live.high);
+  document.getElementById('mi-entry').textContent = s.entry.toFixed(4);
+  document.getElementById('mi-now').textContent = tfData.live.close.toFixed(4);
+  document.getElementById('mi-stop').textContent = s.stop.toFixed(4);
+  document.getElementById('mi-peak').textContent = peak.toFixed(4);
+  document.getElementById('modal-title').textContent = s.pair + '  ·  ' + s.tf;
+  document.getElementById('modal-zoom').textContent =
+    s.visible + ' bars · ' + s.tf + ' · window ≈ ' + formatWindow(s.visible, s.tf);
+}
+attachZoom('modal', 20, 200);
+attachDrag('modal');
+
+window.addEventListener('resize', () => {
+  ['c1','c2'].forEach(render);
+  if (modalState.id) renderModal();
+});
+</script>
+</body>
+</html>
