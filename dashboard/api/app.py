@@ -509,11 +509,17 @@ def api_candles_live():
             # Aggregate 1m bars into higher-tf buckets, then trim to `limit` most recent.
             tf_minutes = {"5m": 5, "15m": 15, "1h": 60}[tf]
             bucket_seconds = tf_minutes * 60
+            lower_bound = bucket_start - timedelta(seconds=limit * bucket_seconds)
             rows = conn.execute(
                 "SELECT timestamp, open, high, low, close FROM candles "
-                "WHERE pair = ? AND granularity = 'ONE_MINUTE' AND timestamp < ? "
+                "WHERE pair = ? AND granularity = 'ONE_MINUTE' "
+                "AND timestamp >= ? AND timestamp < ? "
                 "ORDER BY timestamp ASC",
-                (pair, bucket_start.strftime("%Y-%m-%dT%H:%M:%S")),
+                (
+                    pair,
+                    lower_bound.strftime("%Y-%m-%dT%H:%M:%S"),
+                    bucket_start.strftime("%Y-%m-%dT%H:%M:%S"),
+                ),
             ).fetchall()
 
             buckets: dict[int, dict] = {}
