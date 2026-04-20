@@ -14,12 +14,20 @@ def _make_tape_db(path: str, ticks: list[tuple[str, str, float, float]]) -> None
     conn = sqlite3.connect(path)
     conn.execute(
         """CREATE TABLE ws_matches (
-            pair TEXT, ts TEXT, price REAL, size REAL, side TEXT
+            id INTEGER PRIMARY KEY,
+            pair TEXT, ts TEXT, ts_epoch REAL,
+            price REAL, size REAL, side TEXT
         )"""
     )
+    rows = [
+        (pair, ts, datetime.fromisoformat(ts).replace(tzinfo=timezone.utc).timestamp(),
+         price, size)
+        for (pair, ts, price, size) in ticks
+    ]
     conn.executemany(
-        "INSERT INTO ws_matches (pair, ts, price, size, side) VALUES (?,?,?,?,'buy')",
-        ticks,
+        "INSERT INTO ws_matches (pair, ts, ts_epoch, price, size, side) "
+        "VALUES (?,?,?,?,?,'buy')",
+        rows,
     )
     conn.commit()
     conn.close()

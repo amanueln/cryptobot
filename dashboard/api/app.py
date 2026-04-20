@@ -399,14 +399,14 @@ def _build_live_bar(tape_path: str, pair: str, bucket_start: datetime) -> dict |
     """
     if not os.path.exists(tape_path):
         return None
-    start_iso = bucket_start.strftime("%Y-%m-%dT%H:%M:%S")
+    start_epoch = bucket_start.timestamp()
     conn = sqlite3.connect(tape_path)
     try:
         rows = conn.execute(
             "SELECT price FROM ws_matches "
-            "WHERE pair = ? AND ts >= ? "
-            "ORDER BY ts ASC",
-            (pair, start_iso),
+            "WHERE pair = ? AND ts_epoch >= ? "
+            "ORDER BY ts_epoch ASC",
+            (pair, start_epoch),
         ).fetchall()
     finally:
         conn.close()
