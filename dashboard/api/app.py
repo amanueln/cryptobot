@@ -424,6 +424,21 @@ def _build_live_bar(tape_path: str, pair: str, bucket_start: datetime) -> dict |
     }
 
 
+def _utcnow() -> datetime:
+    """Wrapped so tests can monkeypatch the 'now' clock."""
+    return datetime.now(timezone.utc)
+
+
+def _bucket_start(now: datetime, tf: str) -> datetime:
+    """Floor `now` to the start of its bucket for the given timeframe."""
+    minutes_map = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+    m = minutes_map[tf]
+    if tf == "1h":
+        return now.replace(minute=0, second=0, microsecond=0)
+    bucket_min = (now.minute // m) * m
+    return now.replace(minute=bucket_min, second=0, microsecond=0)
+
+
 # ---------- /api/candles ----------
 
 @app.route("/api/candles")
@@ -454,6 +469,58 @@ def api_candles():
         }
         for row in rows
     ])
+
+
+# ---------- /api/candles/live ----------
+
+@app.route("/api/candles/live")
+def api_candles_live():
+    pair = request.args.get("pair", "")
+    tf = request.args.get("tf", "1m")
+    limit = int(request.args.get("limit", 200))
+    if tf not in ("1m", "5m", "15m", "1h"):
+        return jsonify({"error": f"invalid tf: {tf}"}), 400
+    if not pair:
+        return jsonify({"error": "pair required"}), 400
+
+    now = _utcnow()
+    bucket_start = _bucket_start(now, tf)
+
+    # Historical bars (closed), up to but not including the current bucket.
+    conn = get_db()
+    try:
+        if tf == "1m":
+            rows = conn.execute(
+                "SELECT timestamp, open, high, low, close FROM candles "
+                "WHERE pair = ? AND granularity = 'ONE_MINUTE' AND timestamp < ? "
+                "ORDER BY timestamp DESC LIMIT ?",
+                (pair, bucket_start.strftime("%Y-%m-%dT%H:%M:%S"), limit),
+            ).fetchall()
+            bars = [
+                {
+                    "t": int(datetime.fromisoformat(r["timestamp"])
+                             .replace(tzinfo=timezone.utc).timestamp() * 1000),
+                    "open": r["open"], "high": r["high"],
+                    "low": r["low"], "close": r["close"],
+                }
+                for r in reversed(rows)
+            ]
+        else:
+            # Higher-tf aggregation implemented in Task 3; stub for now.
+            bars = []
+    finally:
+        conn.close()
+
+    tape_path = os.path.join(os.path.dirname(DB_PATH), "market_tape.db")
+    live = _build_live_bar(tape_path, pair, bucket_start)
+
+    return jsonify({
+        "pair": pair,
+        "tf": tf,
+        "server_time_ms": int(now.timestamp() * 1000),
+        "bars": bars,
+        "live": live,
+    })
 
 
 # ---------- /api/trades ----------
