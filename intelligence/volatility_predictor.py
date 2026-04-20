@@ -215,10 +215,10 @@ class VolatilityPredictor:
         features = _build_vol_features(df, btc_df)
         label = _compute_vol_label(df, self.forecast_horizon)
 
-        # Merge and drop NaNs
+        # Merge and drop NaNs (also treat ±Inf as NaN — can appear in ratio features on zero denominators)
         combined = features.copy()
         combined["label"] = label
-        combined = combined.dropna()
+        combined = combined.replace([np.inf, -np.inf], np.nan).dropna()
 
         if len(combined) < 100:
             logger.warning(f"Not enough valid samples for {pair} after NaN drop ({len(combined)})")
