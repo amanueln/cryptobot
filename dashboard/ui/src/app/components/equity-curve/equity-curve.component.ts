@@ -6,6 +6,7 @@ import {
   ElementRef,
   ViewChild,
   signal,
+  computed,
   inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -363,7 +364,7 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
   totalRealizedPnl = signal<number>(0);
   totalFees        = signal<number>(0);
   positions        = signal<PositionData[]>([]);
-  readonly momentumHoldings = () => this.api.momentumStatus()?.holdings ?? [];
+  readonly momentumHoldings = computed(() => this.api.momentumStatus()?.holdings ?? []);
 
   pairNames: string[] = [];
 

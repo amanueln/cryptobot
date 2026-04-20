@@ -1,5 +1,5 @@
 import {
-  Component, input, effect, ElementRef, viewChild, OnDestroy, signal,
+  Component, input, output, effect, ElementRef, viewChild, OnDestroy, signal,
 } from '@angular/core';
 import {
   createChart, IChartApi, ISeriesApi, IPriceLine, Time, LogicalRange,
@@ -68,7 +68,12 @@ export class LiveCandleChartComponent implements OnDestroy {
   trailStop = input<number>(0);
   height = input<number>(160);
 
+  readonly openExpanded = output<void>();
+
   chartContainer = viewChild<ElementRef<HTMLDivElement>>('chartContainer');
+
+  private dragStartX = 0;
+  private dragStartY = 0;
 
   private chart: IChartApi | null = null;
   private candleSeries: ISeriesApi<'Candlestick'> | null = null;
@@ -141,6 +146,15 @@ export class LiveCandleChartComponent implements OnDestroy {
       this.pannedOff.set(range.to < lastIdx - 1);
     });
     container.addEventListener('dblclick', () => this.snapToLive());
+    container.addEventListener('pointerdown', (e: PointerEvent) => {
+      this.dragStartX = e.clientX;
+      this.dragStartY = e.clientY;
+    });
+    container.addEventListener('pointerup', (e: PointerEvent) => {
+      const dx = Math.abs(e.clientX - this.dragStartX);
+      const dy = Math.abs(e.clientY - this.dragStartY);
+      if (dx < 4 && dy < 4) this.openExpanded.emit();
+    });
   }
 
   private loadData(pair: string, tf: '1m' | '5m' | '15m' | '1h'): void {

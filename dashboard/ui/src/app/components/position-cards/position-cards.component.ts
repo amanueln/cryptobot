@@ -33,17 +33,13 @@ import { HoldingCardChartModalComponent } from '../holding-card-chart-modal/hold
             ({{ pos.unrealized_pnl_pct >= 0 ? '+' : '' }}{{ pos.unrealized_pnl_pct | number:'1.2-2' }}%)
           </div>
 
-          <div
-            class="chart-wrap"
-            (pointerdown)="onChartPointerDown($event)"
-            (pointerup)="onChartPointerUp($event, pos.pair)">
-            <app-live-candle-chart
-              [pair]="pos.pair"
-              [entry]="pos.entry_price"
-              [trailStop]="trailStopFor(pos.pair)"
-              [height]="160"
-            />
-          </div>
+          <app-live-candle-chart
+            [pair]="pos.pair"
+            [entry]="pos.entry_price"
+            [trailStop]="trailStopFor(pos.pair)"
+            [height]="160"
+            (openExpanded)="openModal(pos.pair)"
+          />
         </div>
       } @empty {
         <div class="no-positions">No open positions</div>
@@ -82,7 +78,6 @@ import { HoldingCardChartModalComponent } from '../holding-card-chart-modal/hold
     .pos-current { font-size: 12px; color: #a0a4b8; margin-bottom: 4px; }
     .pos-current strong { color: #e1e4ed; }
     .pos-pnl { font-size: 12px; font-weight: 500; margin-top: 4px; margin-bottom: 10px; }
-    .chart-wrap { cursor: pointer; }
     .no-positions { color: #555; font-size: 13px; padding: 8px 0; }
   `],
 })
@@ -91,9 +86,6 @@ export class PositionCardsComponent {
   holdings = input<MomentumHoldingData[]>([]);
 
   readonly modalPair = signal<string | null>(null);
-
-  private dragStartX = 0;
-  private dragStartY = 0;
 
   enrichedPositions = computed(() => {
     return this.positions()
@@ -122,17 +114,6 @@ export class PositionCardsComponent {
 
   positionByPair(pair: string): PositionData | undefined {
     return this.positions().find(p => p.pair === pair);
-  }
-
-  onChartPointerDown(e: PointerEvent): void {
-    this.dragStartX = e.clientX;
-    this.dragStartY = e.clientY;
-  }
-
-  onChartPointerUp(e: PointerEvent, pair: string): void {
-    const dx = Math.abs(e.clientX - this.dragStartX);
-    const dy = Math.abs(e.clientY - this.dragStartY);
-    if (dx < 4 && dy < 4) this.openModal(pair);
   }
 
   openModal(pair: string): void {
