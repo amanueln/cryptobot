@@ -32,6 +32,10 @@ export class LiveCandleChartComponent implements OnDestroy {
   private chart: IChartApi | null = null;
   private candleSeries: ISeriesApi<'Candlestick'> | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private pollTimer: any = null;
+  private visHandler: (() => void) | null = null;
+  private currentTf: '1m' | '5m' | '15m' | '1h' = '1m';
+  private lastLiveBucketMs = 0;
 
   constructor(private api: ApiService) {
     effect(() => {
@@ -39,7 +43,8 @@ export class LiveCandleChartComponent implements OnDestroy {
       const p = this.pair();
       if (!container || !p) return;
       if (!this.chart) this.initChart(container.nativeElement);
-      this.loadData(p, '1m');
+      this.loadData(p, this.currentTf);
+      this.startPolling();
     });
   }
 
@@ -66,12 +71,15 @@ export class LiveCandleChartComponent implements OnDestroy {
 
   private loadData(pair: string, tf: '1m' | '5m' | '15m' | '1h'): void {
     this.api.fetchLiveCandles(pair, tf, 200).subscribe({
-      next: (resp) => this.applyBars(resp.bars, resp.live),
+      next: (resp) => {
+        this.setAllBars(resp.bars, resp.live);
+        this.lastLiveBucketMs = resp.live?.t ?? 0;
+      },
       error: () => {},
     });
   }
 
-  private applyBars(bars: LiveCandleBar[], live: LiveCandleBar | null): void {
+  private setAllBars(bars: LiveCandleBar[], live: LiveCandleBar | null): void {
     if (!this.candleSeries) return;
     const series: CandlestickData<Time>[] = bars.map(b => ({
       time: (b.t / 1000) as Time, open: b.open, high: b.high, low: b.low, close: b.close,
@@ -83,7 +91,56 @@ export class LiveCandleChartComponent implements OnDestroy {
     this.candleSeries.setData(series);
   }
 
+  private startPolling(): void {
+    this.stopPolling();
+    this.pollTimer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      this.tick();
+    }, 1000);
+    this.visHandler = () => { if (document.visibilityState === 'visible') this.tick(); };
+    document.addEventListener('visibilitychange', this.visHandler);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+    if (this.visHandler) { document.removeEventListener('visibilitychange', this.visHandler); this.visHandler = null; }
+  }
+
+  private tick(): void {
+    const p = this.pair();
+    if (!p || !this.candleSeries) return;
+    this.api.fetchLiveCandles(p, this.currentTf, 200).subscribe({
+      next: (resp) => {
+        const live = resp.live;
+        const newestHistorical = resp.bars.length ? resp.bars[resp.bars.length - 1] : null;
+
+        // If a new closed bar appeared (lastLiveBucketMs advanced), reload full window.
+        if (live && this.lastLiveBucketMs && live.t !== this.lastLiveBucketMs) {
+          this.setAllBars(resp.bars, live);
+          this.lastLiveBucketMs = live.t;
+          return;
+        }
+        // Otherwise just update the live-forming bar in place.
+        if (live) {
+          this.candleSeries!.update({
+            time: (live.t / 1000) as Time,
+            open: live.open, high: live.high, low: live.low, close: live.close,
+          });
+          if (!this.lastLiveBucketMs) this.lastLiveBucketMs = live.t;
+        } else if (newestHistorical) {
+          this.candleSeries!.update({
+            time: (newestHistorical.t / 1000) as Time,
+            open: newestHistorical.open, high: newestHistorical.high,
+            low: newestHistorical.low, close: newestHistorical.close,
+          });
+        }
+      },
+      error: () => {},
+    });
+  }
+
   ngOnDestroy(): void {
+    this.stopPolling();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     if (this.chart) { this.chart.remove(); this.chart = null; }
