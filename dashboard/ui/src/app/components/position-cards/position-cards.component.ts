@@ -33,13 +33,15 @@ import { HoldingCardChartModalComponent } from '../holding-card-chart-modal/hold
             ({{ pos.unrealized_pnl_pct >= 0 ? '+' : '' }}{{ pos.unrealized_pnl_pct | number:'1.2-2' }}%)
           </div>
 
-          <app-live-candle-chart
-            [pair]="pos.pair"
-            [entry]="pos.entry_price"
-            [trailStop]="trailStopFor(pos.pair)"
-            [height]="160"
-            (openExpanded)="openModal(pos.pair)"
-          />
+          @if (modalPair() !== pos.pair) {
+            <app-live-candle-chart
+              [pair]="pos.pair"
+              [entry]="pos.entry_price"
+              [trailStop]="trailStopFor(pos.pair)"
+              [height]="160"
+              (openExpanded)="openModal(pos.pair)"
+            />
+          }
         </div>
       } @empty {
         <div class="no-positions">No open positions</div>

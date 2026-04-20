@@ -120,6 +120,13 @@ export class LiveCandleChartComponent implements OnDestroy {
     });
   }
 
+  // lightweight-charts passes Time as UTCTimestamp (seconds) for our intraday data.
+  // Render 12-hour AM/PM clock (no seconds — matches secondsVisible: false).
+  private formatAxisTime(t: Time): string {
+    const d = new Date((t as number) * 1000);
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+
   private initChart(container: HTMLDivElement): void {
     this.chart = createChart(container, {
       width: container.clientWidth,
@@ -127,7 +134,13 @@ export class LiveCandleChartComponent implements OnDestroy {
       layout: { background: { color: '#0f1117' }, textColor: '#8895ad' },
       grid: { vertLines: { color: '#1e2130' }, horzLines: { color: '#1e2130' } },
       rightPriceScale: { borderColor: '#1e2130' },
-      timeScale: { borderColor: '#1e2130', timeVisible: true, secondsVisible: false },
+      localization: { timeFormatter: (t: Time) => this.formatAxisTime(t) },
+      timeScale: {
+        borderColor: '#1e2130',
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (t: Time) => this.formatAxisTime(t),
+      },
     });
     this.candleSeries = this.chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e', downColor: '#ef4444',
