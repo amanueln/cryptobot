@@ -12,13 +12,14 @@ import {
 import { forkJoin } from 'rxjs';
 import { TradeCalendarComponent } from '../trade-calendar/trade-calendar.component';
 import { OrderbookLadderComponent } from '../orderbook-ladder/orderbook-ladder.component';
+import { LiveCandleChartComponent } from '../live-candle-chart/live-candle-chart.component';
 
 Chart.register(...registerables, zoomPlugin);
 
 @Component({
   selector: 'app-momentum-panel',
   standalone: true,
-  imports: [CommonModule, TradeCalendarComponent, OrderbookLadderComponent],
+  imports: [CommonModule, TradeCalendarComponent, OrderbookLadderComponent, LiveCandleChartComponent],
   template: `
     <div class="mp-root">
 
@@ -217,6 +218,11 @@ Chart.register(...registerables, zoomPlugin);
                               (click)="manualSell(h.pair)">
                         {{ sellingPair() === h.pair ? 'Selling...' : 'Sell' }}
                       </button>
+                      <button class="ch-chart-toggle"
+                              (click)="toggleChart(h.pair)"
+                              [title]="isChartCollapsed(h.pair) ? 'Show chart' : 'Hide chart'">
+                        {{ isChartCollapsed(h.pair) ? '▸ chart' : '▾ chart' }}
+                      </button>
                     </div>
                     <div class="ch-stats">
                       <div class="ch-stat tt-wrap">
@@ -262,6 +268,14 @@ Chart.register(...registerables, zoomPlugin);
                         <span class="tt">Momentum acceleration — how fast the uptrend is accelerating. Exits if this fades below 5% after 4h.</span>
                       </div>
                     </div>
+                    @if (!isChartCollapsed(h.pair)) {
+                      <app-live-candle-chart
+                        [pair]="h.pair"
+                        [entry]="h.entry_price"
+                        [trailStop]="h.stop_price"
+                        [height]="160"
+                      />
+                    }
                   </div>
                 </div>
               }
@@ -1257,6 +1271,13 @@ Chart.register(...registerables, zoomPlugin);
       background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fbbf24;
       animation: pulse 1s ease-in-out infinite;
     }
+    .ch-chart-toggle {
+      padding: 0.3em 0.7em; border: 1px solid #2d3148; border-radius: 4px;
+      background: transparent; color: #8895ad; font-size: 0.7rem;
+      font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit;
+      transition: all 0.15s;
+    }
+    .ch-chart-toggle:hover { border-color: #3b82f6; color: #e6ecf5; }
 
     /* Sell notification banner */
     .sell-notification {
@@ -1593,6 +1614,17 @@ export class MomentumPanelComponent implements OnInit, AfterViewInit {
   private _liveStatusInterval: any;
   private _pollCountdown = signal(60);
   private _countdownInterval: any;
+  private _chartCollapsed = signal<Set<string>>(new Set());
+
+  isChartCollapsed(pair: string): boolean {
+    return this._chartCollapsed().has(pair);
+  }
+
+  toggleChart(pair: string): void {
+    const next = new Set(this._chartCollapsed());
+    if (next.has(pair)) next.delete(pair); else next.add(pair);
+    this._chartCollapsed.set(next);
+  }
 
   @ViewChild('momEquityCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   private chart?: Chart;

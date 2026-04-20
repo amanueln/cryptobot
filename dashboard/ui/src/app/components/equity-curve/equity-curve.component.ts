@@ -6,6 +6,7 @@ import {
   ElementRef,
   ViewChild,
   signal,
+  computed,
   inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -100,7 +101,7 @@ const PAIR_COLORS: string[] = [
       </div>
 
       <!-- Position summary cards -->
-      <app-position-cards [positions]="positions()" />
+      <app-position-cards [positions]="positions()" [holdings]="momentumHoldings()" />
 
       <!-- Trade log table -->
       <app-trade-log [trades]="allTrades()" />
@@ -363,6 +364,7 @@ export class EquityCurveComponent implements OnInit, AfterViewInit, OnDestroy {
   totalRealizedPnl = signal<number>(0);
   totalFees        = signal<number>(0);
   positions        = signal<PositionData[]>([]);
+  readonly momentumHoldings = computed(() => this.api.momentumStatus()?.holdings ?? []);
 
   pairNames: string[] = [];
 

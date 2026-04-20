@@ -377,6 +377,7 @@ class SimRunner:
                     self.momentum_engine.pairs.append(pair)
                 if pair not in self.momentum_engine._closes:
                     self.momentum_engine._closes[pair] = []
+                    self.momentum_engine._opens[pair] = []
                     self.momentum_engine._highs[pair] = []
                     self.momentum_engine._lows[pair] = []
                     self.momentum_engine._timestamps[pair] = []

@@ -20,6 +20,7 @@ import { PairScannerComponent } from '../pair-scanner/pair-scanner.component';
 import { AdaptationsComponent } from '../adaptations/adaptations.component';
 import { MomentumPanelComponent } from '../momentum-panel/momentum-panel.component';
 import { EarlyScannerComponent } from '../early-scanner/early-scanner.component';
+import { PositionCardsComponent } from '../position-cards/position-cards.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -34,7 +35,7 @@ const STARTING_BALANCE = 3000;
     PairCardComponent, ExpandedPairChartComponent, HealthBarComponent,
     TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
     SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
-    MomentumPanelComponent, EarlyScannerComponent,
+    MomentumPanelComponent, EarlyScannerComponent, PositionCardsComponent,
   ],
   template: `
     <div class="cc-root">
@@ -195,6 +196,7 @@ const STARTING_BALANCE = 3000;
       <!-- 5. Positions & Trades -->
       <div class="positions-section">
         <div class="section-header">Open Positions &amp; Recent Trades</div>
+        <app-position-cards [positions]="positionCardsData()" [holdings]="momentumHoldings()" />
         <app-trade-log [trades]="allTrades()" />
       </div>
 
@@ -397,6 +399,27 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   maxDrawdown = signal(0);
 
   pairs = computed(() => this.api.status()?.pairs ?? []);
+  momentumHoldings = computed(() => this.api.momentumStatus()?.holdings ?? []);
+
+  // Cards render from positions(), but the momentum engine surfaces its holdings in a separate
+  // shape. Synthesize PositionData from each holding so every open position has a card with the
+  // embedded live chart, even when /api/positions is empty.
+  positionCardsData = computed<PositionData[]>(() => {
+    const real = this.positions();
+    if (real.length > 0) return real;
+    return this.momentumHoldings().map(h => ({
+      pair: h.pair,
+      quantity: h.shares,
+      entry_price: h.entry_price,
+      current_price: h.current_price,
+      cost_basis: h.entry_price * h.shares,
+      market_value: h.value,
+      unrealized_pnl: h.pnl,
+      unrealized_pnl_pct: h.pnl_pct,
+      hold_since: h.entry_time ?? null,
+      breakeven_price: null,
+    }));
+  });
 
   // Hero numbers — derived from status signal
   heroEquity = computed(() => this.api.status()?.equity ?? 0);
