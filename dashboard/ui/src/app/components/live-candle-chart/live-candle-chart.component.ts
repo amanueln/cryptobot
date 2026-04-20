@@ -12,12 +12,40 @@ import { ApiService, LiveCandleBar } from '../../services/api.service';
   standalone: true,
   template: `
     <div class="live-chart-root">
+      <div class="chart-top">
+        <div class="tf-group">
+          <button class="tf-btn" [class.active]="currentTf === '1m'"  (click)="setTf('1m')">1m</button>
+          <button class="tf-btn" [class.active]="currentTf === '5m'"  (click)="setTf('5m')">5m</button>
+          <button class="tf-btn" [class.active]="currentTf === '15m'" (click)="setTf('15m')">15m</button>
+          <button class="tf-btn" [class.active]="currentTf === '1h'"  (click)="setTf('1h')">1h</button>
+        </div>
+        <span class="live-pill">LIVE · 1Hz</span>
+      </div>
       <div #chartContainer class="chart-container" [style.height.px]="height()"></div>
     </div>
   `,
   styles: [`
     :host { display: block; width: 100%; }
     .live-chart-root { width: 100%; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px; overflow: hidden; }
+    .chart-top { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px; }
+    .tf-group { display: flex; gap: 2px; }
+    .tf-btn {
+      background: transparent; color: #8895ad;
+      border: 1px solid #2d3148; border-radius: 3px;
+      padding: 2px 8px; font-size: 11px; cursor: pointer; font-family: inherit;
+    }
+    .tf-btn:hover { border-color: #3b82f6; color: #e6ecf5; }
+    .tf-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    .live-pill {
+      background: rgba(34,197,94,.15); color: #22c55e;
+      padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
+      letter-spacing: .5px;
+    }
+    .live-pill::before {
+      content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      background: #22c55e; margin-right: 5px; animation: pulse 1s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
     .chart-container { width: 100%; }
   `],
 })
@@ -34,7 +62,7 @@ export class LiveCandleChartComponent implements OnDestroy {
   private resizeObserver: ResizeObserver | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private visHandler: (() => void) | null = null;
-  private currentTf: '1m' | '5m' | '15m' | '1h' = '1m';
+  public currentTf: '1m' | '5m' | '15m' | '1h' = '1m';
   private lastLiveBucketMs = 0;
 
   constructor(private api: ApiService) {
@@ -138,6 +166,14 @@ export class LiveCandleChartComponent implements OnDestroy {
       },
       error: () => {},
     });
+  }
+
+  setTf(tf: '1m' | '5m' | '15m' | '1h'): void {
+    if (tf === this.currentTf) return;
+    this.currentTf = tf;
+    this.lastLiveBucketMs = 0;
+    const p = this.pair();
+    if (p) this.loadData(p, tf);
   }
 
   ngOnDestroy(): void {
