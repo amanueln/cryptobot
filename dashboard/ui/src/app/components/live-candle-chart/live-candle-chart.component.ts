@@ -1,8 +1,8 @@
 import {
-  Component, input, effect, ElementRef, viewChild, OnDestroy,
+  Component, input, effect, ElementRef, viewChild, OnDestroy, signal,
 } from '@angular/core';
 import {
-  createChart, IChartApi, ISeriesApi, IPriceLine, Time,
+  createChart, IChartApi, ISeriesApi, IPriceLine, Time, LogicalRange,
   CandlestickSeries, CandlestickData,
 } from 'lightweight-charts';
 import { ApiService, LiveCandleBar } from '../../services/api.service';
@@ -19,7 +19,10 @@ import { ApiService, LiveCandleBar } from '../../services/api.service';
           <button class="tf-btn" [class.active]="currentTf === '15m'" (click)="setTf('15m')">15m</button>
           <button class="tf-btn" [class.active]="currentTf === '1h'"  (click)="setTf('1h')">1h</button>
         </div>
-        <span class="live-pill">LIVE · 1Hz</span>
+        <span class="top-right">
+          <button class="jump-live" [class.show]="pannedOff()" (click)="snapToLive()">● go live</button>
+          <span class="live-pill">LIVE · 1Hz</span>
+        </span>
       </div>
       <div #chartContainer class="chart-container" [style.height.px]="height()"></div>
     </div>
@@ -47,6 +50,16 @@ import { ApiService, LiveCandleBar } from '../../services/api.service';
     }
     @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
     .chart-container { width: 100%; }
+    .top-right { display: inline-flex; align-items: center; gap: 6px; }
+    .jump-live {
+      display: none;
+      background: #22c55e; color: #0b0f17;
+      border: 1px solid #22c55e; border-radius: 10px;
+      padding: 2px 8px; font-size: 10px; font-weight: 700; cursor: pointer;
+      font-family: inherit; letter-spacing: .3px;
+    }
+    .jump-live.show { display: inline-block; }
+    .jump-live:hover { background: #16a34a; border-color: #16a34a; }
   `],
 })
 export class LiveCandleChartComponent implements OnDestroy {
@@ -68,6 +81,8 @@ export class LiveCandleChartComponent implements OnDestroy {
   private trailLine: IPriceLine | null = null;
   private nowLine: IPriceLine | null = null;
   private lastNowPrice = 0;
+  readonly pannedOff = signal(false);
+  private barCount = 0;
 
   constructor(private api: ApiService) {
     effect(() => {
@@ -119,6 +134,13 @@ export class LiveCandleChartComponent implements OnDestroy {
       for (const e of entries) this.chart?.applyOptions({ width: e.contentRect.width });
     });
     this.resizeObserver.observe(container);
+
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange((range: LogicalRange | null) => {
+      if (!range) { this.pannedOff.set(false); return; }
+      const lastIdx = this.barCount - 1;
+      this.pannedOff.set(range.to < lastIdx - 1);
+    });
+    container.addEventListener('dblclick', () => this.snapToLive());
   }
 
   private loadData(pair: string, tf: '1m' | '5m' | '15m' | '1h'): void {
@@ -134,6 +156,7 @@ export class LiveCandleChartComponent implements OnDestroy {
 
   private setAllBars(bars: LiveCandleBar[], live: LiveCandleBar | null): void {
     if (!this.candleSeries) return;
+    this.barCount = bars.length + (live ? 1 : 0);
     const series: CandlestickData<Time>[] = bars.map(b => ({
       time: (b.t / 1000) as Time, open: b.open, high: b.high, low: b.low, close: b.close,
     }));
@@ -183,6 +206,7 @@ export class LiveCandleChartComponent implements OnDestroy {
         // If a new closed bar appeared (lastLiveBucketMs advanced), reload full window.
         if (live && this.lastLiveBucketMs && live.t !== this.lastLiveBucketMs) {
           this.setAllBars(resp.bars, live);
+          this.barCount = resp.bars.length + (resp.live ? 1 : 0);
           this.lastLiveBucketMs = live.t;
           return;
         }
@@ -212,6 +236,11 @@ export class LiveCandleChartComponent implements OnDestroy {
     this.lastLiveBucketMs = 0;
     const p = this.pair();
     if (p) this.loadData(p, tf);
+  }
+
+  snapToLive(): void {
+    this.chart?.timeScale().scrollToRealTime();
+    this.pannedOff.set(false);
   }
 
   ngOnDestroy(): void {
