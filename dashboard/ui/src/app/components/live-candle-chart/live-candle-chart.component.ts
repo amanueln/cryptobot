@@ -2,7 +2,7 @@ import {
   Component, input, effect, ElementRef, viewChild, OnDestroy,
 } from '@angular/core';
 import {
-  createChart, IChartApi, ISeriesApi, Time,
+  createChart, IChartApi, ISeriesApi, IPriceLine, Time,
   CandlestickSeries, CandlestickData,
 } from 'lightweight-charts';
 import { ApiService, LiveCandleBar } from '../../services/api.service';
@@ -64,6 +64,10 @@ export class LiveCandleChartComponent implements OnDestroy {
   private visHandler: (() => void) | null = null;
   public currentTf: '1m' | '5m' | '15m' | '1h' = '1m';
   private lastLiveBucketMs = 0;
+  private entryLine: IPriceLine | null = null;
+  private trailLine: IPriceLine | null = null;
+  private nowLine: IPriceLine | null = null;
+  private lastNowPrice = 0;
 
   constructor(private api: ApiService) {
     effect(() => {
@@ -73,6 +77,26 @@ export class LiveCandleChartComponent implements OnDestroy {
       if (!this.chart) this.initChart(container.nativeElement);
       this.loadData(p, this.currentTf);
       this.startPolling();
+    });
+
+    effect(() => {
+      const e = this.entry();
+      const t = this.trailStop();
+      if (!this.candleSeries) return;
+      if (this.entryLine) { this.candleSeries.removePriceLine(this.entryLine); this.entryLine = null; }
+      if (this.trailLine) { this.candleSeries.removePriceLine(this.trailLine); this.trailLine = null; }
+      if (e > 0) {
+        this.entryLine = this.candleSeries.createPriceLine({
+          price: e, color: '#3b82f6', lineWidth: 1, lineStyle: 2,
+          axisLabelVisible: true, title: 'entry',
+        });
+      }
+      if (t > 0) {
+        this.trailLine = this.candleSeries.createPriceLine({
+          price: t, color: '#ef4444', lineWidth: 1, lineStyle: 2,
+          axisLabelVisible: true, title: 'trail',
+        });
+      }
     });
   }
 
@@ -118,6 +142,19 @@ export class LiveCandleChartComponent implements OnDestroy {
       open: live.open, high: live.high, low: live.low, close: live.close,
     });
     this.candleSeries.setData(series);
+    this.updateNowLine(bars, live);
+  }
+
+  private updateNowLine(bars: LiveCandleBar[], live: LiveCandleBar | null): void {
+    if (!this.candleSeries) return;
+    const nowPrice = live?.close ?? (bars.length ? bars[bars.length - 1].close : 0);
+    if (!nowPrice || nowPrice === this.lastNowPrice) return;
+    if (this.nowLine) this.candleSeries.removePriceLine(this.nowLine);
+    this.nowLine = this.candleSeries.createPriceLine({
+      price: nowPrice, color: '#fbbf24', lineWidth: 1, lineStyle: 2,
+      axisLabelVisible: true, title: 'now',
+    });
+    this.lastNowPrice = nowPrice;
   }
 
   private startPolling(): void {
@@ -163,6 +200,7 @@ export class LiveCandleChartComponent implements OnDestroy {
             low: newestHistorical.low, close: newestHistorical.close,
           });
         }
+        this.updateNowLine(resp.bars, resp.live);
       },
       error: () => {},
     });
