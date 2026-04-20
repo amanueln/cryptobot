@@ -506,8 +506,34 @@ def api_candles_live():
                 for r in reversed(rows)
             ]
         else:
-            # Higher-tf aggregation implemented in Task 3; stub for now.
-            bars = []
+            # Aggregate 1m bars into higher-tf buckets, then trim to `limit` most recent.
+            tf_minutes = {"5m": 5, "15m": 15, "1h": 60}[tf]
+            bucket_seconds = tf_minutes * 60
+            rows = conn.execute(
+                "SELECT timestamp, open, high, low, close FROM candles "
+                "WHERE pair = ? AND granularity = 'ONE_MINUTE' AND timestamp < ? "
+                "ORDER BY timestamp ASC",
+                (pair, bucket_start.strftime("%Y-%m-%dT%H:%M:%S")),
+            ).fetchall()
+
+            buckets: dict[int, dict] = {}
+            for r in rows:
+                ts = datetime.fromisoformat(r["timestamp"]).replace(tzinfo=timezone.utc)
+                epoch = int(ts.timestamp())
+                bkey = (epoch // bucket_seconds) * bucket_seconds
+                b = buckets.get(bkey)
+                if b is None:
+                    buckets[bkey] = {
+                        "t": bkey * 1000,
+                        "open": r["open"], "high": r["high"],
+                        "low": r["low"], "close": r["close"],
+                    }
+                else:
+                    b["high"] = max(b["high"], r["high"])
+                    b["low"] = min(b["low"], r["low"])
+                    b["close"] = r["close"]
+
+            bars = [buckets[k] for k in sorted(buckets.keys())][-limit:]
     finally:
         conn.close()
 

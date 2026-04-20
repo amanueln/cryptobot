@@ -148,3 +148,57 @@ def test_candles_live_returns_historical_and_live_bars(monkeypatch, tmp_path):
     assert live["open"] == 0.199
     assert live["high"] == 0.201
     assert live["close"] == 0.201
+
+
+def test_candles_live_aggregates_5m_from_1m(monkeypatch, tmp_path):
+    from dashboard.api import app as app_mod
+
+    candles_path = tmp_path / "candles.db"
+    tape_path = tmp_path / "market_tape.db"
+
+    # 10 minutes of 1m bars: two complete 5m buckets (15:20-15:24 and 15:25-15:29),
+    # plus an in-progress 15:30 bucket via ws_matches.
+    _make_candles_db(str(candles_path), [
+        ("F-USD", "2026-04-20T15:20:00", 1.00, 1.02, 0.99, 1.01, 1.0),
+        ("F-USD", "2026-04-20T15:21:00", 1.01, 1.03, 1.00, 1.02, 1.0),
+        ("F-USD", "2026-04-20T15:22:00", 1.02, 1.04, 1.01, 1.03, 1.0),
+        ("F-USD", "2026-04-20T15:23:00", 1.03, 1.05, 1.02, 1.04, 1.0),
+        ("F-USD", "2026-04-20T15:24:00", 1.04, 1.06, 1.03, 1.05, 1.0),
+        ("F-USD", "2026-04-20T15:25:00", 1.05, 1.07, 1.04, 1.06, 1.0),
+        ("F-USD", "2026-04-20T15:26:00", 1.06, 1.08, 1.05, 1.07, 1.0),
+        ("F-USD", "2026-04-20T15:27:00", 1.07, 1.09, 1.06, 1.08, 1.0),
+        ("F-USD", "2026-04-20T15:28:00", 1.08, 1.10, 1.07, 1.09, 1.0),
+        ("F-USD", "2026-04-20T15:29:00", 1.09, 1.11, 1.08, 1.10, 1.0),
+    ])
+    _make_tape_db(str(tape_path), [
+        ("F-USD", "2026-04-20T15:30:10", 1.10, 1.0),
+        ("F-USD", "2026-04-20T15:30:20", 1.12, 1.0),
+    ])
+
+    monkeypatch.setattr(app_mod, "DB_PATH", str(candles_path))
+    frozen = datetime(2026, 4, 20, 15, 30, 25, tzinfo=timezone.utc)
+    monkeypatch.setattr(app_mod, "_utcnow", lambda: frozen)
+
+    client = app_mod.app.test_client()
+    resp = client.get("/api/candles/live?pair=F-USD&tf=5m&limit=50")
+    assert resp.status_code == 200
+
+    data = resp.get_json()
+    assert data["tf"] == "5m"
+    assert len(data["bars"]) == 2
+
+    # First bucket: 15:20 open=1.00, max high=1.06, min low=0.99, close=1.05
+    b0 = data["bars"][0]
+    assert b0["open"] == 1.00
+    assert b0["high"] == 1.06
+    assert b0["low"] == 0.99
+    assert b0["close"] == 1.05
+
+    # Second bucket: 15:25 open=1.05, close=1.10
+    b1 = data["bars"][1]
+    assert b1["open"] == 1.05
+    assert b1["close"] == 1.10
+
+    # Live bucket built from ws_matches @ 15:30
+    assert data["live"]["open"] == 1.10
+    assert data["live"]["close"] == 1.12
