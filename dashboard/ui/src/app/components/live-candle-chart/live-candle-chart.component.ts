@@ -146,6 +146,16 @@ export class LiveCandleChartComponent implements OnDestroy {
       upColor: '#22c55e', downColor: '#ef4444',
       borderUpColor: '#22c55e', borderDownColor: '#ef4444',
       wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+      // Fold entry + trail into the Y range so their price lines are always visible
+      // even when the candle range is tight (e.g. intraday chop far from entry).
+      autoscaleInfoProvider: (orig: () => any) => {
+        const base = orig();
+        const extras = [this.entry(), this.trailStop()].filter(v => v > 0);
+        if (!extras.length || !base?.priceRange) return base;
+        const min = Math.min(base.priceRange.minValue, ...extras);
+        const max = Math.max(base.priceRange.maxValue, ...extras);
+        return { ...base, priceRange: { minValue: min, maxValue: max } };
+      },
     });
 
     this.resizeObserver = new ResizeObserver(entries => {
