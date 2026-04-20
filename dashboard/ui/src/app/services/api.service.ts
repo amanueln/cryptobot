@@ -12,6 +12,22 @@ export interface CandleData {
   volume: number;
 }
 
+export interface LiveCandleBar {
+  t: number;  // ms since epoch, bucket start
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+export interface LiveCandlesResponse {
+  pair: string;
+  tf: '1m' | '5m' | '15m' | '1h';
+  server_time_ms: number;
+  bars: LiveCandleBar[];
+  live: LiveCandleBar | null;
+}
+
 export interface TradeData {
   id: number;
   timestamp: string;
@@ -533,6 +549,12 @@ export class ApiService {
 
   fetchCandles(pair: string, hours = 72) {
     return this.http.get<CandleData[]>(`${API}/candles`, { params: { pair, hours: hours.toString() } });
+  }
+
+  fetchLiveCandles(pair: string, tf: '1m' | '5m' | '15m' | '1h' = '1m', limit = 200) {
+    return this.http.get<LiveCandlesResponse>(`${API}/candles/live`, {
+      params: { pair, tf, limit: limit.toString() },
+    });
   }
 
   fetchTrades(pair?: string, limit = 50) {
