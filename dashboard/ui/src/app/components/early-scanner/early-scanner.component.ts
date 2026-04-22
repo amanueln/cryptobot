@@ -503,7 +503,24 @@ export class EarlyScannerComponent implements OnInit {
   readonly filterMode = signal<'high' | 'all' | 'winners'>('high');
   readonly comboExpanded = signal(true);
 
-  readonly comboStats = computed(() => this.stats()?.combo_stats ?? []);
+  // Sort combos best-to-worst: winners (score_adj>0) first, then neutral w/ enough
+  // data, then learning (N<10), then losers (score_adj<0). Within each tier, higher
+  // win_rate first, ties broken by larger sample size.
+  readonly comboStats = computed(() => {
+    const rows = this.stats()?.combo_stats ?? [];
+    const tier = (c: SignalComboStats): number => {
+      if (c.score_adj > 0) return 0;           // proven winner
+      if (c.score_adj < 0) return 3;           // proven loser
+      if (c.total >= 10)   return 1;           // neutral, enough data
+      return 2;                                // learning (NEW)
+    };
+    return [...rows].sort((a, b) => {
+      const ta = tier(a), tb = tier(b);
+      if (ta !== tb) return ta - tb;
+      if (b.win_rate !== a.win_rate) return b.win_rate - a.win_rate;
+      return b.total - a.total;
+    });
+  });
 
   readonly highConfCount = computed(() =>
     this.alerts().filter(a => a.effective_score >= 3).length
