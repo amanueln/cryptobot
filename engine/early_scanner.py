@@ -60,6 +60,7 @@ def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
     has_accumulation = 'accumulation' in signal_tags
     has_squeeze = 'squeeze' in signal_tags
     has_bounce = 'bottom_bounce' in signal_tags
+    has_dump_bounce = 'dump_bounce' in signal_tags
     has_vol_spike = 'vol_spike' in signal_tags
     has_breakout = '72h_breakout' in signal_tags
     has_reversal = 'mom_reversal' in signal_tags
@@ -93,6 +94,14 @@ def _generate_ai_take(coin: str, score: int, range_pct: float, change_1h: float,
             if price_flat:
                 parts.append("Price hasn't moved yet though -- need to see an actual uptick before committing money.")
             parts.append("Eyes on, not hands on yet.")
+
+        elif has_dump_bounce:
+            verdict = f"Dump bounce -- {coin} reversing after a real flush"
+            parts.append(f"Price sat near the 72h low ({range_pct:.0f}% of range), dumped {change_3h:+.1f}% over 3h, and just printed a strong green ({change_1h:+.1f}% 1h).")
+            parts.append("This stacked setup (dump + strong uptick) is the highest-win-rate bounce pattern in recent data -- when it works it tends to work big.")
+            if vol_strong:
+                parts.append("Liquidity is solid too.")
+            parts.append("Still can fake out -- confirmation is the next candle holding green.")
 
         elif has_bounce:
             verdict = f"Bottom bounce -- {coin} showing first signs of life"
@@ -167,6 +176,7 @@ def _combo_display(combo_key: str) -> str:
     labels = {
         'accumulation': 'Accumulation',
         'bottom_bounce': 'Bottom Bounce',
+        'dump_bounce': 'Dump Bounce',
         'squeeze': 'Squeeze',
         'vol_spike': 'Volume Spike',
         '72h_breakout': '72h Breakout',
@@ -382,8 +392,17 @@ class EarlyScanner:
             self._save_alerts(alerts)
             for a in alerts:
                 effective = a.get('effective_score', a['score'])
-                if effective >= DISCORD_MIN_SCORE:
-                    self._notify_discord(a)
+                if effective < DISCORD_MIN_SCORE:
+                    continue
+                # Mute Discord for learned-loser combos (score_adj == -1):
+                # combo has >=10 samples AND win rate < 35%. Alert still saved for learning.
+                if a.get('score_adj', 0) < 0:
+                    logger.info(
+                        "Discord muted for %s: combo %s has score_adj=%d (learned loser)",
+                        a['pair'], a.get('combo_key'), a['score_adj'],
+                    )
+                    continue
+                self._notify_discord(a)
 
         return alerts
 
@@ -425,6 +444,9 @@ class EarlyScanner:
                 signals.append(f"accumulation (vol {recent_vol_avg / vol_avg:.1f}x avg, price flat near bottom at {range_pct:.0f}%)")
 
         # Signal B: Range bottom bounce — price near 72h low + first green candle (score = 2)
+        # Signal B+: "Dump bounce" — strict BB variant after a real dump; 84% win on 2026-04 backtest
+        #   (see research/signal_discovery_2026-04-21/). Fires alongside B when all three hold:
+        #     range_pct <= 25, uptick >= 1.0%, 3h change <= -2% (real dump, not drift)
         if len(closes) >= 3 and range_pct <= 25:
             # Price was falling or flat, now ticking up
             prev_change = (closes[-2] - closes[-3]) / closes[-3] if closes[-3] > 0 else 0
@@ -433,6 +455,16 @@ class EarlyScanner:
                 score += 2
                 alert_type = 'setup'
                 signals.append(f"bottom_bounce (range {range_pct:.0f}%, first uptick +{cur_change * 100:.1f}%)")
+
+                # Stacked dump-bounce gate (data-driven, 2026-04-21): real dump + strong uptick
+                if len(closes) >= 4:
+                    price_3h_ago_bb = closes[-4]
+                    change_3h_bb = (cur_price - price_3h_ago_bb) / price_3h_ago_bb if price_3h_ago_bb > 0 else 0
+                    if cur_change >= 0.010 and change_3h_bb <= -0.02:
+                        score += 2
+                        signals.append(
+                            f"dump_bounce (3h {change_3h_bb * 100:+.1f}%, uptick +{cur_change * 100:.1f}%)"
+                        )
 
         # Signal C: Compression squeeze — range tightening (score = 1)
         # Price range of last 6h is much smaller than last 24h = coiling for a move
@@ -594,6 +626,7 @@ class EarlyScanner:
                     'strong_move': 'Strong 3h Move',
                     'accumulation': 'Accumulation',
                     'bottom_bounce': 'Bottom Bounce',
+                    'dump_bounce': 'Dump Bounce',
                     'squeeze': 'Compression Squeeze',
                 }
                 signal_names.append(labels.get(tag, tag))

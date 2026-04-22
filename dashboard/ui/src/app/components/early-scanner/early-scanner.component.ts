@@ -65,6 +65,7 @@ import {
                   <tr>
                     <th class="left">Combo</th>
                     <th>Alerts</th>
+                    <th>W / L</th>
                     <th>Win%</th>
                     <th>Avg Peak</th>
                     <th>Score Adj</th>
@@ -73,8 +74,21 @@ import {
                 <tbody>
                   @for (c of comboStats(); track c.combo) {
                     <tr>
-                      <td class="left">{{ c.combo_display }}</td>
+                      <td class="left">
+                        {{ c.combo_display }}
+                        @if (c.total < 10) {
+                          <span class="new-badge" title="Fewer than 10 samples — combo still learning, stats unreliable">NEW</span>
+                        }
+                        @if (c.combo.includes('dump_bounce')) {
+                          <span class="sig-badge" title="Includes Dump Bounce — the new high-conviction BB variant">DB</span>
+                        }
+                      </td>
                       <td class="center">{{ c.total }}</td>
+                      <td class="center wl">
+                        <span class="wl-win">{{ c.wins }}</span>
+                        <span class="wl-sep">/</span>
+                        <span class="wl-loss">{{ c.total - c.wins }}</span>
+                      </td>
                       <td class="center" [class.pos]="c.win_rate >= 60" [class.warn]="c.win_rate >= 35 && c.win_rate < 60" [class.neg]="c.win_rate < 35">
                         {{ c.win_rate.toFixed(0) }}%
                       </td>
@@ -94,7 +108,7 @@ import {
                   }
                 </tbody>
               </table>
-              <div class="combo-footer">Win = peaked 3%+ within 12h. Score adjustments after 10+ samples.</div>
+              <div class="combo-footer">Win = peaked 3%+ within 12h. Score adjustments after 10+ samples. <span class="new-badge-inline">NEW</span> = still learning; <span class="sig-badge-inline">DB</span> = includes Dump Bounce.</div>
             </div>
           }
         </div>
@@ -310,6 +324,20 @@ import {
     .adj-badge.pos { background: rgba(74,222,128,0.15); color: #4ade80; }
     .adj-badge.neg { background: rgba(248,113,113,0.15); color: #f87171; }
     .adj-none { color: #94a3b8; }
+    .new-badge, .new-badge-inline {
+      display: inline-block; margin-left: 6px; padding: 1px 5px;
+      border-radius: 3px; font-size: 8px; font-weight: 700; letter-spacing: 0.5px;
+      background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);
+    }
+    .sig-badge, .sig-badge-inline {
+      display: inline-block; margin-left: 4px; padding: 1px 5px;
+      border-radius: 3px; font-size: 8px; font-weight: 700; letter-spacing: 0.5px;
+      background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.3);
+    }
+    .combo-table td.wl { font-size: 10px; white-space: nowrap; }
+    .wl-win { color: #4ade80; font-weight: 700; }
+    .wl-sep { color: #4b5563; margin: 0 3px; }
+    .wl-loss { color: #f87171; font-weight: 700; }
     .combo-footer {
       font-size: 8px; color: #4b5563; font-style: italic; padding: 4px 10px 6px;
     }
@@ -630,6 +658,7 @@ export class EarlyScannerComponent implements OnInit {
       'strong_move': 'Strong Move',
       'accumulation': 'Accumulation',
       'bottom_bounce': 'Bottom Bounce',
+      'dump_bounce': 'Dump Bounce',
       'squeeze': 'Squeeze',
     };
     return labels[tag] || tag;
