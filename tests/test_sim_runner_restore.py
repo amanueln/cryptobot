@@ -183,7 +183,8 @@ def test_trail_stop_recomputed_from_reconciled_peak(runner_and_db):
     runner._restore_momentum_state()
 
     holding = engine.holdings[pair]
-    expected_stop = 0.1705 * (1 - 0.015)  # progressive +8% tier
+    # peak_pct ≈ +9.79% → triggers (8.0, 1.0) but not (12.0, 0.5) under SAFE-A tiers
+    expected_stop = 0.1705 * (1 - 0.010)  # progressive +8% tier (1.0% giveback)
     assert holding.trail_stop_price == pytest.approx(expected_stop, rel=1e-4), \
         f"Trail stop should reflect +8% progressive tier off the reconciled peak"
     # Sanity: stop must sit below the reconciled peak and above entry (locked profit)

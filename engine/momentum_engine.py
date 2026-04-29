@@ -77,7 +77,10 @@ TRAIL_TIGHTEN_PCT = 5.0    # peak PnL% needed before tight trail can activate
 TRAIL_DELAY_TICKS = 30     # ticks (minutes) above tighten threshold before tight trail activates
 # Progressive lock-in: the further ahead the peak, the less we give back.
 # Each tier: (peak_pct_min, trail_pct). Triggers immediately, no delay.
-TRAIL_PROGRESSIVE = [(6.0, 2.0), (8.0, 1.5)]
+# 2026-04-29 sweep on 22 trades: tightening +8% tier (1.5→1.0) and adding +12%
+# tier (0.5%) protects super-runners (AXL gave back 22pp, AVNT lost everything)
+# without touching trades that peaked <8%. See decision_trail_safe_a_2026_04_29.md.
+TRAIL_PROGRESSIVE = [(6.0, 2.0), (8.0, 1.0), (12.0, 0.5)]
 TRAIL_STALE_PCT = 2.0      # Layer 3: tightest trail when peak goes stale (no new high)
 TRAIL_STALE_TICKS = 30     # ticks (minutes) with no new high = stale peak
 
@@ -197,7 +200,8 @@ class MomentumEngine:
 
     def __init__(self, allocation_usd: float, fee_rate: float = FEE_RATE,
                  pairs: list[str] | None = None,
-                 wall_aware_config: dict | None = None):
+                 wall_aware_config: dict | None = None,
+                 entry_pause_config: dict | None = None):
         self.starting_balance = allocation_usd
         self.cash = allocation_usd
         self.fee_rate = fee_rate
@@ -216,6 +220,12 @@ class MomentumEngine:
         # barely-green trade whose wall-touch exit would cost more in fees
         # than the wall saves.
         self.wall_aware_min_profit_buffer_pct: float = float(wa.get("min_profit_buffer_pct", 0.012))
+
+        # Entry pause — block new entries on specific UTC weekdays (0=Mon..6=Sun).
+        ep = entry_pause_config or {}
+        self.entry_pause_enabled: bool = bool(ep.get("enabled", False))
+        self.entry_pause_weekdays: set[int] = set(int(d) for d in (ep.get("weekday_block", []) or []))
+        self._entry_pause_logged_for_day: int | None = None  # log "paused" once per day, not per scan
         # Duck-typed provider — must expose find_qualifying_wall() and get_book_snapshot().
         # Set via set_book_provider() from sim_runner so engine stays decoupled from WS.
         self._book_provider = None
@@ -258,6 +268,7 @@ class MomentumEngine:
         self._last_sold_pair: str | None = None   # same-coin lockout
         self._last_sold_time: datetime | None = None
         self._loss_lockouts: dict[str, datetime] = {}  # pair -> lockout expiry after a loss
+        self._load_loss_lockouts()
         self._entry_rejections: list[str] = []  # why coins were rejected this tick
         self._gate_log: list[dict] = []  # gate values for every candidate each scan
         self._compute_ran_this_tick = False  # prevents double-scan when info-only runs
@@ -677,6 +688,21 @@ class MomentumEngine:
         self._gate_log = []  # reset once per evaluation
         self._compute_ran_this_tick = True
 
+        # Weekend / weekday pause — block all new entries on configured days.
+        # Existing positions still exit normally (this only affects _compute_scores
+        # which feeds entry candidacy, not the exit paths).
+        if self.entry_pause_enabled and now.weekday() in self.entry_pause_weekdays:
+            wd = now.weekday()
+            if self._entry_pause_logged_for_day != wd:
+                logger.info("entry pause active (weekday=%d in block=%s) — no new entries this scan",
+                            wd, sorted(self.entry_pause_weekdays))
+                self._entry_pause_logged_for_day = wd
+            self._entry_rejections.append(f"ALL: entry pause (weekday {wd})")
+            return scores
+        # Reset the once-per-day log marker when we leave the blocked window.
+        if self.entry_pause_enabled and now.weekday() not in self.entry_pause_weekdays:
+            self._entry_pause_logged_for_day = None
+
         def _log_reject(pair: str, reason: str, accel: float = 0.0,
                         rsi: float | None = None, adx: float | None = None,
                         price: float | None = None):
@@ -714,6 +740,7 @@ class MomentumEngine:
                     continue
                 else:
                     del self._loss_lockouts[pair]
+                    self._save_loss_lockouts()
             short_mom = closes[-1] / closes[-SHORT_LB] - 1
             long_mom = closes[-1] / closes[-LONG_LB] - 1
             accel = short_mom - (long_mom * SHORT_LB / LONG_LB)
@@ -1396,6 +1423,44 @@ class MomentumEngine:
         self.trade_count += 1
         return trade
 
+    _LOSS_LOCKOUTS_PATH = "data/loss_lockouts.json"
+
+    def _load_loss_lockouts(self) -> None:
+        """Restore loss lockouts from disk on startup; drop any already expired."""
+        import json, os
+        if not os.path.exists(self._LOSS_LOCKOUTS_PATH):
+            return
+        try:
+            with open(self._LOSS_LOCKOUTS_PATH) as f:
+                raw = json.load(f)
+        except (OSError, ValueError) as e:
+            logger.warning("loss_lockouts: failed to load (%s)", e)
+            return
+        now = datetime.utcnow()
+        kept = 0
+        for pair, iso in raw.items():
+            try:
+                t = datetime.fromisoformat(iso)
+            except ValueError:
+                continue
+            if t > now:
+                self._loss_lockouts[pair] = t
+                kept += 1
+        if kept:
+            logger.info("loss_lockouts: restored %d active entries from disk", kept)
+
+    def _save_loss_lockouts(self) -> None:
+        """Persist current loss lockouts to disk; atomic via tempfile rename."""
+        import json, os
+        try:
+            os.makedirs(os.path.dirname(self._LOSS_LOCKOUTS_PATH) or ".", exist_ok=True)
+            tmp = self._LOSS_LOCKOUTS_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({p: t.isoformat() for p, t in self._loss_lockouts.items()}, f)
+            os.replace(tmp, self._LOSS_LOCKOUTS_PATH)
+        except OSError as e:
+            logger.warning("loss_lockouts: failed to save (%s)", e)
+
     def _sell(self, pair: str, timestamp: datetime, reason: str) -> Trade | None:
         """Sell all holdings of a coin. Tracks pair for lockout."""
         holding = self.holdings.get(pair)
@@ -1479,6 +1544,7 @@ class MomentumEngine:
             self._loss_lockouts[pair] = timestamp + timedelta(hours=LOSS_LOCKOUT_HOURS)
             logger.info("Loss lockout: %s blocked for %dh (bought %.2f, sold %.2f)",
                         pair, LOSS_LOCKOUT_HOURS, buy_cost, net_usd)
+            self._save_loss_lockouts()
 
         self.cash += net_usd
 

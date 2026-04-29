@@ -35,6 +35,16 @@ wall_aware_trail:
   # has built any cushion. 0.012 = 1.2% = Coinbase round-trip taker fee.
   min_profit_buffer_pct: 0.012
 
+# Entry pause — block new entries on specific weekdays (UTC).
+# Motivation: 31-trade audit (2026-04-29) showed Sunday at 0% WR / -3.22% avg
+# vs Saturday at 100% WR / +1.39% — Sunday is the clear loser. Pause blocks
+# new entries only; existing positions still exit normally.
+# weekday_block uses Python's datetime.weekday(): 0=Mon, 1=Tue, ..., 6=Sun.
+# Disable entirely with enabled: false.
+entry_pause:
+  enabled: true
+  weekday_block: [6]   # Sunday only — widen to [5,6] later if data confirms
+
 # Market tape recorder — high-frequency WS capture of executed trades + L2 book
 # snapshots on the watched pairs. Writes to data/market_tape.db (separate DB so
 # it can't contend with the engine's own writes). Dedicated thread, fail-silent.

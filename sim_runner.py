@@ -684,9 +684,15 @@ class SimRunner:
                 "max_dist_from_peak_pct": self.momentum_engine.wall_aware_max_dist_pct,
                 "stop_offset_pct": self.momentum_engine.wall_aware_stop_offset_pct,
             }
+            # Preserve entry-pause config across reset.
+            ep_cfg = {
+                "enabled": self.momentum_engine.entry_pause_enabled,
+                "weekday_block": sorted(self.momentum_engine.entry_pause_weekdays),
+            }
             self.momentum_engine = MomentumEngine(
                 allocation_usd=alloc, fee_rate=fee, pairs=pairs,
                 wall_aware_config=wa_cfg,
+                entry_pause_config=ep_cfg,
             )
             self.momentum_engine.set_book_provider(self._ws_recorder)
             # Re-run warmup from DB so the engine has price history immediately
@@ -2099,6 +2105,7 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
             bot_cfg_reload = yaml.safe_load(f)
         mom_config = bot_cfg_reload.get("momentum_rotation", {})
         wall_aware_config = bot_cfg_reload.get("wall_aware_trail", {})
+        entry_pause_config = bot_cfg_reload.get("entry_pause", {})
         if mom_config.get("enabled", False):
             mom_alloc = float(mom_config.get("allocation_usd", 1500))
             # Create scanner first — it will find the best pairs
@@ -2107,6 +2114,7 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
                 allocation_usd=mom_alloc,
                 fee_rate=taker_fee,
                 wall_aware_config=wall_aware_config,
+                entry_pause_config=entry_pause_config,
                 # pairs will be set by scanner during warmup
             )
             # Give engine access to the live L2 book for wall-aware trail.
