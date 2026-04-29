@@ -401,7 +401,6 @@ class ScannerBot:
             ).fetchall()
 
         for row in new_alerts:
-            self._last_alert_check_id = max(self._last_alert_check_id, row["id"])
             d = decide_entry(self.db_path, alert_id=row["id"], cfg=self.cfg)
             record_decision(self.db_path, alert_id=d.alert_id, ts=now.isoformat(),
                             combo_key=d.combo_key, pair=d.pair,
@@ -417,6 +416,9 @@ class ScannerBot:
                 save_position(self.db_path, p)
                 logger.info("scanner_bot opened %s @ %.6f (alert %d)",
                             d.pair, d.entry_price, d.alert_id)
+            # Only advance the cursor after the alert has been fully processed,
+            # so a DB write failure mid-loop doesn't silently skip the alert.
+            self._last_alert_check_id = max(self._last_alert_check_id, row["id"])
 
     def _manage_positions(self, now: datetime) -> None:
         for p in load_open_positions(self.db_path):
