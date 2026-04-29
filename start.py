@@ -80,7 +80,8 @@ def run_flask():
 def run_backup(interval_seconds: int = 21600):
     """Periodically back up SQLite databases to /backup (external drive)."""
     import glob
-    import shutil
+
+    from db_backup import safe_copy_db
 
     backup_dir = "/backup"
     logger.info("Backup process starting (interval=%ds, dest=%s)", interval_seconds, backup_dir)
@@ -96,14 +97,14 @@ def run_backup(interval_seconds: int = 21600):
                 name = os.path.basename(db_file)
                 # Keep latest copy (overwritten each time)
                 dest_latest = os.path.join(backup_dir, name)
-                shutil.copy2(db_file, dest_latest)
+                safe_copy_db(db_file, dest_latest)
                 # Keep daily snapshot (one per day)
                 daily_dir = os.path.join(backup_dir, "daily")
                 os.makedirs(daily_dir, exist_ok=True)
                 daily_name = f"{os.path.splitext(name)[0]}_{stamp[:8]}.db"
                 dest_daily = os.path.join(daily_dir, daily_name)
                 if not os.path.exists(dest_daily):
-                    shutil.copy2(db_file, dest_daily)
+                    safe_copy_db(db_file, dest_daily)
                 backed += 1
             # Clean up daily snapshots older than 30 days
             daily_dir = os.path.join(backup_dir, "daily")

@@ -2083,8 +2083,9 @@ def api_reset_data():
 @app.route("/api/backup-now", methods=["POST"])
 def api_backup_now():
     """Manually trigger a database backup to /backup (external drive)."""
-    import shutil
     import glob as _glob
+
+    from db_backup import safe_copy_db
 
     backup_dir = "/backup"
     if not os.path.isdir(backup_dir):
@@ -2097,13 +2098,13 @@ def api_backup_now():
             name = os.path.basename(db_file)
             # Latest copy
             dest = os.path.join(backup_dir, name)
-            shutil.copy2(db_file, dest)
+            safe_copy_db(db_file, dest)
             # Daily snapshot
             daily_dir = os.path.join(backup_dir, "daily")
             os.makedirs(daily_dir, exist_ok=True)
             daily_name = f"{os.path.splitext(name)[0]}_{stamp[:8]}.db"
             dest_daily = os.path.join(daily_dir, daily_name)
-            shutil.copy2(db_file, dest_daily)
+            safe_copy_db(db_file, dest_daily)
             size_mb = round(os.path.getsize(dest) / 1048576, 1)
             backed.append({"file": name, "size_mb": size_mb})
 
