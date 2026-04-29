@@ -6,9 +6,16 @@ Spec: docs/superpowers/specs/2026-04-29-scanner-bot-design.md
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+
+import requests
+
+logger = logging.getLogger("scanner_bot")
+
+MILESTONES = [10, 15, 20, 30, 50]
 
 
 @dataclass
@@ -279,3 +286,54 @@ def _row_to_position(r) -> Position:
         peak_price=r["peak_price"],
         last_tick_ts=r["last_tick_ts"],
     )
+
+
+def check_milestones(p: Position, webhook: str | None) -> list[int]:
+    """Fire and persist milestone pings for any newly crossed thresholds.
+
+    Returns the list of milestones fired this tick. Mutates p.milestones_hit.
+    """
+    if p.current_pct is None:
+        return []
+    fired: list[int] = []
+    for m in MILESTONES:
+        if p.current_pct >= m and m not in p.milestones_hit:
+            p.milestones_hit.append(m)
+            fired.append(m)
+            if webhook:
+                try:
+                    _send_discord(webhook, p, m)
+                except Exception as e:
+                    logger.warning("discord milestone ping failed: %s", e)
+    return fired
+
+
+def _send_discord(webhook: str, p: Position, milestone: int) -> None:
+    """Send a Discord webhook for a profit milestone."""
+    held_min = 0
+    try:
+        entry = datetime.fromisoformat(p.entry_ts.replace("Z", "+00:00"))
+        if entry.tzinfo is None:
+            entry = entry.replace(tzinfo=timezone.utc)
+        held_min = int((datetime.now(timezone.utc) - entry).total_seconds() / 60)
+    except Exception:
+        pass
+    held_str = f"{held_min // 60}h {held_min % 60}m"
+
+    peak_pct = ((p.peak_price or p.current_price) - p.entry_price) / p.entry_price * 100
+
+    coin = p.pair.replace("-USD", "")
+    embed = {
+        "title": f"🚀 +{milestone}% milestone hit on {coin}",
+        "description": (
+            f"**Combo:** {p.combo_key}\n"
+            f"**Entry:** ${p.entry_price:.6f}  →  **Now:** ${p.current_price:.6f}  "
+            f"(**{p.current_pct:+.1f}%**)\n"
+            f"**Position:** ${p.position_usd:.0f} ({p.shares:.4f} shares)\n"
+            f"**Held:** {held_str}\n"
+            f"**Peak:** +{peak_pct:.1f}%\n\n"
+            f"Hit \"Sell Now\" on the dashboard to take it."
+        ),
+        "color": 0x00ff88,
+    }
+    requests.post(webhook, json={"embeds": [embed]}, timeout=10)
