@@ -76,3 +76,20 @@ early_scanner:
   enabled: true
   scan_interval_minutes: 10
   discord_webhook: "https://discord.com/api/webhooks/1493262458461225051/_sN7ixCsX8xRQl4quKQ4DFrGVsasV4Ehngex6yKfqLsXJOoTxX8SM0jAO9Z4r4uoW_Vz"
+
+# Scanner Bot — paper-trades +1 alerts from Early Scanner
+scanner_bot:
+  enabled: true
+  eligible_combos:
+    - mom_reversal+strong_move
+    - mom_reversal+squeeze
+  position_usd: 1000.0
+  max_concurrent: 3
+  starting_cash_usd: 3000.0
+  same_pair_cooldown_hours: 4
+  stop_pct: 15.0
+  hold_hours: 24
+  poll_interval_sec: 30
+  # discord_webhook reuses early_scanner.discord_webhook by default;
+  # set this only to override
+  discord_webhook: null

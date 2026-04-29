@@ -43,6 +43,7 @@ _bot_process: multiprocessing.Process | None = None
 _flask_process: multiprocessing.Process | None = None
 _update_process: multiprocessing.Process | None = None
 _backup_process: multiprocessing.Process | None = None
+_scanner_bot_process: multiprocessing.Process | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +120,49 @@ def run_backup(interval_seconds: int = 21600):
             logger.error("Backup failed: %s", e)
 
 
+def run_scanner_bot():
+    """Run the scanner bot — paper-trades +1 alerts from Early Scanner."""
+    try:
+        import yaml
+        from engine.scanner_bot import ScannerBot, EntryConfig
+        from engine.scanner_bot_schema import init_schema
+
+        with open("config/bot_config.yaml") as f:
+            cfg = yaml.safe_load(f)
+
+        sb = cfg.get("scanner_bot", {}) or {}
+        if not sb.get("enabled", False):
+            logger.info("scanner_bot disabled in config — process exiting")
+            return
+
+        db_path = "data/candles.db"
+        init_schema(db_path)
+
+        webhook = sb.get("discord_webhook") or cfg.get("early_scanner", {}).get("discord_webhook")
+
+        entry_cfg = EntryConfig(
+            eligible_combos=tuple(sb.get("eligible_combos", [])),
+            position_usd=float(sb.get("position_usd", 1000.0)),
+            max_concurrent=int(sb.get("max_concurrent", 3)),
+            starting_cash_usd=float(sb.get("starting_cash_usd", 3000.0)),
+            same_pair_cooldown_hours=int(sb.get("same_pair_cooldown_hours", 4)),
+            stop_pct=float(sb.get("stop_pct", 15.0)),
+            hold_hours=int(sb.get("hold_hours", 24)),
+        )
+        bot = ScannerBot(
+            db_path=db_path,
+            cfg=entry_cfg,
+            discord_webhook=webhook,
+            poll_interval_sec=int(sb.get("poll_interval_sec", 30)),
+        )
+        logger.info("scanner_bot starting")
+        bot.run()
+    except Exception:
+        import traceback
+        logger.error("scanner_bot crashed:\n%s", traceback.format_exc())
+        raise
+
+
 def run_auto_update(interval_seconds: int = 21600):
     """Periodically check for updates from git remote."""
     logger.info("Auto-update process starting (interval=%ds)", interval_seconds)
@@ -169,7 +213,7 @@ def _handle_sigterm(signum, frame):
 # ---------------------------------------------------------------------------
 
 def main():
-    global _bot_process, _flask_process, _update_process, _backup_process
+    global _bot_process, _flask_process, _update_process, _backup_process, _scanner_bot_process
 
     logger.info("=" * 50)
     logger.info("CryptoBot starting")
@@ -217,6 +261,13 @@ def main():
         _backup_process.start()
         logger.info("Backup started (every 6h, pid=%d)", _backup_process.pid)
 
+    # 5. Start scanner bot (paper-trades +1 alerts from Early Scanner)
+    _scanner_bot_process = multiprocessing.Process(
+        target=run_scanner_bot, daemon=True, name="scanner_bot",
+    )
+    _scanner_bot_process.start()
+    logger.info("Scanner bot started (pid=%d)", _scanner_bot_process.pid)
+
     logger.info("All processes running. Dashboard at http://0.0.0.0:5001")
 
     # Keep main process alive, restart children if they die
@@ -231,10 +282,16 @@ def main():
                 logger.warning("Flask process died (exit=%s) — restarting", _flask_process.exitcode)
                 _flask_process = multiprocessing.Process(target=run_flask, daemon=True)
                 _flask_process.start()
+            if _scanner_bot_process and not _scanner_bot_process.is_alive():
+                logger.warning("Scanner bot process died (exit=%s) — restarting", _scanner_bot_process.exitcode)
+                _scanner_bot_process = multiprocessing.Process(
+                    target=run_scanner_bot, daemon=True, name="scanner_bot",
+                )
+                _scanner_bot_process.start()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt — shutting down")
     finally:
-        for proc in [_bot_process, _flask_process, _update_process, _backup_process]:
+        for proc in [_bot_process, _flask_process, _update_process, _backup_process, _scanner_bot_process]:
             if proc and proc.is_alive():
                 proc.terminate()
 
