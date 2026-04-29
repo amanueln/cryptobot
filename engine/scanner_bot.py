@@ -140,8 +140,10 @@ class EntryDecision:
 
 def _cash_available(db_path: str, cfg: EntryConfig) -> float:
     with sqlite3.connect(db_path, timeout=30) as conn:
-        n = conn.execute("SELECT COUNT(*) FROM scanner_bot_positions").fetchone()[0]
-    return cfg.starting_cash_usd - (n * cfg.position_usd)
+        committed = conn.execute(
+            "SELECT COALESCE(SUM(position_usd), 0) FROM scanner_bot_positions"
+        ).fetchone()[0]
+    return cfg.starting_cash_usd - committed
 
 
 def decide_entry(db_path: str, alert_id: int, cfg: EntryConfig) -> EntryDecision:
