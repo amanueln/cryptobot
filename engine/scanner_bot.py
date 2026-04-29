@@ -95,7 +95,8 @@ def close_position(
     fees = p.position_usd * (fee_pct_per_side / 100.0) * 2
     net = gross - fees
     pct = (exit_price - p.entry_price) / p.entry_price * 100
-    peak_pct = ((p.peak_price or p.entry_price) - p.entry_price) / p.entry_price * 100
+    peak = p.peak_price if p.peak_price is not None else p.entry_price
+    peak_pct = (peak - p.entry_price) / p.entry_price * 100
 
     with sqlite3.connect(db_path, timeout=30) as conn:
         conn.execute(
