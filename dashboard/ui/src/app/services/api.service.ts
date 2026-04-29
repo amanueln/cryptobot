@@ -763,6 +763,41 @@ export class ApiService {
     poll();
   }
 
+  // --- Scanner Bot ---
+
+  getScannerBotPositions() {
+    return this.http.get<any[]>(`${API}/scanner-bot/positions`);
+  }
+
+  getScannerBotTrades(limit = 50) {
+    return this.http.get<any[]>(`${API}/scanner-bot/trades?limit=${limit}`);
+  }
+
+  getScannerBotEquity(hours = 24) {
+    return this.http.get<any[]>(`${API}/scanner-bot/equity?hours=${hours}`);
+  }
+
+  getScannerBotStats() {
+    return this.http.get<{
+      open_positions: number;
+      realized_pnl_usd: number;
+      cash_usd: number | null;
+      total_equity_usd: number | null;
+      unrealized_pnl_usd: number | null;
+      trades_today: number;
+    }>(`${API}/scanner-bot/stats`);
+  }
+
+  scannerBotSellNow(positionId: number) {
+    return this.http.post<{ status: string; id?: number; message?: string }>(
+      `${API}/scanner-bot/positions/${positionId}/sell-now`, {}
+    );
+  }
+
+  getScannerBotAlertDecisions(limit = 50) {
+    return this.http.get<any[]>(`${API}/scanner-bot/alert-decisions?limit=${limit}`);
+  }
+
   // --- Early Momentum Scanner ---
 
   fetchEarlyScannerAlerts(limit = 50) {

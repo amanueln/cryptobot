@@ -21,6 +21,7 @@ import { AdaptationsComponent } from '../adaptations/adaptations.component';
 import { MomentumPanelComponent } from '../momentum-panel/momentum-panel.component';
 import { EarlyScannerComponent } from '../early-scanner/early-scanner.component';
 import { PositionCardsComponent } from '../position-cards/position-cards.component';
+import { ScannerBotComponent } from '../scanner-bot/scanner-bot.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -36,6 +37,7 @@ const STARTING_BALANCE = 3000;
     TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
     SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
     MomentumPanelComponent, EarlyScannerComponent, PositionCardsComponent,
+    ScannerBotComponent,
   ],
   template: `
     <div class="cc-root">
@@ -56,6 +58,10 @@ const STARTING_BALANCE = 3000;
             <span class="engine-dot-tab scanner-dot" [class.active]="true"></span>
             Scanner
           </button>
+          <button class="engine-switch-btn scanner-bot-tab" [class.active]="activeEngine() === 'scanner-bot'" (click)="activeEngine.set('scanner-bot')">
+            <span class="engine-dot-tab scanner-bot-dot" [class.active]="true"></span>
+            Scanner Bot
+          </button>
           @if (authEnabled()) {
             <button class="logout-btn" (click)="logout()">Logout</button>
           }
@@ -70,6 +76,11 @@ const STARTING_BALANCE = 3000;
       <!-- EARLY SCANNER PANEL -->
       @if (activeEngine() === 'scanner') {
         <app-early-scanner />
+      }
+
+      <!-- SCANNER BOT PANEL -->
+      @if (activeEngine() === 'scanner-bot') {
+        <app-scanner-bot />
       }
 
       <!-- GRID PANEL -->
@@ -261,6 +272,8 @@ const STARTING_BALANCE = 3000;
     .engine-dot-tab.active { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
     .scanner-tab .engine-dot-tab.active, .scanner-dot.active { background: #38bdf8; box-shadow: 0 0 6px rgba(56,189,248,0.4); }
     .scanner-tab.active { color: #38bdf8 !important; border-bottom-color: #38bdf8 !important; }
+    .scanner-bot-tab .engine-dot-tab.active, .scanner-bot-dot.active { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+    .scanner-bot-tab.active { color: #f59e0b !important; border-bottom-color: #f59e0b !important; }
     @keyframes tabpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     .logout-btn {
       margin-left: auto;
@@ -370,7 +383,7 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
   expandedPair = signal<string | null>(null);
   whyOpen = signal(false);
   activeTool = signal<string | null>(null);
-  activeEngine = signal<'momentum' | 'grid' | 'scanner'>('momentum');
+  activeEngine = signal<'momentum' | 'grid' | 'scanner' | 'scanner-bot'>('momentum');
 
   // Dual engine: momentum rotation
   momentumEnabled = computed(() => {

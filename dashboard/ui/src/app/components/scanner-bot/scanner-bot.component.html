@@ -1,0 +1,77 @@
+<!-- dashboard/ui/src/app/components/scanner-bot/scanner-bot.component.html -->
+<div class="scanner-bot">
+  <!-- Stats strip -->
+  <div class="stats" *ngIf="stats() as s">
+    <div class="stat"><label>Equity</label><span>${{ s.total_equity_usd | number:'1.0-2' }}</span></div>
+    <div class="stat"><label>Cash</label><span>${{ s.cash_usd | number:'1.0-2' }}</span></div>
+    <div class="stat"><label>Realized</label><span [class]="pctClass(s.realized_pnl_usd)">${{ s.realized_pnl_usd | number:'1.0-2' }}</span></div>
+    <div class="stat"><label>Unrealized</label><span [class]="pctClass(s.unrealized_pnl_usd)">${{ s.unrealized_pnl_usd | number:'1.0-2' }}</span></div>
+    <div class="stat"><label>Open</label><span>{{ s.open_positions }} / 3</span></div>
+    <div class="stat"><label>Trades today</label><span>{{ s.trades_today }}</span></div>
+  </div>
+
+  <!-- Open positions -->
+  <h2>Open positions</h2>
+  <div class="positions" *ngIf="positions().length; else noPos">
+    <div class="position-card" *ngFor="let p of positions()">
+      <div class="row1">
+        <div class="pair">{{ p.pair }}</div>
+        <div class="combo">{{ p.combo_key }}</div>
+        <div class="pct" [class]="pctClass(p.current_pct)">
+          {{ p.current_pct != null ? (p.current_pct | number:'1.1-2') + '%' : '—' }}
+        </div>
+      </div>
+      <div class="row2">
+        <span>Entry ${{ p.entry_price | number:'1.4-6' }}</span>
+        <span>Now ${{ p.current_price ? (p.current_price | number:'1.4-6') : '…' }}</span>
+        <span>Stop ${{ p.stop_price | number:'1.4-6' }}</span>
+        <span>Held {{ formatHeld(p.held_minutes) }}</span>
+        <span>Closes in {{ formatHeld(p.time_remaining_minutes) }}</span>
+      </div>
+      <div class="milestones">
+        <span [class.hit]="p.milestones_hit?.includes(10)">+10%</span>
+        <span [class.hit]="p.milestones_hit?.includes(15)">+15%</span>
+        <span [class.hit]="p.milestones_hit?.includes(20)">+20%</span>
+        <span [class.hit]="p.milestones_hit?.includes(30)">+30%</span>
+        <span [class.hit]="p.milestones_hit?.includes(50)">+50%</span>
+      </div>
+      <button class="sell-now" (click)="sellNow(p.id)">Sell Now</button>
+    </div>
+  </div>
+  <ng-template #noPos><p class="empty">No open positions.</p></ng-template>
+
+  <!-- Recent trades -->
+  <h2>Recent trades</h2>
+  <table class="trades">
+    <thead>
+      <tr><th>Pair</th><th>Combo</th><th>Entry</th><th>Exit</th><th>%</th><th>Net $</th><th>Reason</th><th>Held</th></tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let t of trades()">
+        <td>{{ t.pair }}</td>
+        <td>{{ t.combo_key }}</td>
+        <td>${{ t.entry_price | number:'1.4-6' }}</td>
+        <td>${{ t.exit_price | number:'1.4-6' }}</td>
+        <td [class]="pctClass(t.pct)">{{ t.pct | number:'1.1-2' }}%</td>
+        <td [class]="pctClass(t.net_pnl_usd)">${{ t.net_pnl_usd | number:'1.0-2' }}</td>
+        <td>{{ t.exit_reason }}</td>
+        <td>{{ t.peak_pct | number:'1.1-1' }}%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Alert decisions -->
+  <h2>Recent alert decisions</h2>
+  <table class="decisions">
+    <thead><tr><th>Time</th><th>Pair</th><th>Combo</th><th>Decision</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr *ngFor="let d of decisions()">
+        <td>{{ d.ts | slice:11:16 }}</td>
+        <td>{{ d.pair }}</td>
+        <td>{{ d.combo_key }}</td>
+        <td><span [class.opened]="d.decision === 'open'" [class.skipped]="d.decision === 'skip'">{{ d.decision }}</span></td>
+        <td class="reason">{{ d.reason || '—' }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

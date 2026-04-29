@@ -1,0 +1,31 @@
+/* dashboard/ui/src/app/components/scanner-bot/scanner-bot.component.css */
+.scanner-bot { padding: 16px; }
+.stats { display: flex; gap: 24px; margin-bottom: 24px; flex-wrap: wrap; }
+.stat { display: flex; flex-direction: column; }
+.stat label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+.stat span { font-size: 18px; font-weight: 600; color: #e2e8f0; }
+.pos { color: #4ade80; }
+.neg { color: #f87171; }
+
+h2 { font-size: 16px; color: #cbd5e1; margin-top: 24px; margin-bottom: 12px; }
+
+.positions { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.position-card { padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
+.row1 { display: flex; justify-content: space-between; align-items: center; }
+.row1 .pair { font-size: 18px; font-weight: 700; }
+.row1 .combo { font-size: 11px; color: #94a3b8; }
+.row1 .pct { font-size: 20px; font-weight: 700; }
+.row2 { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #94a3b8; margin-top: 8px; }
+.milestones { display: flex; gap: 6px; margin-top: 10px; }
+.milestones span { font-size: 10px; padding: 2px 6px; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: #64748b; }
+.milestones span.hit { background: rgba(74,222,128,0.15); border-color: #4ade80; color: #4ade80; }
+.sell-now { width: 100%; margin-top: 10px; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; }
+.sell-now:hover { background: #dc2626; }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table th { text-align: left; padding: 8px; color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.1); }
+table td { padding: 6px 8px; color: #e2e8f0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.opened { color: #4ade80; }
+.skipped { color: #94a3b8; }
+.reason { font-size: 11px; color: #94a3b8; }
+.empty { color: #64748b; font-style: italic; }
