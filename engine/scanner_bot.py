@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -341,3 +342,116 @@ def _send_discord(webhook: str, p: Position, milestone: int) -> None:
     if resp.status_code >= 400:
         logger.warning("discord webhook returned %s for %s milestone +%d%%",
                        resp.status_code, p.pair, milestone)
+
+
+def _fetch_coinbase_price(pair: str) -> float | None:
+    """Fetch current trade price from Coinbase Advanced Trade public REST."""
+    try:
+        url = f"https://api.exchange.coinbase.com/products/{pair}/ticker"
+        r = requests.get(url, timeout=5)
+        if r.status_code == 200:
+            return float(r.json()["price"])
+    except Exception as e:
+        logger.warning("price fetch failed for %s: %s", pair, e)
+    return None
+
+
+class ScannerBot:
+    def __init__(
+        self,
+        db_path: str,
+        cfg: EntryConfig,
+        discord_webhook: str | None,
+        price_fn=None,                # injectable for tests
+        poll_interval_sec: int = 30,
+    ):
+        self.db_path = db_path
+        self.cfg = cfg
+        self.discord_webhook = discord_webhook
+        self.price_fn = price_fn or _fetch_coinbase_price
+        self.poll_interval_sec = poll_interval_sec
+        self._last_alert_check_id: int = 0
+
+    def tick(self, now: datetime | None = None) -> None:
+        """One iteration: poll alerts, manage positions, snapshot equity."""
+        now = now or datetime.now(timezone.utc)
+        try:
+            self._poll_alerts(now)
+            self._manage_positions(now)
+            self._snapshot_equity(now)
+        except Exception:
+            logger.exception("scanner_bot tick failed")
+
+    def run(self) -> None:
+        """Forever loop. Crash-tolerant — exceptions inside tick() are swallowed."""
+        logger.info("scanner_bot starting (poll=%ds, combos=%s)",
+                    self.poll_interval_sec, self.cfg.eligible_combos)
+        while True:
+            self.tick()
+            time.sleep(self.poll_interval_sec)
+
+    def _poll_alerts(self, now: datetime) -> None:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            conn.row_factory = sqlite3.Row
+            new_alerts = conn.execute(
+                "SELECT id FROM early_scanner_alerts "
+                "WHERE id > ? AND score_adj = 1 AND combo_key IN ({}) "
+                "ORDER BY id".format(",".join("?" * len(self.cfg.eligible_combos))),
+                (self._last_alert_check_id, *self.cfg.eligible_combos),
+            ).fetchall()
+
+        for row in new_alerts:
+            self._last_alert_check_id = max(self._last_alert_check_id, row["id"])
+            d = decide_entry(self.db_path, alert_id=row["id"], cfg=self.cfg)
+            record_decision(self.db_path, alert_id=d.alert_id, ts=now.isoformat(),
+                            combo_key=d.combo_key, pair=d.pair,
+                            decision=d.action, reason=d.reason)
+            if d.action == "open":
+                p = Position(
+                    alert_id=d.alert_id, combo_key=d.combo_key, pair=d.pair,
+                    entry_ts=now.isoformat(),
+                    entry_price=d.entry_price, position_usd=self.cfg.position_usd,
+                    shares=d.shares, stop_price=d.stop_price,
+                    hard_close_ts=d.hard_close_ts,
+                )
+                save_position(self.db_path, p)
+                logger.info("scanner_bot opened %s @ %.6f (alert %d)",
+                            d.pair, d.entry_price, d.alert_id)
+
+    def _manage_positions(self, now: datetime) -> None:
+        for p in load_open_positions(self.db_path):
+            cp = self.price_fn(p.pair)
+            if cp is None:
+                continue
+            decision = tick_position(p, current_price=cp, now=now)
+            check_milestones(p, webhook=self.discord_webhook)
+            update_position(self.db_path, p)
+            if decision.action == "close":
+                close_position(
+                    self.db_path, p,
+                    exit_ts=now.isoformat(),
+                    exit_price=decision.exit_price,
+                    exit_reason=decision.exit_reason,
+                )
+                logger.info("scanner_bot closed %s @ %.6f reason=%s",
+                            p.pair, decision.exit_price, decision.exit_reason)
+
+    def _snapshot_equity(self, now: datetime) -> None:
+        opens = load_open_positions(self.db_path)
+        positions_value = sum((p.current_price or p.entry_price) * p.shares for p in opens)
+        unrealized = sum(((p.current_price or p.entry_price) - p.entry_price) * p.shares for p in opens)
+        cash = self.cfg.starting_cash_usd - sum(p.position_usd for p in opens)
+
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            realized = conn.execute(
+                "SELECT COALESCE(SUM(net_pnl_usd), 0) FROM scanner_bot_trades"
+            ).fetchone()[0]
+            # ignore concurrent equity collisions (PRIMARY KEY ts) — same-second writes are fine to drop
+            conn.execute(
+                "INSERT OR REPLACE INTO scanner_bot_equity "
+                "(ts, cash_usd, positions_value_usd, total_equity_usd, "
+                " open_positions, realized_pnl_usd, unrealized_pnl_usd) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (now.isoformat(), cash, positions_value,
+                 cash + positions_value, len(opens), realized, unrealized),
+            )
