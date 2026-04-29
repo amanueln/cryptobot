@@ -2985,6 +2985,14 @@ if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
 
 # ---------- /api/scanner-bot ----------
 
+def _scanner_bot_int_arg(name: str, default: int, minimum: int = 1) -> int:
+    """Parse an int query-string param; fall back to default on bad input."""
+    try:
+        return max(minimum, int(request.args.get(name, default)))
+    except (ValueError, TypeError):
+        return default
+
+
 @app.route("/api/scanner-bot/positions")
 def scanner_bot_positions():
     """List of open positions with computed held/remaining minutes."""
@@ -3014,7 +3022,7 @@ def scanner_bot_positions():
 
 @app.route("/api/scanner-bot/trades")
 def scanner_bot_trades():
-    limit = int(request.args.get("limit", 50))
+    limit = _scanner_bot_int_arg("limit", 50)
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(r) for r in conn.execute(
@@ -3026,7 +3034,7 @@ def scanner_bot_trades():
 
 @app.route("/api/scanner-bot/equity")
 def scanner_bot_equity():
-    hours = int(request.args.get("hours", 24))
+    hours = _scanner_bot_int_arg("hours", 24)
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -3078,7 +3086,7 @@ def scanner_bot_sell_now(position_id: int):
 
 @app.route("/api/scanner-bot/alert-decisions")
 def scanner_bot_alert_decisions():
-    limit = int(request.args.get("limit", 50))
+    limit = _scanner_bot_int_arg("limit", 50)
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = [dict(r) for r in conn.execute(
