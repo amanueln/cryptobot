@@ -226,6 +226,40 @@ def record_decision(
         )
 
 
+@dataclass
+class ExitDecision:
+    action: str            # "close" | "hold"
+    exit_price: float | None = None
+    exit_reason: str | None = None
+
+
+def tick_position(p: Position, current_price: float, now: datetime) -> ExitDecision:
+    """Mutate Position with current_price/peak/pct then decide whether to exit.
+
+    Exit priority: manual > stop > time-cap.
+    Manual exits at current_price; stop exits at stop_price; time-cap at current_price.
+    """
+    p.current_price = current_price
+    p.current_pct = (current_price - p.entry_price) / p.entry_price * 100
+    if p.peak_price is None or current_price > p.peak_price:
+        p.peak_price = current_price
+    p.last_tick_ts = now.isoformat()
+
+    if p.manual_sell_requested:
+        return ExitDecision("close", exit_price=current_price, exit_reason="manual")
+
+    if current_price <= p.stop_price:
+        return ExitDecision("close", exit_price=p.stop_price, exit_reason="stop_15pct")
+
+    hard_close = datetime.fromisoformat(p.hard_close_ts.replace("Z", "+00:00"))
+    if hard_close.tzinfo is None:
+        hard_close = hard_close.replace(tzinfo=timezone.utc)
+    if now >= hard_close:
+        return ExitDecision("close", exit_price=current_price, exit_reason="time_24h")
+
+    return ExitDecision("hold")
+
+
 def _row_to_position(r) -> Position:
     return Position(
         id=r["id"],
