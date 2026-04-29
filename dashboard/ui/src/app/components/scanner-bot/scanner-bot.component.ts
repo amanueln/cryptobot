@@ -43,6 +43,27 @@ export class ScannerBotComponent implements OnInit, OnDestroy {
     });
   }
 
+  resetBotData() {
+    const ok = confirm(
+      'This will permanently delete ALL scanner bot data:\n\n' +
+      '  • All open positions\n' +
+      '  • All trade history\n' +
+      '  • All equity snapshots\n' +
+      '  • All alert decision logs\n\n' +
+      'Other parts of the dashboard (Early Scanner alerts, Momentum bot, ' +
+      'candles) will NOT be affected.\n\nContinue?'
+    );
+    if (!ok) return;
+    this.api.resetScannerBot().subscribe({
+      next: (r) => {
+        const total = Object.values(r.cleared || {}).reduce((a: number, b: number) => a + b, 0);
+        alert(`Reset complete. ${total} rows cleared across ${Object.keys(r.cleared || {}).length} tables.`);
+        this.refresh();
+      },
+      error: (e) => alert('Reset failed: ' + (e?.error?.message || e?.message)),
+    });
+  }
+
   formatHeld(mins: number | null): string {
     if (mins == null) return '—';
     const h = Math.floor(mins / 60);

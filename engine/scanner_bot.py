@@ -249,8 +249,12 @@ def tick_position(p: Position, current_price: float, now: datetime) -> ExitDecis
     """
     p.current_price = current_price
     p.current_pct = (current_price - p.entry_price) / p.entry_price * 100
-    if p.peak_price is None or current_price > p.peak_price:
-        p.peak_price = current_price
+    # Peak is the highest price seen since entry, but never below entry — a
+    # position whose price only ever fell shouldn't report a "peak" below cost.
+    floor = p.entry_price
+    candidate = max(current_price, floor)
+    if p.peak_price is None or candidate > p.peak_price:
+        p.peak_price = candidate
     p.last_tick_ts = now.isoformat()
 
     if p.manual_sell_requested:
@@ -364,13 +368,32 @@ class ScannerBot:
         discord_webhook: str | None,
         price_fn=None,                # injectable for tests
         poll_interval_sec: int = 30,
+        alert_max_age_minutes: int = 5,
+        seed_cursor_from_max: bool = True,
     ):
         self.db_path = db_path
         self.cfg = cfg
         self.discord_webhook = discord_webhook
         self.price_fn = price_fn or _fetch_coinbase_price
         self.poll_interval_sec = poll_interval_sec
-        self._last_alert_check_id: int = 0
+        self.alert_max_age_minutes = alert_max_age_minutes
+        # On startup, seed the cursor to the current max alert id so historical
+        # alerts (already-pinged on Discord weeks ago) aren't replayed as new
+        # trades. Tests can opt out with seed_cursor_from_max=False.
+        self._last_alert_check_id: int = (
+            self._fetch_max_alert_id() if seed_cursor_from_max else 0
+        )
+
+    def _fetch_max_alert_id(self) -> int:
+        try:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(id), 0) FROM early_scanner_alerts"
+                ).fetchone()
+                return int(row[0]) if row else 0
+        except sqlite3.OperationalError:
+            # Alerts table doesn't exist yet (early scanner hasn't initialized).
+            return 0
 
     def tick(self, now: datetime | None = None) -> None:
         """One iteration: poll alerts, manage positions, snapshot equity."""
@@ -391,13 +414,19 @@ class ScannerBot:
             time.sleep(self.poll_interval_sec)
 
     def _poll_alerts(self, now: datetime) -> None:
+        # Freshness floor — even if the cursor falls behind (long bot downtime),
+        # never trade an alert older than alert_max_age_minutes. The Discord
+        # ping has long since fired; replaying the alert as a "new" trade would
+        # buy at a stale price.
+        cutoff = (now - timedelta(minutes=self.alert_max_age_minutes)).isoformat()
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.row_factory = sqlite3.Row
             new_alerts = conn.execute(
                 "SELECT id FROM early_scanner_alerts "
                 "WHERE id > ? AND score_adj = 1 AND combo_key IN ({}) "
+                "AND created_at > ? "
                 "ORDER BY id".format(",".join("?" * len(self.cfg.eligible_combos))),
-                (self._last_alert_check_id, *self.cfg.eligible_combos),
+                (self._last_alert_check_id, *self.cfg.eligible_combos, cutoff),
             ).fetchall()
 
         for row in new_alerts:

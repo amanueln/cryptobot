@@ -798,6 +798,12 @@ export class ApiService {
     return this.http.get<any[]>(`${API}/scanner-bot/alert-decisions?limit=${limit}`);
   }
 
+  resetScannerBot() {
+    return this.http.post<{ status: string; cleared: Record<string, number> }>(
+      `${API}/scanner-bot/reset`, {}
+    );
+  }
+
   // --- Early Momentum Scanner ---
 
   fetchEarlyScannerAlerts(limit = 50) {

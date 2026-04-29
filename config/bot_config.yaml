@@ -90,6 +90,10 @@ scanner_bot:
   stop_pct: 15.0
   hold_hours: 24
   poll_interval_sec: 30
+  # Refuse to trade alerts older than this — protects against replaying
+  # historical alerts on bot restart and against acting on stale alerts after
+  # bot downtime. The Discord ping has long since fired by then.
+  alert_max_age_minutes: 5
   # discord_webhook reuses early_scanner.discord_webhook by default;
   # set this only to override
   discord_webhook: null

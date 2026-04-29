@@ -154,6 +154,7 @@ def run_scanner_bot():
             cfg=entry_cfg,
             discord_webhook=webhook,
             poll_interval_sec=int(sb.get("poll_interval_sec", 30)),
+            alert_max_age_minutes=int(sb.get("alert_max_age_minutes", 5)),
         )
         logger.info("scanner_bot starting")
         bot.run()

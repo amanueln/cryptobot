@@ -3071,6 +3071,33 @@ def scanner_bot_stats():
     })
 
 
+# Tables this bot owns. The reset endpoint will ONLY touch these — never any
+# other table in candles.db. Keep this list hardcoded; never derive from user
+# input or query params.
+_SCANNER_BOT_TABLES = (
+    "scanner_bot_positions",
+    "scanner_bot_trades",
+    "scanner_bot_equity",
+    "scanner_bot_alert_decisions",
+)
+
+
+@app.route("/api/scanner-bot/reset", methods=["POST"])
+def scanner_bot_reset():
+    """Wipe ALL scanner bot state (positions, trades, equity, decisions).
+
+    Surgical: only touches the four scanner_bot_* tables. Other DB tables —
+    early_scanner_alerts, momentum_trades, candles, etc. — are not affected.
+    """
+    cleared = {}
+    with sqlite3.connect(DB_PATH) as conn:
+        for table in _SCANNER_BOT_TABLES:
+            n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            conn.execute(f"DELETE FROM {table}")
+            cleared[table] = n
+    return jsonify({"status": "ok", "cleared": cleared})
+
+
 @app.route("/api/scanner-bot/positions/<int:position_id>/sell-now", methods=["POST"])
 def scanner_bot_sell_now(position_id: int):
     with sqlite3.connect(DB_PATH) as conn:

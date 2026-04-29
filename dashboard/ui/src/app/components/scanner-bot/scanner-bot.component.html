@@ -1,5 +1,12 @@
 <!-- dashboard/ui/src/app/components/scanner-bot/scanner-bot.component.html -->
 <div class="scanner-bot">
+  <!-- Header bar with reset button -->
+  <div class="header-bar">
+    <button class="reset-btn" (click)="resetBotData()" title="Wipe all scanner bot data (does not affect other tabs)">
+      Reset Bot Data
+    </button>
+  </div>
+
   <!-- Stats strip -->
   <div class="stats" *ngIf="stats() as s">
     <div class="stat"><label>Equity</label><span>${{ s.total_equity_usd | number:'1.0-2' }}</span></div>
@@ -44,7 +51,7 @@
   <h2>Recent trades</h2>
   <table class="trades">
     <thead>
-      <tr><th>Pair</th><th>Combo</th><th>Entry</th><th>Exit</th><th>%</th><th>Net $</th><th>Reason</th><th>Held</th></tr>
+      <tr><th>Pair</th><th>Combo</th><th>Entry</th><th>Exit</th><th>%</th><th>Net $</th><th>Reason</th><th>Peak %</th></tr>
     </thead>
     <tbody>
       <tr *ngFor="let t of trades()">
