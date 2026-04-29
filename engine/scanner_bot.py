@@ -79,6 +79,40 @@ def delete_position(db_path: str, position_id: int) -> None:
         conn.execute("DELETE FROM scanner_bot_positions WHERE id=?", (position_id,))
 
 
+def close_position(
+    db_path: str,
+    p: Position,
+    exit_ts: str,
+    exit_price: float,
+    exit_reason: str,
+    fee_pct_per_side: float = 0.6,
+) -> None:
+    """Move position from scanner_bot_positions → scanner_bot_trades."""
+    if p.id is None:
+        raise ValueError("close_position requires Position.id")
+
+    gross = (exit_price - p.entry_price) * p.shares
+    fees = p.position_usd * (fee_pct_per_side / 100.0) * 2
+    net = gross - fees
+    pct = (exit_price - p.entry_price) / p.entry_price * 100
+    peak_pct = ((p.peak_price or p.entry_price) - p.entry_price) / p.entry_price * 100
+
+    with sqlite3.connect(db_path, timeout=30) as conn:
+        conn.execute(
+            "INSERT INTO scanner_bot_trades "
+            "(alert_id, combo_key, pair, entry_ts, entry_price, "
+            " exit_ts, exit_price, position_usd, shares, "
+            " gross_pnl_usd, fees_usd, net_pnl_usd, pct, peak_pct, exit_reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                p.alert_id, p.combo_key, p.pair, p.entry_ts, p.entry_price,
+                exit_ts, exit_price, p.position_usd, p.shares,
+                gross, fees, net, pct, peak_pct, exit_reason,
+            ),
+        )
+        conn.execute("DELETE FROM scanner_bot_positions WHERE id=?", (p.id,))
+
+
 def _row_to_position(r) -> Position:
     return Position(
         id=r["id"],
