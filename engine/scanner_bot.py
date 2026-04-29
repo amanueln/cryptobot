@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 
@@ -46,7 +46,8 @@ def save_position(db_path: str, p: Position) -> int:
                 p.current_price, p.current_pct, p.peak_price, p.last_tick_ts,
             ),
         )
-        return cur.lastrowid
+        p.id = cur.lastrowid
+        return p.id
 
 
 def load_open_positions(db_path: str) -> list[Position]:
