@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS scanner_bot_trades (
 
 CREATE INDEX IF NOT EXISTS idx_sbt_pair ON scanner_bot_trades (pair);
 CREATE INDEX IF NOT EXISTS idx_sbt_exit_ts ON scanner_bot_trades (exit_ts);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sbt_alert ON scanner_bot_trades (alert_id);
 
 CREATE TABLE IF NOT EXISTS scanner_bot_equity (
   ts TEXT PRIMARY KEY,
@@ -81,7 +82,8 @@ def init_schema(db_path: str) -> None:
     """Create scanner_bot_* tables and indexes if they don't already exist."""
     conn = sqlite3.connect(db_path, timeout=30)
     try:
+        # executescript() issues an implicit COMMIT before running the script,
+        # so no explicit conn.commit() is needed afterwards.
         conn.executescript(SCHEMA_SQL)
-        conn.commit()
     finally:
         conn.close()
