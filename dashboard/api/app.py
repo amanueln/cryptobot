@@ -2983,6 +2983,111 @@ if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     _start_auto_scan_loop(10)
 
 
+# ---------- /api/scanner-bot ----------
+
+@app.route("/api/scanner-bot/positions")
+def scanner_bot_positions():
+    """List of open positions with computed held/remaining minutes."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM scanner_bot_positions ORDER BY entry_ts DESC"
+        )]
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        try:
+            entry = datetime.fromisoformat(r["entry_ts"].replace("Z", "+00:00"))
+            close = datetime.fromisoformat(r["hard_close_ts"].replace("Z", "+00:00"))
+            r["held_minutes"] = int((now - entry).total_seconds() / 60)
+            r["time_remaining_minutes"] = max(0, int((close - now).total_seconds() / 60))
+        except Exception:
+            r["held_minutes"] = None
+            r["time_remaining_minutes"] = None
+        try:
+            r["milestones_hit"] = json.loads(r["milestones_hit"] or "[]")
+        except Exception:
+            r["milestones_hit"] = []
+        out.append(r)
+    return jsonify(out)
+
+
+@app.route("/api/scanner-bot/trades")
+def scanner_bot_trades():
+    limit = int(request.args.get("limit", 50))
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM scanner_bot_trades ORDER BY exit_ts DESC LIMIT ?",
+            (limit,),
+        )]
+    return jsonify(rows)
+
+
+@app.route("/api/scanner-bot/equity")
+def scanner_bot_equity():
+    hours = int(request.args.get("hours", 24))
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM scanner_bot_equity WHERE ts > ? ORDER BY ts",
+            (cutoff,),
+        )]
+    return jsonify(rows)
+
+
+@app.route("/api/scanner-bot/stats")
+def scanner_bot_stats():
+    with sqlite3.connect(DB_PATH) as conn:
+        n_open = conn.execute("SELECT COUNT(*) FROM scanner_bot_positions").fetchone()[0]
+        realized = conn.execute(
+            "SELECT COALESCE(SUM(net_pnl_usd), 0) FROM scanner_bot_trades"
+        ).fetchone()[0]
+        eq = conn.execute(
+            "SELECT cash_usd, total_equity_usd, unrealized_pnl_usd FROM scanner_bot_equity "
+            "ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+        today_cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        n_today = conn.execute(
+            "SELECT COUNT(*) FROM scanner_bot_trades WHERE exit_ts > ?",
+            (today_cutoff,),
+        ).fetchone()[0]
+    return jsonify({
+        "open_positions": n_open,
+        "realized_pnl_usd": round(realized, 2),
+        "cash_usd": round(eq[0], 2) if eq else None,
+        "total_equity_usd": round(eq[1], 2) if eq else None,
+        "unrealized_pnl_usd": round(eq[2], 2) if eq else None,
+        "trades_today": n_today,
+    })
+
+
+@app.route("/api/scanner-bot/positions/<int:position_id>/sell-now", methods=["POST"])
+def scanner_bot_sell_now(position_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "UPDATE scanner_bot_positions SET manual_sell_requested = 1 WHERE id = ?",
+            (position_id,),
+        )
+        ok = cur.rowcount > 0
+    if not ok:
+        return jsonify({"status": "error", "message": "position not found"}), 404
+    return jsonify({"status": "ok", "id": position_id, "message": "marked for manual sell"})
+
+
+@app.route("/api/scanner-bot/alert-decisions")
+def scanner_bot_alert_decisions():
+    limit = int(request.args.get("limit", 50))
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM scanner_bot_alert_decisions ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        )]
+    return jsonify(rows)
+
+
 # ---------- Auth endpoints ----------
 
 @app.route("/api/auth/setup", methods=["GET"])
