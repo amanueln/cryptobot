@@ -320,7 +320,8 @@ def _send_discord(webhook: str, p: Position, milestone: int) -> None:
         pass
     held_str = f"{held_min // 60}h {held_min % 60}m"
 
-    peak_pct = ((p.peak_price or p.current_price) - p.entry_price) / p.entry_price * 100
+    peak = p.peak_price if p.peak_price is not None else p.current_price
+    peak_pct = (peak - p.entry_price) / p.entry_price * 100
 
     coin = p.pair.replace("-USD", "")
     embed = {
@@ -336,4 +337,7 @@ def _send_discord(webhook: str, p: Position, milestone: int) -> None:
         ),
         "color": 0x00ff88,
     }
-    requests.post(webhook, json={"embeds": [embed]}, timeout=10)
+    resp = requests.post(webhook, json={"embeds": [embed]}, timeout=10)
+    if resp.status_code >= 400:
+        logger.warning("discord webhook returned %s for %s milestone +%d%%",
+                       resp.status_code, p.pair, milestone)
