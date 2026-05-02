@@ -80,7 +80,13 @@ TRAIL_DELAY_TICKS = 30     # ticks (minutes) above tighten threshold before tigh
 # 2026-04-29 sweep on 22 trades: tightening +8% tier (1.5→1.0) and adding +12%
 # tier (0.5%) protects super-runners (AXL gave back 22pp, AVNT lost everything)
 # without touching trades that peaked <8%. See decision_trail_safe_a_2026_04_29.md.
-TRAIL_PROGRESSIVE = [(6.0, 2.0), (8.0, 1.0), (12.0, 0.5)]
+TRAIL_PROGRESSIVE = [(2.0, 1.0), (6.0, 2.0), (8.0, 1.0), (12.0, 0.5)]
+
+# Pairs blocked from entry — consistent losers across 3+ trades.
+# Reviewed 2026-05-02: AERO-USD ran 3 trades, 0% WR, total -$297.59 — structural
+# loser, not bad luck. Re-evaluate quarterly; remove if market regime shifts and
+# the pair starts winning on a fresh sample.
+ENTRY_BLACKLIST = {"AERO-USD"}
 TRAIL_STALE_PCT = 2.0      # Layer 3: tightest trail when peak goes stale (no new high)
 TRAIL_STALE_TICKS = 30     # ticks (minutes) with no new high = stale peak
 
@@ -718,6 +724,12 @@ class MomentumEngine:
             })
 
         for pair in self.pairs:
+            # Blacklist filter: skip pairs flagged as structural losers.
+            if pair in ENTRY_BLACKLIST:
+                reason = "blacklisted (structural loser, see ENTRY_BLACKLIST)"
+                self._entry_rejections.append(f"{pair}: {reason}")
+                _log_reject(pair, reason, price=self._closes[pair][-1] if self._closes[pair] else None)
+                continue
             closes = self._closes[pair]
             cur_price = closes[-1] if closes else None
             if len(closes) < LONG_LB + 1:
@@ -855,13 +867,19 @@ class MomentumEngine:
                 blocked_by = f"body {avg_body:.2f} < 0.3"
                 self._entry_rejections.append(f"{pair}: body ratio {avg_body:.2f} < 0.3 (indecision candles)")
 
-            # Quality: overextended
+            # Quality: overextended (both directions — overpump AND falling-knife)
+            # Block both >+3 (late-cycle pump) and <-3 (recent crash, dead-cat bounce risk).
             if not blocked_by and chg_3h_atr is not None and chg_3h_atr > 3.0:
                 blocked_by = f"chg3h {chg_3h_atr:.1f}x ATR"
-                self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (overextended)")
+                self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (overextended up)")
+            if not blocked_by and chg_3h_atr is not None and chg_3h_atr < -3.0:
+                blocked_by = f"chg3h {chg_3h_atr:.1f}x ATR"
+                self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (recent crash)")
 
-            # Structural: ATH proximity
-            if not blocked_by and ath_dist is not None and ath_dist >= -5:
+            # Structural: ATH proximity (tightened from -5 to -10 on 2026-05-02
+            # after gate-log analysis showed losers cluster at -7 to -8% from ATH
+            # while winners never came closer than -11.8%)
+            if not blocked_by and ath_dist is not None and ath_dist >= -10:
                 blocked_by = f"ATH {ath_dist:+.1f}%"
                 self._entry_rejections.append(f"{pair}: {ath_dist:+.1f}% from ATH (at ceiling)")
 
