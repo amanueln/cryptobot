@@ -763,6 +763,25 @@ export class ApiService {
     poll();
   }
 
+  // ---------- Momentum Strategy ----------
+
+  getStrategyProfiles() { return this.http.get<any>(`${API}/momentum/strategy/profiles`); }
+  getStrategyProfile(key: string) { return this.http.get<any>(`${API}/momentum/strategy/profile/${encodeURIComponent(key)}`); }
+  saveStrategyProfile(body: { name: string; description: string; values: any }) {
+    return this.http.post<any>(`${API}/momentum/strategy/profile/save`, body);
+  }
+  updateStrategyProfile(name: string, body: { values: any; description?: string }) {
+    return this.http.put<any>(`${API}/momentum/strategy/profile/${encodeURIComponent(name)}`, body);
+  }
+  deleteStrategyProfile(name: string) {
+    return this.http.delete<any>(`${API}/momentum/strategy/profile/${encodeURIComponent(name)}`);
+  }
+  applyStrategy(body: { profile_key: string; values: any }) {
+    return this.http.post<any>(`${API}/momentum/strategy/apply`, body);
+  }
+  getStrategyChangelog() { return this.http.get<any>(`${API}/momentum/strategy/recommended/changelog`); }
+  getActiveStrategy() { return this.http.get<any>(`${API}/momentum/strategy/active`); }
+
   // --- Scanner Bot ---
 
   getScannerBotPositions() {
