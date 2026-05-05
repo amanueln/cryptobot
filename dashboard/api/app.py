@@ -3123,6 +3123,319 @@ def scanner_bot_alert_decisions():
     return jsonify(rows)
 
 
+# ---------- /api/momentum/strategy/* ----------
+
+def _strategy_profiles_path() -> str:
+    """Absolute path to data/strategy_profiles.json."""
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "strategy_profiles.json")
+    )
+
+
+def _bot_config_path() -> str:
+    """Absolute path to config/bot_config.yaml."""
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "config", "bot_config.yaml")
+    )
+
+
+def _strategy_reload_flag_path() -> str:
+    """Absolute path to data/strategy_reload.flag."""
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "strategy_reload.flag")
+    )
+
+
+def _touch_strategy_reload_flag() -> None:
+    """Write strategy_reload.flag so the engine hot-reloads the new profile."""
+    flag = _strategy_reload_flag_path()
+    os.makedirs(os.path.dirname(flag), exist_ok=True)
+    with open(flag, "w") as f:
+        f.write(datetime.now(timezone.utc).isoformat())
+
+
+def _stamp_bot_config_yaml(profile_key: str, applied_at: str) -> None:
+    """Atomically write a minimal momentum stamp into bot_config.yaml.
+
+    Reads the full yaml, sets momentum.active_profile and momentum.applied_at,
+    writes to a .tmp file, then os.replace — no data loss on crash.
+    """
+    import yaml  # local import; yaml not imported at module level
+
+    cfg_path = _bot_config_path()
+    try:
+        with open(cfg_path, "r") as f:
+            cfg = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        cfg = {}
+
+    if "momentum" not in cfg or not isinstance(cfg.get("momentum"), dict):
+        cfg["momentum"] = {}
+    cfg["momentum"]["active_profile"] = profile_key
+    cfg["momentum"]["applied_at"] = applied_at
+
+    tmp = cfg_path + ".tmp"
+    with open(tmp, "w") as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False, allow_unicode=True)
+    os.replace(tmp, cfg_path)
+
+
+@app.route("/api/momentum/strategy/profiles")
+def api_strategy_profiles():
+    """Return built-in profiles, user profiles, active key, and version info."""
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.recommended_config import (
+        BUILTIN_PROFILES, RECOMMENDED_VERSION,
+        RECOMMENDED_RELEASE_DATE,
+    )
+    from engine.strategy_profiles import load_strategy_profiles
+
+    state = load_strategy_profiles(_strategy_profiles_path())
+
+    built_in = {}
+    for name, values in BUILTIN_PROFILES.items():
+        built_in[name] = {
+            "values": values,
+            "version": RECOMMENDED_VERSION if name == "recommended" else None,
+            "release_date": RECOMMENDED_RELEASE_DATE if name == "recommended" else None,
+        }
+
+    user = {}
+    for name, prof in state.get("user_profiles", {}).items():
+        user[name] = {
+            "created_at": prof.get("created_at"),
+            "updated_at": prof.get("updated_at"),
+            "description": prof.get("description", ""),
+        }
+
+    return jsonify({
+        "built_in": built_in,
+        "user": user,
+        "active": state.get("active", "builtin::recommended"),
+        "applied_recommended_version": state.get("applied_recommended_version"),
+        "latest_recommended_version": RECOMMENDED_VERSION,
+    })
+
+
+@app.route("/api/momentum/strategy/profile/<path:key>")
+def api_strategy_profile_get(key: str):
+    """Return the values dict for a profile by namespaced key.
+
+    Accepts builtin::recommended, builtin::conservative, builtin::aggressive,
+    or user::<name>. URL-decodes the key automatically (Flask does this).
+    """
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.recommended_config import BUILTIN_PROFILES
+    from engine.strategy_profiles import load_strategy_profiles
+
+    if key.startswith("builtin::"):
+        name = key.split("::", 1)[1]
+        if name not in BUILTIN_PROFILES:
+            return jsonify({"status": "error", "message": f"built-in profile {name!r} not found"}), 404
+        return jsonify(BUILTIN_PROFILES[name])
+
+    if key.startswith("user::"):
+        name = key.split("::", 1)[1]
+        state = load_strategy_profiles(_strategy_profiles_path())
+        prof = state.get("user_profiles", {}).get(name)
+        if prof is None:
+            return jsonify({"status": "error", "message": f"user profile {name!r} not found"}), 404
+        return jsonify(prof["values"])
+
+    return jsonify({"status": "error", "message": f"unknown profile key: {key!r}"}), 404
+
+
+@app.route("/api/momentum/strategy/profile/save", methods=["POST"])
+def api_strategy_profile_save():
+    """Create a new user profile.
+
+    Body: {name, description, values}
+    400 if name collides with a built-in or values are invalid.
+    """
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.strategy_profiles import save_user_profile
+    from engine.strategy_schema import ValidationError
+
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "").strip()
+    description = body.get("description", "")
+    values = body.get("values")
+
+    if not name:
+        return jsonify({"status": "error", "message": "name is required"}), 400
+    if values is None:
+        return jsonify({"status": "error", "message": "values is required"}), 400
+
+    try:
+        save_user_profile(_strategy_profiles_path(), name, description, values)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except ValidationError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    return jsonify({"status": "ok", "name": name})
+
+
+@app.route("/api/momentum/strategy/profile/<name>", methods=["PUT"])
+def api_strategy_profile_update(name: str):
+    """Update an existing user profile.
+
+    Body: {values, description?}
+    404 if user profile not found.
+    """
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.strategy_profiles import load_strategy_profiles, save_user_profile
+    from engine.strategy_schema import ValidationError
+
+    state = load_strategy_profiles(_strategy_profiles_path())
+    if name not in state.get("user_profiles", {}):
+        return jsonify({"status": "error", "message": f"user profile {name!r} not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    values = body.get("values")
+    description = body.get("description", state["user_profiles"][name].get("description", ""))
+
+    if values is None:
+        return jsonify({"status": "error", "message": "values is required"}), 400
+
+    try:
+        save_user_profile(_strategy_profiles_path(), name, description, values)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except ValidationError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    return jsonify({"status": "ok", "name": name})
+
+
+@app.route("/api/momentum/strategy/profile/<name>", methods=["DELETE"])
+def api_strategy_profile_delete(name: str):
+    """Delete a user profile. If active, falls back to builtin::recommended.
+
+    404 if not found.
+    """
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.strategy_profiles import load_strategy_profiles, delete_user_profile
+
+    state = load_strategy_profiles(_strategy_profiles_path())
+    if name not in state.get("user_profiles", {}):
+        return jsonify({"status": "error", "message": f"user profile {name!r} not found"}), 404
+
+    delete_user_profile(_strategy_profiles_path(), name)
+    return jsonify({"status": "ok", "name": name})
+
+
+@app.route("/api/momentum/strategy/apply", methods=["POST"])
+def api_strategy_apply():
+    """Apply a profile: validate values, set active, stamp yaml, touch reload flag.
+
+    Body: {profile_key, values}
+    Returns: {status: 'ok', applied_at: '<iso>'}
+    """
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.strategy_profiles import (
+        load_strategy_profiles, save_strategy_profiles, set_active_profile
+    )
+    from engine.strategy_schema import validate_profile, ValidationError
+
+    body = request.get_json(silent=True) or {}
+    profile_key = body.get("profile_key", "").strip()
+    values = body.get("values")
+
+    if not profile_key:
+        return jsonify({"status": "error", "message": "profile_key is required"}), 400
+    if values is None:
+        return jsonify({"status": "error", "message": "values is required"}), 400
+
+    try:
+        validate_profile(values)
+    except ValidationError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    applied_at = datetime.now(timezone.utc).isoformat()
+
+    # Update applied_recommended_version if applying recommended
+    from engine.recommended_config import RECOMMENDED_VERSION
+    state = load_strategy_profiles(_strategy_profiles_path())
+    state["active"] = profile_key
+    if profile_key == "builtin::recommended":
+        state["applied_recommended_version"] = RECOMMENDED_VERSION
+    save_strategy_profiles(_strategy_profiles_path(), state)
+
+    # Stamp bot_config.yaml (cosmetic; engine reads from strategy_profiles.json)
+    try:
+        _stamp_bot_config_yaml(profile_key, applied_at)
+    except Exception:
+        pass  # non-fatal — engine doesn't rely on yaml for the profile values
+
+    # Touch reload flag so the engine hot-reloads
+    try:
+        _touch_strategy_reload_flag()
+    except Exception:
+        pass
+
+    return jsonify({"status": "ok", "applied_at": applied_at})
+
+
+@app.route("/api/momentum/strategy/recommended/changelog")
+def api_strategy_recommended_changelog():
+    """Return CHANGES_BY_VERSION from engine.recommended_config."""
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.recommended_config import CHANGES_BY_VERSION
+    return jsonify(CHANGES_BY_VERSION)
+
+
+@app.route("/api/momentum/strategy/active")
+def api_strategy_active():
+    """Return active profile key, its values, and applied_recommended_version."""
+    import sys
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from engine.strategy_profiles import load_strategy_profiles, get_active_profile_values
+
+    state = load_strategy_profiles(_strategy_profiles_path())
+    try:
+        values = get_active_profile_values(_strategy_profiles_path())
+    except KeyError as e:
+        return jsonify({"status": "error", "message": str(e)}), 404
+
+    return jsonify({
+        "active": state.get("active", "builtin::recommended"),
+        "values": values,
+        "applied_recommended_version": state.get("applied_recommended_version"),
+    })
+
+
 # ---------- Auth endpoints ----------
 
 @app.route("/api/auth/setup", methods=["GET"])
