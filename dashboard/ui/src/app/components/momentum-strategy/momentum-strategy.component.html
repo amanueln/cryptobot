@@ -1,0 +1,780 @@
+<div class="page-shell">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div>
+      <h1><span class="accent">⚙</span>Momentum Strategy Settings</h1>
+      <div class="meta">Hot reload — changes apply within 1–2s, no bot restart</div>
+    </div>
+    <button class="close-btn" (click)="backToDashboard()">← Back to Dashboard</button>
+  </div>
+
+  <!-- LOADING -->
+  @if (loading()) {
+    <div class="loading-state">Loading profiles…</div>
+  } @else {
+
+  <!-- POST-UPDATE NOTIFICATION BANNER -->
+  @if (showBanner()) {
+    <div class="upgrade">
+      <div class="upgrade-head">
+        <div class="title">
+          <span class="lamp">✓</span> Applied <strong>Recommended (v{{ profilesData()?.latest_recommended_version }})</strong>
+          <span class="meta-inline"> — auto-applied on startup</span>
+        </div>
+        <button class="toggle" (click)="dismissBanner()">dismiss</button>
+      </div>
+      <div class="upgrade-body">
+        <div class="upgrade-changes">
+          @for (ch of changelogEntries(); track ch.path) {
+            <div class="upgrade-change">
+              <div class="body">
+                <div class="label">{{ ch.label }}</div>
+                <div class="why">{{ ch.rationale }}</div>
+              </div>
+              <div class="delta">{{ ch.old ?? 'none' }} → {{ ch.new }}</div>
+            </div>
+          }
+        </div>
+        <div class="upgrade-cta">
+          <button (click)="rollback()">↺ Rollback to v{{ profilesData()?.applied_recommended_version }}</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- PROFILE BAR -->
+  <div class="profile-bar">
+    <div>
+      <div class="bar-label">Profile</div>
+      <div class="profile-row">
+        <select [ngModel]="activeKey()" (ngModelChange)="onProfileChange($event)">
+          <optgroup label="Built-in (bot-curated, read-only)">
+            @for (p of builtinProfiles(); track p.key) {
+              <option [value]="p.key">🔒 {{ p.label }}</option>
+            }
+          </optgroup>
+          @if (userProfiles().length > 0) {
+            <optgroup label="Your favorites (editable)">
+              @for (p of userProfiles(); track p.key) {
+                <option [value]="p.key">{{ p.label }}</option>
+              }
+            </optgroup>
+          }
+        </select>
+        @if (modified()) {
+          <span class="modified-tag">(modified)</span>
+          <button class="revert-btn" (click)="openRevert()" title="Discard all unsaved tweaks">
+            ↺ Revert<span class="count">{{ changeCount() }}</span>
+          </button>
+        }
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button [disabled]="isBuiltin() || !modified()" (click)="openSave()">⤓ Save</button>
+    <button (click)="openSaveAs()">⭐ Save as new…</button>
+    <button class="danger" [disabled]="isBuiltin()" (click)="openDelete()">✕ Delete</button>
+  </div>
+
+  <!-- LOCK BANNER -->
+  @if (isBuiltin()) {
+    <div class="lock-banner">
+      <div class="icon">🔒</div>
+      <div class="body">
+        <div class="title">This profile is bot-curated and read-only</div>
+        <div class="why">
+          "{{ profileName() }}" evolves with each release of the bot's research.
+          To customize without losing the original, save it as a new profile first.
+        </div>
+      </div>
+      <button (click)="openSaveAs('My ' + profileName() + ' (custom)')">⭐ Customize as new profile</button>
+    </div>
+  }
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button [class.active]="mode() === 'simple'" (click)="mode.set('simple')">Simple</button>
+    <button [class.active]="mode() === 'advanced'" (click)="mode.set('advanced')">Advanced</button>
+  </div>
+
+  <!-- ==================== SIMPLE VIEW ==================== -->
+  @if (mode() === 'simple') {
+    <div [class.read-only]="isBuiltin()">
+
+      <!-- Risk level -->
+      <section class="panel">
+        <h2>Risk level <span class="num">controls 6 entry gates</span></h2>
+        <div class="help">Controls how strict entries are: ADX, RSI, distance from ATH, and 3-hour overextension thresholds. Conservative = fewer but cleaner trades. Aggressive = more trades, more noise.</div>
+        <div class="stepped-slider">
+          <input type="range" min="1" max="5" [value]="riskSliderValue()"
+                 (input)="setRiskLevel(+$any($event.target).value)">
+          <div class="ticks">
+            @for (l of riskLevels; track l.label; let i = $index) {
+              <span [class.active]="riskSliderValue() === i + 1">{{ l.label }}</span>
+            }
+          </div>
+        </div>
+        <div class="preset-readout">
+          <div class="readout-head">
+            <span>Currently set to <strong>{{ riskLevelLabel() }}</strong> — these are the actual values:</span>
+            <button class="toggle-table" (click)="showRiskTable.set(!showRiskTable())">
+              {{ showRiskTable() ? 'hide table ↑' : 'show all 5 levels ↓' }}
+            </button>
+          </div>
+          <div class="values">
+            <span class="kv"><span class="k">ADX min</span><span class="v">{{ getField('entry_gates','adx_min') }}</span></span>
+            <span class="kv"><span class="k">RSI min</span><span class="v">{{ getField('entry_gates','rsi_min') }}</span></span>
+            <span class="kv"><span class="k">RSI max</span><span class="v">{{ getField('entry_gates','rsi_max') }}</span></span>
+            <span class="kv"><span class="k">ATH gate</span><span class="v">{{ getField('entry_gates','ath_dist_max') }}%</span></span>
+            <span class="kv"><span class="k">3h overpump</span><span class="v">{{ getField('entry_gates','chg3h_atr_max') }}× ATR</span></span>
+            <span class="kv"><span class="k">3h crash</span><span class="v">{{ getField('entry_gates','chg3h_atr_min') }}× ATR</span></span>
+          </div>
+          @if (showRiskTable()) {
+            <div class="compare-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Setting</th>
+                    @for (h of riskColHeaders; track h; let ci = $index) {
+                      <th [class.col-active]="riskSliderValue() === ci + 1">{{ h }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of riskTable; track row.label) {
+                    <tr>
+                      <td>{{ row.label }}</td>
+                      @for (v of row.values; track $index; let ci = $index) {
+                        <td [class.col-active]="riskSliderValue() === ci + 1">{{ v }}</td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Profit-taking style -->
+      <section class="panel">
+        <h2>Profit-taking style <span class="num">controls 4 trail tiers</span></h2>
+        <div class="help">How tightly we trail behind a winning peak. Quick locks small wins early. Let-it-run gives more room but risks giving back more.</div>
+        <div class="stepped-slider">
+          <input type="range" min="1" max="5" [value]="profitSliderValue()"
+                 (input)="setProfitLevel(+$any($event.target).value)">
+          <div class="ticks">
+            @for (l of profitLevels; track l.label; let i = $index) {
+              <span [class.active]="profitSliderValue() === i + 1">{{ l.label }}</span>
+            }
+          </div>
+        </div>
+        <div class="preset-readout">
+          <div class="readout-head">
+            <span>Currently set to <strong>{{ profitLevelLabel() }}</strong> — these are the trail tiers:</span>
+            <button class="toggle-table" (click)="showProfitTable.set(!showProfitTable())">
+              {{ showProfitTable() ? 'hide table ↑' : 'show all 5 levels ↓' }}
+            </button>
+          </div>
+          <div class="values">
+            @for (tier of getTiers(); track $index; let i = $index) {
+              <span class="kv"><span class="k">Tier {{ i + 1 }}</span><span class="v">peak ≥{{ tier[0] }}% → trail {{ tier[1] }}%</span></span>
+            }
+          </div>
+          @if (showProfitTable()) {
+            <div class="compare-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tier (peak → trail give-back)</th>
+                    @for (h of profitColHeaders; track h; let ci = $index) {
+                      <th [class.col-active]="profitSliderValue() === ci + 1">{{ h }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of profitTable; track row.label) {
+                    <tr>
+                      <td>{{ row.label }}</td>
+                      @for (v of row.values; track $index; let ci = $index) {
+                        <td [class.col-active]="profitSliderValue() === ci + 1">{{ v }}</td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Max hold -->
+      <section class="panel">
+        <h2>Max hold per trade</h2>
+        <div class="help">Force-exit after this many hours, regardless of P&L. Prevents trades from sitting in slow bleed.</div>
+        <div class="field-control">
+          <select [ngModel]="getField('exits','max_hold_hours')" (ngModelChange)="setMaxHold($event)">
+            <option [value]="12">12 hours</option>
+            <option [value]="24">24 hours</option>
+            <option [value]="48">48 hours</option>
+            <option [value]="72">72 hours (recommended)</option>
+            <option [value]="168">168 hours (1 week)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Position size -->
+      <section class="panel">
+        <h2>Position size per trade</h2>
+        <div class="help">USD amount allocated to each trade. Higher = bigger wins/losses, fees as % stay the same.</div>
+        <div class="field-head">
+          <div class="name">Allocation</div>
+          <div class="value-display">${{ getField('position','allocation_usd') | number }}</div>
+        </div>
+        <div class="field-control">
+          <input type="range" min="500" max="5000" step="250"
+                 [value]="getField('position','allocation_usd')"
+                 (input)="setAllocation(+$any($event.target).value)">
+          <input type="number" min="500" max="5000" step="250"
+                 [ngModel]="getField('position','allocation_usd')"
+                 (ngModelChange)="setAllocation($event)">
+        </div>
+      </section>
+
+      <!-- Pairs to skip -->
+      <section class="panel">
+        <h2>Pairs to skip (blacklist)</h2>
+        <div class="help">Pairs the bot will never enter. Use this for known dead-money coins.</div>
+        <div class="chip-input">
+          @for (pair of getBlacklist(); track pair) {
+            <span class="chip">{{ pair }} <button (click)="removeChip(pair)" [disabled]="isBuiltin()">×</button></span>
+          }
+          <input type="text" placeholder="add pair (press Enter)…"
+                 [(ngModel)]="blacklistInput"
+                 (keydown)="onChipKeydown($event)"
+                 [disabled]="isBuiltin()">
+        </div>
+      </section>
+
+      <!-- Entry pause days -->
+      <section class="panel">
+        <h2>Pause entries on these days</h2>
+        <div class="help">No new positions opened on selected days. Existing positions still exit normally. Default: Sunday only.</div>
+        <div class="day-buttons">
+          @for (day of days; track day; let i = $index) {
+            <button [class.active]="isDayBlocked(i)"
+                    (click)="toggleDay(i)"
+                    [disabled]="isBuiltin()">{{ day }}</button>
+          }
+        </div>
+      </section>
+
+      <!-- Wall-aware toggle -->
+      <section class="panel">
+        <h2>Wall-aware trail</h2>
+        <div class="help">Anchor trail stops to qualifying L2 bid walls instead of arbitrary percentages. Improves stop placement when there's real liquidity below current price.</div>
+        <div class="field-control">
+          <label class="toggle-switch">
+            <input type="checkbox"
+                   [checked]="getField('wall_aware','enabled')"
+                   (change)="setWallAware($any($event.target).checked)"
+                   [disabled]="isBuiltin()">
+            <span class="track"></span>
+          </label>
+          <span class="toggle-label">
+            Currently <strong [class.on-label]="getField('wall_aware','enabled')" [class.off-label]="!getField('wall_aware','enabled')">
+              {{ getField('wall_aware','enabled') ? 'on' : 'off' }}
+            </strong>
+          </span>
+        </div>
+      </section>
+
+    </div>
+  }
+
+  <!-- ==================== ADVANCED VIEW ==================== -->
+  @if (mode() === 'advanced') {
+    <div [class.read-only]="isBuiltin()">
+
+      <!-- Entry gates -->
+      <details class="adv" open>
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Entry gates</strong> <span class="sub-count">9 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('entry_gates')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">ADX min <span class="help-icon" title="Average Directional Index — minimum trend strength">?</span></div>
+              <div class="value-display">{{ getField('entry_gates','adx_min') }}</div></div>
+            <div class="field-help">Higher = only enter very strong trends. Sane range: 15–40.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="50" [value]="getField('entry_gates','adx_min')"
+                     (input)="setField('entry_gates','adx_min',+$any($event.target).value)">
+              <input type="number" min="0" max="50" [ngModel]="getField('entry_gates','adx_min')"
+                     (ngModelChange)="setField('entry_gates','adx_min',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">RSI min (uptrend)</div>
+              <div class="value-display">{{ getField('entry_gates','rsi_min') }}</div></div>
+            <div class="field-help">Reject entries when RSI is below this — coin must be above the midline. Sane range: 40–60.</div>
+            <div class="field-control">
+              <input type="range" min="30" max="70" [value]="getField('entry_gates','rsi_min')"
+                     (input)="setField('entry_gates','rsi_min',+$any($event.target).value)">
+              <input type="number" min="30" max="70" [ngModel]="getField('entry_gates','rsi_min')"
+                     (ngModelChange)="setField('entry_gates','rsi_min',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">RSI max (overbought)</div>
+              <div class="value-display">{{ getField('entry_gates','rsi_max') }}</div></div>
+            <div class="field-help">Reject entries when RSI is above this — coin is overbought. Sane range: 60–80.</div>
+            <div class="field-control">
+              <input type="range" min="50" max="90" [value]="getField('entry_gates','rsi_max')"
+                     (input)="setField('entry_gates','rsi_max',+$any($event.target).value)">
+              <input type="number" min="50" max="90" [ngModel]="getField('entry_gates','rsi_max')"
+                     (ngModelChange)="setField('entry_gates','rsi_max',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Re-entry accel threshold (%)</div>
+              <div class="value-display">{{ getField('entry_gates','accel_min') }}%</div></div>
+            <div class="field-help">Minimum acceleration % required to enter. Below this is too weak. Sane range: 5–25.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="50" [value]="getField('entry_gates','accel_min')"
+                     (input)="setField('entry_gates','accel_min',+$any($event.target).value)">
+              <input type="number" min="0" max="50" [ngModel]="getField('entry_gates','accel_min')"
+                     (ngModelChange)="setField('entry_gates','accel_min',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">ATH proximity gate (%)</div>
+              <div class="value-display">{{ getField('entry_gates','ath_dist_max') }}%</div></div>
+            <div class="field-help">Reject if price is within X% of all-time high. Negative = below ATH. Sane range: -5 to -25.</div>
+            <div class="field-control">
+              <input type="range" min="-30" max="-3" [value]="getField('entry_gates','ath_dist_max')"
+                     (input)="setField('entry_gates','ath_dist_max',+$any($event.target).value)">
+              <input type="number" min="-30" max="-3" [ngModel]="getField('entry_gates','ath_dist_max')"
+                     (ngModelChange)="setField('entry_gates','ath_dist_max',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">3-hour overpump (× ATR)</div>
+              <div class="value-display">{{ getField('entry_gates','chg3h_atr_max') }}×</div></div>
+            <div class="field-help">Reject if 3-hour move exceeds X ATR upward (already pumped). Sane range: 1.5–6.</div>
+            <div class="field-control">
+              <input type="range" min="1" max="6" step="0.1" [value]="getField('entry_gates','chg3h_atr_max')"
+                     (input)="setField('entry_gates','chg3h_atr_max',+$any($event.target).value)">
+              <input type="number" min="1" max="6" step="0.1" [ngModel]="getField('entry_gates','chg3h_atr_max')"
+                     (ngModelChange)="setField('entry_gates','chg3h_atr_max',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">3-hour crash (× ATR, lower bound)</div>
+              <div class="value-display">{{ getField('entry_gates','chg3h_atr_min') }}×</div></div>
+            <div class="field-help">Reject if 3-hour move dropped more than X ATR (falling-knife). Sane range: -1.5 to -6.</div>
+            <div class="field-control">
+              <input type="range" min="-6" max="-1" step="0.1" [value]="getField('entry_gates','chg3h_atr_min')"
+                     (input)="setField('entry_gates','chg3h_atr_min',+$any($event.target).value)">
+              <input type="number" min="-6" max="-1" step="0.1" [ngModel]="getField('entry_gates','chg3h_atr_min')"
+                     (ngModelChange)="setField('entry_gates','chg3h_atr_min',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Green candles min (of last 6)</div>
+              <div class="value-display">{{ getField('entry_gates','green_count_min') }}/6</div></div>
+            <div class="field-help">Require at least N of last 6 candles to close green. Sane range: 1–5.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="6" [value]="getField('entry_gates','green_count_min')"
+                     (input)="setField('entry_gates','green_count_min',+$any($event.target).value)">
+              <input type="number" min="0" max="6" [ngModel]="getField('entry_gates','green_count_min')"
+                     (ngModelChange)="setField('entry_gates','green_count_min',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Body ratio min</div>
+              <div class="value-display">{{ getField('entry_gates','body_ratio_min') }}</div></div>
+            <div class="field-help">Average candle body / range. Higher = more decisive candles required. Sane range: 0.1–0.7.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="1" step="0.05" [value]="getField('entry_gates','body_ratio_min')"
+                     (input)="setField('entry_gates','body_ratio_min',+$any($event.target).value)">
+              <input type="number" min="0" max="1" step="0.05" [ngModel]="getField('entry_gates','body_ratio_min')"
+                     (ngModelChange)="setField('entry_gates','body_ratio_min',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Trail tiers -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Trail tiers</strong> <span class="sub-count">progressive trail</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('trail')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field-help">Each tier: when peak reaches the % shown, lock the stop at peak − give-back %. The bot uses the tightest tier whose threshold is met.</div>
+          <div class="tier-row tier-header">
+            <div class="tier-label">Tier</div>
+            <div class="tier-col-head">Peak ≥</div>
+            <div class="tier-col-head">Trail give-back</div>
+            <div></div>
+          </div>
+          @for (tier of getTiers(); track $index; let i = $index) {
+            <div class="tier-row">
+              <div class="tier-label">{{ i + 1 }}</div>
+              <input type="number" [value]="tier[0]" step="0.5"
+                     (input)="setTierValue(i, 0, +$any($event.target).value)">
+              <input type="number" [value]="tier[1]" step="0.1"
+                     (input)="setTierValue(i, 1, +$any($event.target).value)">
+              <button class="x" (click)="removeTier(i)">×</button>
+            </div>
+          }
+          <div class="add-tier-row">
+            <button class="add-tier-btn" (click)="addTier()">+ Add tier</button>
+          </div>
+
+          <div class="field" style="border-top:1px solid var(--border); padding-top:14px; margin-top:8px;">
+            <div class="field-head"><div class="name">ATR stop multiplier (entry-time stop)</div>
+              <div class="value-display">{{ getField('trail','wide_pct') }}%</div></div>
+            <div class="field-help">Wide trail % used before first tier activates. Sane range: 2–10.</div>
+            <div class="field-control">
+              <input type="range" min="1" max="15" step="0.5" [value]="getField('trail','wide_pct')"
+                     (input)="setField('trail','wide_pct',+$any($event.target).value)">
+              <input type="number" min="1" max="15" step="0.5" [ngModel]="getField('trail','wide_pct')"
+                     (ngModelChange)="setField('trail','wide_pct',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Stale ticks (no new high)</div>
+              <div class="value-display">{{ getField('trail','stale_ticks') }}</div></div>
+            <div class="field-help">After this many ticks without a new high, switch to the stale (tightest) trail. Sane range: 10–120.</div>
+            <div class="field-control">
+              <input type="range" min="5" max="120" [value]="getField('trail','stale_ticks')"
+                     (input)="setField('trail','stale_ticks',+$any($event.target).value)">
+              <input type="number" min="5" max="120" [ngModel]="getField('trail','stale_ticks')"
+                     (ngModelChange)="setField('trail','stale_ticks',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Exits -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Exits &amp; safety stops</strong> <span class="sub-count">5 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('exits')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">Max hold (hours)</div><div class="value-display">{{ getField('exits','max_hold_hours') }}h</div></div>
+            <div class="field-help">Force-exit after this many hours. Sane range: 12–168.</div>
+            <div class="field-control">
+              <input type="range" min="6" max="168" [value]="getField('exits','max_hold_hours')"
+                     (input)="setField('exits','max_hold_hours',+$any($event.target).value)">
+              <input type="number" min="6" max="168" [ngModel]="getField('exits','max_hold_hours')"
+                     (ngModelChange)="setField('exits','max_hold_hours',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Accel-fade exit threshold (%)</div><div class="value-display">{{ getField('exits','accel_exit_thresh') }}%</div></div>
+            <div class="field-help">Exit if acceleration drops below this after min-hold. Sane range: 0–15.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="20" step="0.5" [value]="getField('exits','accel_exit_thresh')"
+                     (input)="setField('exits','accel_exit_thresh',+$any($event.target).value)">
+              <input type="number" min="0" max="20" step="0.5" [ngModel]="getField('exits','accel_exit_thresh')"
+                     (ngModelChange)="setField('exits','accel_exit_thresh',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Accel-fade min hold (hours)</div><div class="value-display">{{ getField('exits','accel_exit_min_hold') }}h</div></div>
+            <div class="field-help">Don't trigger accel-fade until trade is held this long. Sane range: 1–24.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="24" [value]="getField('exits','accel_exit_min_hold')"
+                     (input)="setField('exits','accel_exit_min_hold',+$any($event.target).value)">
+              <input type="number" min="0" max="24" [ngModel]="getField('exits','accel_exit_min_hold')"
+                     (ngModelChange)="setField('exits','accel_exit_min_hold',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Equity trailing stop (%)</div><div class="value-display">{{ getField('exits','equity_trail_pct') }}%</div></div>
+            <div class="field-help">Portfolio-level emergency stop. Exit all positions if equity falls X% from peak. Sane range: 5–30.</div>
+            <div class="field-control">
+              <input type="range" min="5" max="30" step="0.5" [value]="getField('exits','equity_trail_pct')"
+                     (input)="setField('exits','equity_trail_pct',+$any($event.target).value)">
+              <input type="number" min="5" max="30" step="0.5" [ngModel]="getField('exits','equity_trail_pct')"
+                     (ngModelChange)="setField('exits','equity_trail_pct',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Min hold (hours)</div><div class="value-display">{{ getField('exits','min_hold_hours') }}h</div></div>
+            <div class="field-help">Don't allow regime/rebalance exit until trade has been held this long. Sane range: 0–12.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="24" [value]="getField('exits','min_hold_hours')"
+                     (input)="setField('exits','min_hold_hours',+$any($event.target).value)">
+              <input type="number" min="0" max="24" [ngModel]="getField('exits','min_hold_hours')"
+                     (ngModelChange)="setField('exits','min_hold_hours',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Lockouts -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Lockouts</strong> <span class="sub-count">3 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('lockouts')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">Same-coin lockout (hours)</div><div class="value-display">{{ getField('lockouts','same_coin_hours') }}h</div></div>
+            <div class="field-help">After exiting a coin, can't re-buy for X hours. Sane range: 4–168.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="168" [value]="getField('lockouts','same_coin_hours')"
+                     (input)="setField('lockouts','same_coin_hours',+$any($event.target).value)">
+              <input type="number" min="0" max="168" [ngModel]="getField('lockouts','same_coin_hours')"
+                     (ngModelChange)="setField('lockouts','same_coin_hours',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Loss-lockout (hours)</div><div class="value-display">{{ getField('lockouts','loss_lockout_hours') }}h</div></div>
+            <div class="field-help">After a losing trade, that coin is locked out for X hours. Sane range: 24–336.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="336" [value]="getField('lockouts','loss_lockout_hours')"
+                     (input)="setField('lockouts','loss_lockout_hours',+$any($event.target).value)">
+              <input type="number" min="0" max="336" [ngModel]="getField('lockouts','loss_lockout_hours')"
+                     (ngModelChange)="setField('lockouts','loss_lockout_hours',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Exit cooldown (hours)</div><div class="value-display">{{ getField('lockouts','exit_cooldown_hours') }}h</div></div>
+            <div class="field-help">Pause for this many hours after any exit before considering new entries. Sane range: 0–48.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="48" step="0.5" [value]="getField('lockouts','exit_cooldown_hours')"
+                     (input)="setField('lockouts','exit_cooldown_hours',+$any($event.target).value)">
+              <input type="number" min="0" max="48" step="0.5" [ngModel]="getField('lockouts','exit_cooldown_hours')"
+                     (ngModelChange)="setField('lockouts','exit_cooldown_hours',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Regime -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Regime detector</strong> <span class="sub-count">2 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('regime')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">BTC SMA period (candles)</div><div class="value-display">{{ getField('regime','ma_period') }}</div></div>
+            <div class="field-help">Number of hourly candles to average for the BTC regime MA. Sane range: 100–1000.</div>
+            <div class="field-control">
+              <input type="range" min="100" max="1000" step="50" [value]="getField('regime','ma_period')"
+                     (input)="setField('regime','ma_period',+$any($event.target).value)">
+              <input type="number" min="100" max="1000" step="50" [ngModel]="getField('regime','ma_period')"
+                     (ngModelChange)="setField('regime','ma_period',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Regime hysteresis (%)</div><div class="value-display">{{ getField('regime','hysteresis_pct') }}%</div></div>
+            <div class="field-help">BTC must cross MA by this % to flip regime — prevents whipsaw. Sane range: 1–15.</div>
+            <div class="field-control">
+              <input type="range" min="0" max="15" step="0.5" [value]="getField('regime','hysteresis_pct')"
+                     (input)="setField('regime','hysteresis_pct',+$any($event.target).value)">
+              <input type="number" min="0" max="15" step="0.5" [ngModel]="getField('regime','hysteresis_pct')"
+                     (ngModelChange)="setField('regime','hysteresis_pct',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Position & sizing -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Position &amp; sizing</strong> <span class="sub-count">3 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('position')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">Allocation USD</div><div class="value-display">${{ getField('position','allocation_usd') | number }}</div></div>
+            <div class="field-help">Total capital pool the bot trades with. Sane range: $500–$20000.</div>
+            <div class="field-control">
+              <input type="range" min="500" max="20000" step="250" [value]="getField('position','allocation_usd')"
+                     (input)="setField('position','allocation_usd',+$any($event.target).value)">
+              <input type="number" min="500" max="20000" step="250" [ngModel]="getField('position','allocation_usd')"
+                     (ngModelChange)="setField('position','allocation_usd',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Top N to buy</div><div class="value-display">{{ getField('position','top_n') }}</div></div>
+            <div class="field-help">How many top-ranked candidates to buy each entry tick. Sane range: 1–5.</div>
+            <div class="field-control">
+              <input type="range" min="1" max="5" [value]="getField('position','top_n')"
+                     (input)="setField('position','top_n',+$any($event.target).value)">
+              <input type="number" min="1" max="5" [ngModel]="getField('position','top_n')"
+                     (ngModelChange)="setField('position','top_n',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Rebalance interval (hours)</div><div class="value-display">{{ getField('position','rebal_hours') }}h</div></div>
+            <div class="field-help">Hours between full rebalance/rotation checks. Sane range: 24–336.</div>
+            <div class="field-control">
+              <input type="range" min="24" max="336" [value]="getField('position','rebal_hours')"
+                     (input)="setField('position','rebal_hours',+$any($event.target).value)">
+              <input type="number" min="24" max="336" [ngModel]="getField('position','rebal_hours')"
+                     (ngModelChange)="setField('position','rebal_hours',$event)">
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Universe -->
+      <details class="adv">
+        <summary>
+          <span class="left"><span class="arrow">▶</span><strong>Universe</strong> <span class="sub-count">2 controls</span></span>
+          <button class="reset" (click)="$event.preventDefault(); resetSection('universe')">↻ Reset section</button>
+        </summary>
+        <div class="adv-body">
+          <div class="field">
+            <div class="field-head"><div class="name">Min price ($)</div><div class="value-display">${{ getField('universe','min_price') }}</div></div>
+            <div class="field-help">Don't trade pairs priced below this — too noisy for reliable signals. Sane range: $0.001–$1.</div>
+            <div class="field-control">
+              <input type="number" min="0" max="1" step="0.001" [ngModel]="getField('universe','min_price')"
+                     (ngModelChange)="setField('universe','min_price',$event)">
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-head"><div class="name">Blacklist</div>
+              <div class="value-display neg">{{ getBlacklist().length }} pair{{ getBlacklist().length !== 1 ? 's' : '' }}</div></div>
+            <div class="field-help">Pairs that will never be entered. (Also editable in Simple view.)</div>
+            <div class="chip-input">
+              @for (pair of getBlacklist(); track pair) {
+                <span class="chip">{{ pair }} <button (click)="removeChip(pair)" [disabled]="isBuiltin()">×</button></span>
+              }
+              <input type="text" placeholder="add pair (press Enter)…"
+                     [(ngModel)]="blacklistInput"
+                     (keydown)="onChipKeydown($event)"
+                     [disabled]="isBuiltin()">
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  }
+
+  } <!-- end @if !loading -->
+</div>
+
+<!-- STICKY FOOTER -->
+<div class="footer">
+  <div class="footer-inner">
+    <div class="status-pill">
+      <span class="dot"></span>
+      <span>{{ activeStrategyMeta()?.active ? ('Active: ' + (activeStrategyMeta()?.active || '')) : 'Strategy loaded' }}</span>
+    </div>
+    <div class="actions">
+      <button class="cancel" (click)="backToDashboard()">Cancel</button>
+      <button class="apply" [disabled]="!modified() || applying()" (click)="applyChanges()">
+        {{ applying() ? 'Applying…' : 'Apply changes' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+@if (toast()) {
+  <div class="toast">
+    <span class="icon ok">✓</span>{{ toast() }}
+  </div>
+}
+
+<!-- ============ MODALS ============ -->
+
+<!-- Save (overwrite) -->
+@if (showSaveModal()) {
+  <div class="modal-backdrop" (click)="showSaveModal.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Update "{{ profileName() }}"?</h3>
+      <p>This will replace the saved values for this favorite with your current tweaks. The previous values cannot be recovered.</p>
+      <div class="diff-list">
+        @for (d of diffList(); track d.path) {
+          <div>{{ d.path }} &nbsp; {{ d.old | json }} <span class="arrow">→</span> {{ d.new | json }}</div>
+        }
+        @if (diffList().length === 0) {
+          <div>No changes</div>
+        }
+      </div>
+      <div class="modal-actions">
+        <button (click)="showSaveModal.set(false)">Cancel</button>
+        <button class="primary" [disabled]="saving()" (click)="confirmSave()">{{ saving() ? 'Saving…' : 'Update' }}</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Save as new -->
+@if (showSaveAsModal()) {
+  <div class="modal-backdrop" (click)="showSaveAsModal.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Save current settings as a new favorite</h3>
+      <p>Capture all settings as a named profile you can return to later.</p>
+      <label>Name</label>
+      <input type="text" [ngModel]="newProfileName()" (ngModelChange)="newProfileName.set($event)" placeholder="e.g. My aggressive tweak" autofocus>
+      <label>Description (optional)</label>
+      <textarea [ngModel]="newProfileDescription()" (ngModelChange)="newProfileDescription.set($event)" placeholder="Notes about what this profile is for…"></textarea>
+      <div class="modal-actions">
+        <button (click)="showSaveAsModal.set(false)">Cancel</button>
+        <button class="primary" [disabled]="saving() || !newProfileName().trim()" (click)="confirmSaveAs()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete -->
+@if (showDeleteModal()) {
+  <div class="modal-backdrop" (click)="showDeleteModal.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Permanently delete "{{ profileName() }}"?</h3>
+      <p>This action can't be undone. If you want to save the values somewhere else first, click Cancel and use "Save as new".</p>
+      <div class="modal-actions">
+        <button (click)="showDeleteModal.set(false)">Cancel</button>
+        <button class="danger" (click)="confirmDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Revert -->
+@if (showRevertModal()) {
+  <div class="modal-backdrop" (click)="showRevertModal.set(false)">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Revert all unsaved tweaks?</h3>
+      <p>You'll go back to the last saved version of <strong>{{ profileName() }}</strong>. This affects <strong>{{ changeCount() }}</strong> change(s) you haven't applied or saved yet.</p>
+      <div class="diff-list">
+        @for (d of diffList(); track d.path) {
+          <div>{{ d.path }} &nbsp; <span style="color:var(--accent)">{{ d.new | json }}</span> <span class="arrow">→</span> {{ d.old | json }} <span class="saved-label">(saved)</span></div>
+        }
+      </div>
+      <p class="small-note">Tweaks can't be recovered after revert. If you want to keep them, click Cancel and use "Save as new" first.</p>
+      <div class="modal-actions">
+        <button (click)="showRevertModal.set(false)">Cancel</button>
+        <button class="primary" (click)="confirmRevert()">Revert</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Discard changes -->
+@if (showDiscardModal()) {
+  <div class="modal-backdrop" (click)="cancelDiscard()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Discard unsaved changes?</h3>
+      <p>You have modified <strong>{{ profileName() }}</strong> ({{ changeCount() }} change{{ changeCount() !== 1 ? 's' : '' }}). These tweaks haven't been saved or applied yet.</p>
+      <div class="modal-actions">
+        <button (click)="cancelDiscard()">Keep editing</button>
+        <button class="danger" (click)="confirmDiscard()">Discard</button>
+      </div>
+    </div>
+  </div>
+}

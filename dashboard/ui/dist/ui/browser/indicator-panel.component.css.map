@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["angular:styles/component:css;55e0115e05784d898d4b5c096fba54f7720edf6a3418131b298e6cbd3adcfcba;C:/Users/Nathan/cryptobot/dashboard/ui/src/app/components/indicator-panel/indicator-panel.component.ts"],
+  "sourcesContent": ["\n    .indicator-panel {\n      display: flex;\n      flex-direction: column;\n      gap: 4px;\n      width: 100%;\n      background: transparent;\n    }\n    .chart-wrapper {\n      position: relative;\n      height: 120px;\n      width: 100%;\n    }\n    .chart-label {\n      position: absolute;\n      top: 4px;\n      left: 8px;\n      font-size: 11px;\n      color: #8b8fa3;\n      z-index: 1;\n      pointer-events: none;\n      font-family: sans-serif;\n    }\n    canvas {\n      width: 100% !important;\n      height: 120px !important;\n    }\n  "],
+  "mappings": ";AACI,CAAC;AACC,WAAS;AACT,kBAAgB;AAChB,OAAK;AACL,SAAO;AACP,cAAY;AACd;AACA,CAAC;AACC,YAAU;AACV,UAAQ;AACR,SAAO;AACT;AACA,CAAC;AACC,YAAU;AACV,OAAK;AACL,QAAM;AACN,aAAW;AACX,SAAO;AACP,WAAS;AACT,kBAAgB;AAChB,eAAa;AACf;AACA;AACE,SAAO;AACP,UAAQ;AACV;",
+  "names": []
+}

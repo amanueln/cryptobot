@@ -22,6 +22,13 @@ export const routes: Routes = [
         (m) => m.SetupComponent
       ),
   },
+  {
+    path: 'momentum-strategy',
+    loadComponent: () =>
+      import('./components/momentum-strategy/momentum-strategy.component').then(
+        (m) => m.MomentumStrategyComponent
+      ),
+  },
   { path: 'pair/:symbol', redirectTo: '', pathMatch: 'full' },
   { path: 'ml-brain', redirectTo: '', pathMatch: 'full' },
   { path: 'pair-scanner', redirectTo: '', pathMatch: 'full' },
