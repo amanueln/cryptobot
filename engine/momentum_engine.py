@@ -207,15 +207,23 @@ class MomentumEngine:
     def __init__(self, allocation_usd: float, fee_rate: float = FEE_RATE,
                  pairs: list[str] | None = None,
                  wall_aware_config: dict | None = None,
-                 entry_pause_config: dict | None = None):
+                 entry_pause_config: dict | None = None,
+                 config: dict | None = None):
         self.starting_balance = allocation_usd
         self.cash = allocation_usd
         self.fee_rate = fee_rate
         self.holdings: dict[str, MomentumHolding] = {}
         self.pairs: list[str] = list(pairs) if pairs else list(DEFAULT_PAIRS)
 
-        # Wall-aware trail config (see bot_config.yaml → wall_aware_trail)
-        wa = wall_aware_config or {}
+        # Strategy config dict — populated at construction or via apply_config_update().
+        # When None/empty, all self.config.get(...) reads fall through to module constants.
+        self.config: dict = config or {}
+
+        # Wall-aware trail config.
+        # Prefer self.config["wall_aware"] when present; fall back to explicit
+        # wall_aware_config arg (legacy callers) then to module-level defaults.
+        _cfg_wa = self.config.get("wall_aware", {}) or {}
+        wa = _cfg_wa if _cfg_wa else (wall_aware_config or {})
         self.wall_aware_enabled: bool = bool(wa.get("enabled", False))
         self.wall_aware_min_size_mult: float = float(wa.get("min_size_vs_position", 3.0))
         self.wall_aware_min_persistence_ms: int = int(wa.get("min_persistence_ms", 10000))
@@ -228,7 +236,10 @@ class MomentumEngine:
         self.wall_aware_min_profit_buffer_pct: float = float(wa.get("min_profit_buffer_pct", 0.012))
 
         # Entry pause — block new entries on specific UTC weekdays (0=Mon..6=Sun).
-        ep = entry_pause_config or {}
+        # Prefer self.config["entry_pause"] when present; fall back to explicit
+        # entry_pause_config arg (legacy callers) then to no-pause default.
+        _cfg_ep = self.config.get("entry_pause", {}) or {}
+        ep = _cfg_ep if _cfg_ep else (entry_pause_config or {})
         self.entry_pause_enabled: bool = bool(ep.get("enabled", False))
         self.entry_pause_weekdays: set[int] = set(int(d) for d in (ep.get("weekday_block", []) or []))
         self._entry_pause_logged_for_day: int | None = None  # log "paused" once per day, not per scan
@@ -293,7 +304,7 @@ class MomentumEngine:
         self.regime_bullish = False
         self.btc_price = 0.0
         self.btc_ma = 0.0
-        self.next_rebal_hours = REBAL_HOURS
+        self.next_rebal_hours = self.config.get("position", {}).get("rebal_hours", REBAL_HOURS)
         self.accel_scores: list[AccelScore] = []
 
     def update_pairs(self, new_pairs: list[str]):
@@ -332,6 +343,39 @@ class MomentumEngine:
         self.pairs = list(kept)
         logger.info("Momentum engine: updated to %d pairs", len(self.pairs))
 
+    @property
+    def _entry_blacklist(self) -> set:
+        """Return the active entry blacklist, preferring config over module constant."""
+        return set(self.config.get("universe", {}).get("blacklist", list(ENTRY_BLACKLIST)))
+
+    @property
+    def _trail_progressive(self) -> list:
+        """Return the active progressive trail tiers, preferring config over module constant."""
+        raw = self.config.get("trail", {}).get("progressive", TRAIL_PROGRESSIVE)
+        return [tuple(t) for t in raw]
+
+    def apply_config_update(self, new_config: dict) -> None:
+        """Hot-swap the engine's config dict.
+
+        All gate decisions consult self.config at decision time (no cached
+        derived state to invalidate beyond the entry_pause and wall_aware
+        config blocks, which we re-derive here).
+        """
+        self.config = new_config or {}
+        # Re-derive entry_pause cache
+        ep = self.config.get("entry_pause", {}) or {}
+        self.entry_pause_enabled = bool(ep.get("enabled", False))
+        self.entry_pause_weekdays = set(int(d) for d in (ep.get("weekday_block") or []))
+        # Re-derive wall_aware (same approach used by __init__)
+        wa = self.config.get("wall_aware", {}) or {}
+        self.wall_aware_enabled = bool(wa.get("enabled", False))
+        self.wall_aware_min_size_mult = float(wa.get("min_size_vs_position", 3.0))
+        self.wall_aware_min_persistence_ms = int(wa.get("min_persistence_ms", 10000))
+        self.wall_aware_max_dist_pct = float(wa.get("max_dist_from_peak_pct", 1.5))
+        self.wall_aware_stop_offset_pct = float(wa.get("stop_offset_pct", 0.001))
+        self.wall_aware_min_profit_buffer_pct = float(wa.get("min_profit_buffer_pct", 0.012))
+        logger.info("Momentum engine config hot-reloaded")
+
     def feed_candle(self, pair: str, candle: Candle, warmup: bool = False) -> list[Trade]:
         """Feed a single candle for a single pair. Returns any trades executed."""
         if pair not in self._closes:
@@ -350,7 +394,8 @@ class MomentumEngine:
         self._candles_fed += 1
 
         # Keep history bounded (need max of LONG_LB + some buffer)
-        max_hist = max(LONG_LB, REGIME_MA) + 100
+        _regime_ma = self.config.get("regime", {}).get("ma_period", REGIME_MA)
+        max_hist = max(LONG_LB, _regime_ma) + 100
         if len(self._closes[pair]) > max_hist:
             self._closes[pair] = self._closes[pair][-max_hist:]
             self._opens[pair] = self._opens[pair][-max_hist:]
@@ -371,16 +416,18 @@ class MomentumEngine:
         if pair == 'BTC-USD':
             self._btc_closes = self._closes['BTC-USD']
             self.btc_price = candle.close
-            btc_ma = _sma(self._btc_closes, REGIME_MA)
+            _regime_ma = self.config.get("regime", {}).get("ma_period", REGIME_MA)
+            _regime_hyst = self.config.get("regime", {}).get("hysteresis_pct", REGIME_HYSTERESIS)
+            btc_ma = _sma(self._btc_closes, _regime_ma)
             if btc_ma is not None:
                 self.btc_ma = btc_ma
-                # Hysteresis: need 5% above SMA to go bullish, 5% below to go bearish
+                # Hysteresis: need X% above SMA to go bullish, X% below to go bearish
                 if self._regime_state in ("bearish", "unknown"):
-                    if self.btc_price >= btc_ma * (1 + REGIME_HYSTERESIS):
+                    if self.btc_price >= btc_ma * (1 + _regime_hyst):
                         self._regime_state = "bullish"
                         self.regime_bullish = True
                 elif self._regime_state == "bullish":
-                    if self.btc_price <= btc_ma * (1 - REGIME_HYSTERESIS):
+                    if self.btc_price <= btc_ma * (1 - _regime_hyst):
                         self._regime_state = "bearish"
                         self.regime_bullish = False
 
@@ -390,9 +437,10 @@ class MomentumEngine:
             return []
 
         # Check if BTC has enough data (required for regime)
-        if len(self._btc_closes) < REGIME_MA:
+        _regime_ma = self.config.get("regime", {}).get("ma_period", REGIME_MA)
+        if len(self._btc_closes) < _regime_ma:
             self.status = "warming_up"
-            self.status_detail = f"BTC MA needs {REGIME_MA} candles, have {len(self._btc_closes)}"
+            self.status_detail = f"BTC MA needs {_regime_ma} candles, have {len(self._btc_closes)}"
             return []
 
         # Count pairs with enough data (don't let one short pair block everything)
@@ -421,13 +469,15 @@ class MomentumEngine:
                 self._peak_equity = equity
 
             # Emergency backstop: equity trailing stop (should rarely fire with new exits)
-            if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - EQUITY_TRAIL_PCT):
+            _equity_trail_pct = self.config.get("exits", {}).get("equity_trail_pct", EQUITY_TRAIL_PCT)
+            _exit_cooldown_h = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
+            if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - _equity_trail_pct):
                 exit_trades = self._exit_all(candle.timestamp,
-                    f"Equity trailing stop ({EQUITY_TRAIL_PCT*100:.0f}% from peak ${self._peak_equity:,.0f})")
+                    f"Equity trailing stop ({_equity_trail_pct*100:.0f}% from peak ${self._peak_equity:,.0f})")
                 trades.extend(exit_trades)
                 self._was_cash = True
                 self._peak_equity = equity
-                self._exit_cooldown = EXIT_COOLDOWN
+                self._exit_cooldown = _exit_cooldown_h
                 self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = "Equity stop — protecting profits"
@@ -459,16 +509,19 @@ class MomentumEngine:
                         reason = f"ATR stop hit: ${price:,.4f} <= ${h.atr_stop_price:,.4f} ({stop_dist:.1f}% from entry)"
 
                 # 2. Accel faded exit (momentum died — take profit before it gives back)
-                if not should_exit and self._hours_in_position >= ACCEL_EXIT_MIN_HOLD:
+                _accel_exit_min_hold = self.config.get("exits", {}).get("accel_exit_min_hold", ACCEL_EXIT_MIN_HOLD)
+                _accel_exit_thresh = self.config.get("exits", {}).get("accel_exit_thresh", ACCEL_EXIT_THRESH)
+                if not should_exit and self._hours_in_position >= _accel_exit_min_hold:
                     accel = self._get_accel(pair_key)
-                    if accel is not None and accel < ACCEL_EXIT_THRESH:
+                    if accel is not None and accel < _accel_exit_thresh:
                         should_exit = True
-                        reason = f"Accel faded: {accel:.1%} < {ACCEL_EXIT_THRESH:.0%} threshold"
+                        reason = f"Accel faded: {accel:.1%} < {_accel_exit_thresh:.0%} threshold"
 
                 # 3. Max hold duration (kill stale positions)
-                if not should_exit and self._hours_in_position >= MAX_HOLD_HOURS:
+                _max_hold_hours = self.config.get("exits", {}).get("max_hold_hours", MAX_HOLD_HOURS)
+                if not should_exit and self._hours_in_position >= _max_hold_hours:
                     should_exit = True
-                    reason = f"Max hold {MAX_HOLD_HOURS}h reached"
+                    reason = f"Max hold {_max_hold_hours}h reached"
 
                 if should_exit:
                     t = self._sell(pair_key, candle.timestamp, reason)
@@ -477,7 +530,7 @@ class MomentumEngine:
 
             if trades:
                 self._was_cash = True
-                self._exit_cooldown = EXIT_COOLDOWN
+                self._exit_cooldown = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
                 self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = trades[0].reason if trades else "Exited position"
@@ -502,11 +555,12 @@ class MomentumEngine:
             self._hours_since_regime_check = 0
             if not self.regime_bullish and self.holdings:
                 # Only exit if we've held long enough (min hold period)
-                if self._hours_in_position >= MIN_HOLD_HOURS:
+                _min_hold_hours = self.config.get("exits", {}).get("min_hold_hours", MIN_HOLD_HOURS)
+                if self._hours_in_position >= _min_hold_hours:
                     exit_trades = self._exit_all(candle.timestamp, "Regime bearish — daily check")
                     trades.extend(exit_trades)
                     self._was_cash = True
-                    self._exit_cooldown = EXIT_COOLDOWN
+                    self._exit_cooldown = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
                     self._hours_in_position = 0
                     self.status = "cash"
                     self.status_detail = "BTC regime bearish — holding cash"
@@ -519,19 +573,22 @@ class MomentumEngine:
             if not self.regime_bullish:
                 self._entry_rejections.append("BTC regime is bearish — no entries allowed")
             if self.regime_bullish:
+                _reentry_thresh = self.config.get("entry_gates", {}).get("accel_min", REENTRY_THRESHOLD)
+                _lockout_hours = self.config.get("lockouts", {}).get("same_coin_hours", LOCKOUT_HOURS)
+                _top_n = self.config.get("position", {}).get("top_n", TOP_N)
                 scores = self._compute_scores()
                 self.accel_scores = scores
-                qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
-                below_thresh = [s for s in scores if s.accel <= REENTRY_THRESHOLD]
+                qualifying = [s for s in scores if s.accel > _reentry_thresh]
+                below_thresh = [s for s in scores if s.accel <= _reentry_thresh]
                 for s in below_thresh:
-                    self._entry_rejections.append(f"{s.pair}: accel {s.accel:.1%} < {REENTRY_THRESHOLD:.0%} threshold")
+                    self._entry_rejections.append(f"{s.pair}: accel {s.accel:.1%} < {_reentry_thresh:.0%} threshold")
 
-                # Same-coin lockout: don't re-buy what we just sold for 24h
+                # Same-coin lockout: don't re-buy what we just sold
                 if self._last_sold_pair and self._last_sold_time:
-                    if candle.timestamp < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                    if candle.timestamp < self._last_sold_time + timedelta(hours=_lockout_hours):
                         locked = [s for s in qualifying if s.pair == self._last_sold_pair]
                         for s in locked:
-                            self._entry_rejections.append(f"{s.pair}: same-coin lockout ({LOCKOUT_HOURS}h)")
+                            self._entry_rejections.append(f"{s.pair}: same-coin lockout ({_lockout_hours}h)")
                         qualifying = [s for s in qualifying if s.pair != self._last_sold_pair]
 
                 # Entry filters: ADX > 25 and RSI > 50
@@ -552,15 +609,15 @@ class MomentumEngine:
                                 g["picked"] = 0
                                 if already_holding:
                                     g["reason_not_picked"] = "already holding"
-                                elif rank > TOP_N:
-                                    g["reason_not_picked"] = f"rank {rank} (picked top {TOP_N})"
+                                elif rank > _top_n:
+                                    g["reason_not_picked"] = f"rank {rank} (picked top {_top_n})"
 
                 if qualifying:
                     logger.info("Immediate entry: %d coins passed all filters (accel+ADX+RSI)",
                                 len(qualifying))
                     self._was_cash = False
                     self._entry_rejections = []  # clear — we're buying
-                    winners = qualifying[:TOP_N]
+                    winners = qualifying[:_top_n]
                     investable = self.cash * 0.99
                     per = investable / len(winners)
                     for s in winners:
@@ -579,50 +636,56 @@ class MomentumEngine:
                     return trades
 
         # === Weekly rebalance (rotation between positions) ===
-        if self._hours_since_rebal >= REBAL_HOURS:
+        _rebal_hours = self.config.get("position", {}).get("rebal_hours", REBAL_HOURS)
+        if self._hours_since_rebal >= _rebal_hours:
             self._hours_since_rebal = 0
-            self.next_rebal_hours = REBAL_HOURS
+            self.next_rebal_hours = _rebal_hours
 
             # If bearish regime, go to cash (only if held long enough)
             if not self.regime_bullish:
-                if self.holdings and self._hours_in_position >= MIN_HOLD_HOURS:
+                _min_hold_h = self.config.get("exits", {}).get("min_hold_hours", MIN_HOLD_HOURS)
+                if self.holdings and self._hours_in_position >= _min_hold_h:
                     exit_trades = self._exit_all(candle.timestamp, "Regime bearish at rebalance")
                     trades.extend(exit_trades)
                     self._was_cash = True
-                    self._exit_cooldown = EXIT_COOLDOWN
+                    self._exit_cooldown = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
                     self._hours_in_position = 0
                 if not self.holdings:
                     self.status = "cash"
                     self.status_detail = "BTC regime bearish — waiting for trend"
             elif self._exit_cooldown <= 0:
+                _reentry_thresh = self.config.get("entry_gates", {}).get("accel_min", REENTRY_THRESHOLD)
+                _lockout_hours = self.config.get("lockouts", {}).get("same_coin_hours", LOCKOUT_HOURS)
+                _top_n = self.config.get("position", {}).get("top_n", TOP_N)
+                _min_hold_h = self.config.get("exits", {}).get("min_hold_hours", MIN_HOLD_HOURS)
                 # Compute acceleration scores
                 scores = self._compute_scores()
                 self.accel_scores = scores
 
                 # Apply reentry threshold and filters if coming from cash
-                if self._was_cash and REENTRY_THRESHOLD > 0:
-                    scores = [s for s in scores if s.accel > REENTRY_THRESHOLD]
+                if self._was_cash and _reentry_thresh > 0:
+                    scores = [s for s in scores if s.accel > _reentry_thresh]
                     # Same-coin lockout
                     if self._last_sold_pair and self._last_sold_time:
-                        if candle.timestamp < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+                        if candle.timestamp < self._last_sold_time + timedelta(hours=_lockout_hours):
                             scores = [s for s in scores if s.pair != self._last_sold_pair]
                     scores = self._filter_entries(scores)
 
                 if not scores:
                     # No qualifying coins — go to cash (only if held long enough)
-                    if self.holdings and self._hours_in_position >= MIN_HOLD_HOURS:
+                    if self.holdings and self._hours_in_position >= _min_hold_h:
                         exit_trades = self._exit_all(candle.timestamp, "No qualifying acceleration scores")
                         trades.extend(exit_trades)
                     if not self.holdings:
                         self._was_cash = True
                         self.status = "cash"
-                        self.status_detail = f"No coins above {REENTRY_THRESHOLD:.0%} re-entry threshold"
+                        self.status_detail = f"No coins above {_reentry_thresh:.0%} re-entry threshold"
                 else:
                     self._was_cash = False
-                    winners = set(s.pair for s in scores[:TOP_N])
+                    winners = set(s.pair for s in scores[:_top_n])
 
                     # Sell holdings not in winners (only if held long enough)
-                    if self._hours_in_position >= MIN_HOLD_HOURS:
+                    if self._hours_in_position >= _min_hold_h:
                         for pair_key in list(self.holdings.keys()):
                             if pair_key not in winners:
                                 t = self._sell(pair_key, candle.timestamp, "Rotated out — no longer top acceleration")
@@ -634,7 +697,7 @@ class MomentumEngine:
                     n_buy = len(winners) - len(self.holdings)
                     if n_buy > 0 and investable > 10:
                         per = investable / n_buy
-                        for s in scores[:TOP_N]:
+                        for s in scores[:_top_n]:
                             if s.pair not in self.holdings and per > 1:
                                 t = self._buy(s.pair, per, candle.timestamp,
                                               f"Top acceleration: {s.accel:+.1%}")
@@ -648,7 +711,7 @@ class MomentumEngine:
                     self.status = "holding"
                     self.status_detail = f"Holding {', '.join(held)}"
         else:
-            self.next_rebal_hours = REBAL_HOURS - self._hours_since_rebal
+            self.next_rebal_hours = _rebal_hours - self._hours_since_rebal
 
         return trades
 
@@ -725,7 +788,7 @@ class MomentumEngine:
 
         for pair in self.pairs:
             # Blacklist filter: skip pairs flagged as structural losers.
-            if pair in ENTRY_BLACKLIST:
+            if pair in self._entry_blacklist:
                 reason = "blacklisted (structural loser, see ENTRY_BLACKLIST)"
                 self._entry_rejections.append(f"{pair}: {reason}")
                 _log_reject(pair, reason, price=self._closes[pair][-1] if self._closes[pair] else None)
@@ -738,8 +801,9 @@ class MomentumEngine:
                 _log_reject(pair, reason, price=cur_price)
                 continue
             # Skip sub-penny coins — price data too noisy for reliable momentum
-            if closes[-1] < MIN_PRICE:
-                reason = f"price ${closes[-1]:.4f} < ${MIN_PRICE}"
+            _min_price = self.config.get("universe", {}).get("min_price", MIN_PRICE)
+            if closes[-1] < _min_price:
+                reason = f"price ${closes[-1]:.4f} < ${_min_price}"
                 self._entry_rejections.append(f"{pair}: {reason} (sub-penny)")
                 _log_reject(pair, reason, price=cur_price)
                 continue
@@ -765,9 +829,10 @@ class MomentumEngine:
                 _log_reject(pair, "accel <= 0", accel=accel, price=cur_price)
                 continue
             # RSI filter: skip overbought coins
+            _rsi_max = self.config.get("entry_gates", {}).get("rsi_max", RSI_MAX)
             rsi = _rsi(closes, RSI_PERIOD)
-            if rsi is not None and rsi > RSI_MAX:
-                reason = f"RSI {rsi:.0f} > {RSI_MAX}"
+            if rsi is not None and rsi > _rsi_max:
+                reason = f"RSI {rsi:.0f} > {_rsi_max}"
                 self._entry_rejections.append(f"{pair}: {reason} (overbought)")
                 _log_reject(pair, reason, accel=accel, rsi=rsi, price=cur_price)
                 continue
@@ -823,6 +888,7 @@ class MomentumEngine:
                 ath = max(highs)
                 ath_dist = round((closes[-1] - ath) / ath * 100, 2)
             mom_age = None
+            _accel_entry = self.config.get("entry_gates", {}).get("accel_min", ACCEL_ENTRY)
             if len(closes) > SHORT_LB + 100:
                 mom_age = 0
                 for j in range(len(closes) - 1, max(LONG_LB, len(closes) - 200), -1):
@@ -831,7 +897,7 @@ class MomentumEngine:
                     sm = closes[j] / closes[j - SHORT_LB] - 1
                     lm = closes[j] / closes[j - LONG_LB] - 1
                     ac = sm - (lm * SHORT_LB / LONG_LB)
-                    if ac >= ACCEL_ENTRY:
+                    if ac >= _accel_entry:
                         mom_age += 1
                     else:
                         break
@@ -846,50 +912,57 @@ class MomentumEngine:
 
             # Run gate checks — track first failure
             blocked_by = None
+            _adx_min = self.config.get("entry_gates", {}).get("adx_min", ADX_FILTER_THRESH)
+            _rsi_min = self.config.get("entry_gates", {}).get("rsi_min", RSI_TREND_THRESH)
+            _green_count_min = self.config.get("entry_gates", {}).get("green_count_min", 2)
+            _body_ratio_min = self.config.get("entry_gates", {}).get("body_ratio_min", 0.3)
+            _chg3h_atr_max = self.config.get("entry_gates", {}).get("chg3h_atr_max", 3.0)
+            _chg3h_atr_min = self.config.get("entry_gates", {}).get("chg3h_atr_min", -3.0)
+            _ath_dist_max = self.config.get("entry_gates", {}).get("ath_dist_max", -10)
+            _mom_age_max = self.config.get("entry_gates", {}).get("mom_age_max", 100)
+            _time_at_level_max = self.config.get("entry_gates", {}).get("time_at_level_max", 30)
 
             # ADX filter
-            if adx is not None and adx < ADX_FILTER_THRESH:
-                blocked_by = f"ADX {adx:.1f} < {ADX_FILTER_THRESH}"
+            if adx is not None and adx < _adx_min:
+                blocked_by = f"ADX {adx:.1f} < {_adx_min}"
                 self._entry_rejections.append(f"{pair}: {blocked_by} (weak trend)")
 
-            # RSI > 50 filter
-            if not blocked_by and rsi is not None and rsi < RSI_TREND_THRESH:
-                blocked_by = f"RSI {rsi:.1f} < {RSI_TREND_THRESH}"
+            # RSI > min filter
+            if not blocked_by and rsi is not None and rsi < _rsi_min:
+                blocked_by = f"RSI {rsi:.1f} < {_rsi_min}"
                 self._entry_rejections.append(f"{pair}: {blocked_by} (not in uptrend)")
 
             # Quality: green count
-            if not blocked_by and green_count is not None and green_count < 2:
+            if not blocked_by and green_count is not None and green_count < _green_count_min:
                 blocked_by = f"green {green_count}/6"
                 self._entry_rejections.append(f"{pair}: only {green_count}/6 green candles (dead entry)")
 
             # Quality: body ratio
-            if not blocked_by and avg_body is not None and avg_body < 0.3:
-                blocked_by = f"body {avg_body:.2f} < 0.3"
-                self._entry_rejections.append(f"{pair}: body ratio {avg_body:.2f} < 0.3 (indecision candles)")
+            if not blocked_by and avg_body is not None and avg_body < _body_ratio_min:
+                blocked_by = f"body {avg_body:.2f} < {_body_ratio_min}"
+                self._entry_rejections.append(f"{pair}: body ratio {avg_body:.2f} < {_body_ratio_min} (indecision candles)")
 
             # Quality: overextended (both directions — overpump AND falling-knife)
-            # Block both >+3 (late-cycle pump) and <-3 (recent crash, dead-cat bounce risk).
-            if not blocked_by and chg_3h_atr is not None and chg_3h_atr > 3.0:
+            # Block both >max (late-cycle pump) and <min (recent crash, dead-cat bounce risk).
+            if not blocked_by and chg_3h_atr is not None and chg_3h_atr > _chg3h_atr_max:
                 blocked_by = f"chg3h {chg_3h_atr:.1f}x ATR"
                 self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (overextended up)")
-            if not blocked_by and chg_3h_atr is not None and chg_3h_atr < -3.0:
+            if not blocked_by and chg_3h_atr is not None and chg_3h_atr < _chg3h_atr_min:
                 blocked_by = f"chg3h {chg_3h_atr:.1f}x ATR"
                 self._entry_rejections.append(f"{pair}: 3h move {chg_3h_atr:.1f}x ATR (recent crash)")
 
-            # Structural: ATH proximity (tightened from -5 to -10 on 2026-05-02
-            # after gate-log analysis showed losers cluster at -7 to -8% from ATH
-            # while winners never came closer than -11.8%)
-            if not blocked_by and ath_dist is not None and ath_dist >= -10:
+            # Structural: ATH proximity
+            if not blocked_by and ath_dist is not None and ath_dist >= _ath_dist_max:
                 blocked_by = f"ATH {ath_dist:+.1f}%"
                 self._entry_rejections.append(f"{pair}: {ath_dist:+.1f}% from ATH (at ceiling)")
 
             # Structural: freshness
-            if not blocked_by and mom_age is not None and mom_age >= 100:
+            if not blocked_by and mom_age is not None and mom_age >= _mom_age_max:
                 blocked_by = f"stale {mom_age}h"
                 self._entry_rejections.append(f"{pair}: momentum age {mom_age}h (stale signal)")
 
             # Structural: time at level
-            if not blocked_by and time_at_lvl is not None and time_at_lvl > 30:
+            if not blocked_by and time_at_lvl is not None and time_at_lvl > _time_at_level_max:
                 blocked_by = f"stuck {time_at_lvl}/100h"
                 self._entry_rejections.append(f"{pair}: price stuck {time_at_lvl}/100h in 3% band")
 
@@ -940,20 +1013,23 @@ class MomentumEngine:
             self._entry_rejections.append("BTC regime is bearish — no entries allowed")
             return trades
 
+        _reentry_thresh = self.config.get("entry_gates", {}).get("accel_min", REENTRY_THRESHOLD)
+        _lockout_hours = self.config.get("lockouts", {}).get("same_coin_hours", LOCKOUT_HOURS)
+        _top_n = self.config.get("position", {}).get("top_n", TOP_N)
         scores = self._compute_scores()
         self.accel_scores = scores
-        qualifying = [s for s in scores if s.accel > REENTRY_THRESHOLD]
-        below_thresh = [s for s in scores if s.accel <= REENTRY_THRESHOLD]
+        qualifying = [s for s in scores if s.accel > _reentry_thresh]
+        below_thresh = [s for s in scores if s.accel <= _reentry_thresh]
         for s in below_thresh:
             self._entry_rejections.append(
-                f"{s.pair}: accel {s.accel:.1%} < {REENTRY_THRESHOLD:.0%} threshold"
+                f"{s.pair}: accel {s.accel:.1%} < {_reentry_thresh:.0%} threshold"
             )
         if self._last_sold_pair and self._last_sold_time:
-            if now < self._last_sold_time + timedelta(hours=LOCKOUT_HOURS):
+            if now < self._last_sold_time + timedelta(hours=_lockout_hours):
                 locked = [s for s in qualifying if s.pair == self._last_sold_pair]
                 for s in locked:
                     self._entry_rejections.append(
-                        f"{s.pair}: same-coin lockout ({LOCKOUT_HOURS}h)"
+                        f"{s.pair}: same-coin lockout ({_lockout_hours}h)"
                     )
                 qualifying = [s for s in qualifying if s.pair != self._last_sold_pair]
 
@@ -963,7 +1039,7 @@ class MomentumEngine:
 
         self._was_cash = False
         self._entry_rejections = []
-        winners = qualifying[:TOP_N]
+        winners = qualifying[:_top_n]
         investable = self.cash * 0.99
         per = investable / len(winners)
         for s in winners:
@@ -1074,28 +1150,36 @@ class MomentumEngine:
 
         peak_pct = (holding.peak_price - holding.entry_price) / holding.entry_price * 100
 
+        _trail_wide_pct = self.config.get("trail", {}).get("wide_pct", TRAIL_WIDE_PCT)
+        _trail_activate_pct = self.config.get("trail", {}).get("wide_activate_pct", TRAIL_ACTIVATE_PCT)
+        _trail_tight_pct = self.config.get("trail", {}).get("tight_pct", TRAIL_TIGHT_PCT)
+        _trail_tighten_pct = self.config.get("trail", {}).get("tight_activate_pct", TRAIL_TIGHTEN_PCT)
+        _trail_delay_ticks = self.config.get("trail", {}).get("delay_ticks", TRAIL_DELAY_TICKS)
+        _trail_stale_pct = self.config.get("trail", {}).get("stale_pct", TRAIL_STALE_PCT)
+        _trail_stale_ticks = self.config.get("trail", {}).get("stale_ticks", TRAIL_STALE_TICKS)
+
         # Track time above tighten threshold
-        if peak_pct >= TRAIL_TIGHTEN_PCT:
+        if peak_pct >= _trail_tighten_pct:
             holding.ticks_above_tighten += 1
 
         new_stop = holding.trail_stop_price
 
         # Layer 1: Wide trail when peak >= activation (breathing room for early move)
-        if peak_pct >= TRAIL_ACTIVATE_PCT:
-            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_WIDE_PCT / 100))
+        if peak_pct >= _trail_activate_pct:
+            new_stop = max(new_stop, holding.peak_price * (1 - _trail_wide_pct / 100))
 
         # Layer 2: Tight trail after confirmed above threshold for delay period
-        if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
-            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_TIGHT_PCT / 100))
+        if peak_pct >= _trail_tighten_pct and holding.ticks_above_tighten >= _trail_delay_ticks:
+            new_stop = max(new_stop, holding.peak_price * (1 - _trail_tight_pct / 100))
 
         # Layer 2b: Progressive lock-in — tighter trail at higher peaks, no delay
-        for peak_thresh, trail_pct in TRAIL_PROGRESSIVE:
+        for peak_thresh, trail_pct in self._trail_progressive:
             if peak_pct >= peak_thresh:
                 new_stop = max(new_stop, holding.peak_price * (1 - trail_pct / 100))
 
         # Layer 3: Stale peak — no new high for stale period, move is fading
-        if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
-            new_stop = max(new_stop, holding.peak_price * (1 - TRAIL_STALE_PCT / 100))
+        if peak_pct >= _trail_tighten_pct and holding.ticks_since_new_peak >= _trail_stale_ticks:
+            new_stop = max(new_stop, holding.peak_price * (1 - _trail_stale_pct / 100))
 
         # Never go below ATR stop floor
         if holding.atr_stop_price > 0:
@@ -1201,11 +1285,12 @@ class MomentumEngine:
             holding.trail_stop_price = new_stop
             # Determine which layer set this stop
             layer = "wide"
-            if peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_since_new_peak >= TRAIL_STALE_TICKS:
+            _tp = self._trail_progressive
+            if peak_pct >= _trail_tighten_pct and holding.ticks_since_new_peak >= _trail_stale_ticks:
                 layer = "stale"
-            elif TRAIL_PROGRESSIVE and peak_pct >= TRAIL_PROGRESSIVE[0][0]:
+            elif _tp and peak_pct >= _tp[0][0]:
                 layer = "progressive"
-            elif peak_pct >= TRAIL_TIGHTEN_PCT and holding.ticks_above_tighten >= TRAIL_DELAY_TICKS:
+            elif peak_pct >= _trail_tighten_pct and holding.ticks_above_tighten >= _trail_delay_ticks:
                 layer = "tight"
             logger.debug("Trail stop updated for %s: $%.4f -> $%.4f (%s layer, peak $%.4f +%.1f%%, "
                          "above_thr=%d stale=%d)",
@@ -1377,7 +1462,7 @@ class MomentumEngine:
             t = self._sell(pair, now, reason)
             if t:
                 self._was_cash = True
-                self._exit_cooldown = EXIT_COOLDOWN
+                self._exit_cooldown = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
                 self._hours_in_position = 0
                 self.status = "cash"
                 self.status_detail = reason
@@ -1389,12 +1474,13 @@ class MomentumEngine:
         if equity > self._peak_equity:
             self._peak_equity = equity
 
-        if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - EQUITY_TRAIL_PCT):
-            reason = f"Equity stop ({EQUITY_TRAIL_PCT*100:.0f}% from peak ${self._peak_equity:,.0f})"
+        _equity_trail_pct = self.config.get("exits", {}).get("equity_trail_pct", EQUITY_TRAIL_PCT)
+        if self._peak_equity > self.starting_balance and equity < self._peak_equity * (1 - _equity_trail_pct):
+            reason = f"Equity stop ({_equity_trail_pct*100:.0f}% from peak ${self._peak_equity:,.0f})"
             trades = self._exit_all(now, reason)
             self._was_cash = True
             self._peak_equity = equity
-            self._exit_cooldown = EXIT_COOLDOWN
+            self._exit_cooldown = self.config.get("lockouts", {}).get("exit_cooldown_hours", EXIT_COOLDOWN)
             self._hours_in_position = 0
             self.status = "cash"
             self.status_detail = "Equity stop — protecting profits"
@@ -1413,12 +1499,13 @@ class MomentumEngine:
         self.cash -= amount_usd
 
         # Calculate ATR-calibrated stop: adapts to each coin's volatility
+        _atr_stop_mult = self.config.get("exits", {}).get("atr_stop_mult", ATR_STOP_MULT)
         atr = _atr(self._highs.get(pair, []), self._lows.get(pair, []),
                     self._closes.get(pair, []), ATR_STOP_LOOKBACK)
         if atr and price > 0:
             atr_pct = atr / price
-            stop_price = price * (1 - atr_pct * ATR_STOP_MULT)
-            stop_dist_pct = atr_pct * ATR_STOP_MULT * 100
+            stop_price = price * (1 - atr_pct * _atr_stop_mult)
+            stop_dist_pct = atr_pct * _atr_stop_mult * 100
             logger.info("ATR stop for %s: entry $%.4f, stop $%.4f (%.1f%% away, ATR=%.1f%%)",
                         pair, price, stop_price, stop_dist_pct, atr_pct * 100)
         else:
@@ -1557,11 +1644,12 @@ class MomentumEngine:
         self._last_sold_time = timestamp
 
         # If this was a loss, apply extended lockout so we don't re-buy the same loser
+        _loss_lockout_hours = self.config.get("lockouts", {}).get("loss_lockout_hours", LOSS_LOCKOUT_HOURS)
         buy_cost = holding.shares * holding.entry_price
         if net_usd < buy_cost:
-            self._loss_lockouts[pair] = timestamp + timedelta(hours=LOSS_LOCKOUT_HOURS)
+            self._loss_lockouts[pair] = timestamp + timedelta(hours=_loss_lockout_hours)
             logger.info("Loss lockout: %s blocked for %dh (bought %.2f, sold %.2f)",
-                        pair, LOSS_LOCKOUT_HOURS, buy_cost, net_usd)
+                        pair, _loss_lockout_hours, buy_cost, net_usd)
             self._save_loss_lockouts()
 
         self.cash += net_usd
@@ -1631,17 +1719,23 @@ class MomentumEngine:
 
             # Time remaining before max hold exit
             hold_hours = self._hours_in_position
-            max_hold_remaining = max(0, MAX_HOLD_HOURS - hold_hours)
+            _max_hold_h = self.config.get("exits", {}).get("max_hold_hours", MAX_HOLD_HOURS)
+            max_hold_remaining = max(0, _max_hold_h - hold_hours)
 
             # Determine active trail layer for dashboard
+            _t_tighten = self.config.get("trail", {}).get("tight_activate_pct", TRAIL_TIGHTEN_PCT)
+            _t_stale_ticks = self.config.get("trail", {}).get("stale_ticks", TRAIL_STALE_TICKS)
+            _t_delay_ticks = self.config.get("trail", {}).get("delay_ticks", TRAIL_DELAY_TICKS)
+            _t_activate = self.config.get("trail", {}).get("wide_activate_pct", TRAIL_ACTIVATE_PCT)
+            _tp = self._trail_progressive
             peak_pnl = (h.peak_price - h.entry_price) / h.entry_price * 100 if h.entry_price > 0 else 0
-            if peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_since_new_peak >= TRAIL_STALE_TICKS:
+            if peak_pnl >= _t_tighten and h.ticks_since_new_peak >= _t_stale_ticks:
                 trail_layer = "stale"
-            elif TRAIL_PROGRESSIVE and peak_pnl >= TRAIL_PROGRESSIVE[0][0]:
+            elif _tp and peak_pnl >= _tp[0][0]:
                 trail_layer = "progressive"
-            elif peak_pnl >= TRAIL_TIGHTEN_PCT and h.ticks_above_tighten >= TRAIL_DELAY_TICKS:
+            elif peak_pnl >= _t_tighten and h.ticks_above_tighten >= _t_delay_ticks:
                 trail_layer = "tight"
-            elif peak_pnl >= TRAIL_ACTIVATE_PCT:
+            elif peak_pnl >= _t_activate:
                 trail_layer = "wide"
             else:
                 trail_layer = "inactive"
@@ -1717,16 +1811,16 @@ class MomentumEngine:
             "candles_fed": self._candles_fed,
             "pairs_tracked": len(self.pairs),
             "regime_state": self._regime_state,
-            "regime_hysteresis": REGIME_HYSTERESIS,
+            "regime_hysteresis": self.config.get("regime", {}).get("hysteresis_pct", REGIME_HYSTERESIS),
             "exit_cooldown_remaining": self._exit_cooldown,
             "hours_in_position": self._hours_in_position,
-            "max_hold_hours": MAX_HOLD_HOURS,
-            "accel_exit_thresh": ACCEL_EXIT_THRESH,
+            "max_hold_hours": self.config.get("exits", {}).get("max_hold_hours", MAX_HOLD_HOURS),
+            "accel_exit_thresh": self.config.get("exits", {}).get("accel_exit_thresh", ACCEL_EXIT_THRESH),
             "entry_rejections": self._entry_rejections[-10:],  # last 10 reasons
             "lockout_pair": self._last_sold_pair,
             "lockout_until": self._last_sold_time.isoformat() if self._last_sold_time else None,
             "loss_lockouts": {p: t.isoformat() for p, t in self._loss_lockouts.items()},
-            "min_price_filter": MIN_PRICE,
+            "min_price_filter": self.config.get("universe", {}).get("min_price", MIN_PRICE),
             "last_candle_ts": self._last_candle_ts.isoformat() if self._last_candle_ts else None,
             "wall_aware": self.get_wall_aware_state(),
         }
