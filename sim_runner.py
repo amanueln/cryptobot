@@ -665,6 +665,22 @@ class SimRunner:
 
         import json
 
+        # Check for strategy hot-reload flag (written by API /momentum/strategy/apply)
+        flag_path = os.path.join(os.path.dirname(__file__), "data", "strategy_reload.flag")
+        if os.path.exists(flag_path):
+            try:
+                os.remove(flag_path)
+                from engine.strategy_profiles import get_active_profile_values
+                new_config = get_active_profile_values()
+                self.momentum_engine.apply_config_update(new_config)
+                self.trade_logger.log_momentum_event(
+                    "config_hot_reload",
+                    "Strategy config reloaded",
+                    f"Active profile values applied at {datetime.utcnow().isoformat()}",
+                )
+            except Exception as e:
+                logger.error("Hot-reload failed: %s", e)
+
         # Check for reset flag (written by API /momentum/reset endpoint)
         reset_flag = os.path.join(os.path.dirname(__file__), "data", "momentum_reset.flag")
         if os.path.exists(reset_flag):
@@ -1238,6 +1254,27 @@ class SimRunner:
         # Warmup momentum engine if active
         if self.momentum_engine:
             self._warmup_momentum()
+
+        # Auto-apply new Recommended version if user is on builtin::recommended
+        if self.momentum_engine:
+            try:
+                from engine.recommended_config import RECOMMENDED_VERSION, RECOMMENDED
+                from engine.strategy_profiles import load_strategy_profiles, save_strategy_profiles
+                _sp_state = load_strategy_profiles()
+                if (
+                    _sp_state["active"] == "builtin::recommended"
+                    and _sp_state.get("applied_recommended_version") != RECOMMENDED_VERSION
+                ):
+                    self.momentum_engine.apply_config_update(RECOMMENDED)
+                    _sp_state["applied_recommended_version"] = RECOMMENDED_VERSION
+                    save_strategy_profiles("data/strategy_profiles.json", _sp_state)
+                    self.trade_logger.log_momentum_event(
+                        "recommended_auto_applied",
+                        f"Auto-applied Recommended {RECOMMENDED_VERSION}",
+                        "User was on Recommended; new code-shipped version flowed through automatically.",
+                    )
+            except Exception as e:
+                logger.warning("Recommended auto-apply failed: %s", e)
 
         if self.use_ml:
             self._train_ml_models()
@@ -2108,6 +2145,16 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
         entry_pause_config = bot_cfg_reload.get("entry_pause", {})
         if mom_config.get("enabled", False):
             mom_alloc = float(mom_config.get("allocation_usd", 1500))
+            # Build config dict: RECOMMENDED defaults merged with active profile overrides
+            from engine.recommended_config import RECOMMENDED
+            try:
+                from engine.strategy_profiles import get_active_profile_values
+                _profile_values = get_active_profile_values()
+            except Exception:
+                _profile_values = RECOMMENDED
+            import copy as _copy
+            _engine_config = _copy.deepcopy(RECOMMENDED)
+            _engine_config.update(_profile_values)
             # Create scanner first — it will find the best pairs
             runner.momentum_scanner = MomentumScanner(runner.client, runner.candle_store)
             runner.momentum_engine = MomentumEngine(
@@ -2115,6 +2162,7 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
                 fee_rate=taker_fee,
                 wall_aware_config=wall_aware_config,
                 entry_pause_config=entry_pause_config,
+                config=_engine_config,
                 # pairs will be set by scanner during warmup
             )
             # Give engine access to the live L2 book for wall-aware trail.
