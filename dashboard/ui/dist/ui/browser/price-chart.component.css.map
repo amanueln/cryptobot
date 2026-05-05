@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["angular:styles/component:css;72e6cc8226b13a4f54384b6ab54c700a0b2aaf43cfe8d54fbf89b118fbf7b19b;C:/Users/Nathan/cryptobot/dashboard/ui/src/app/components/price-chart/price-chart.component.ts"],
-  "sourcesContent": ["\n    .chart-wrapper {\n      width: 100%;\n      background: #0f1117;\n      border-radius: 8px;\n      overflow: hidden;\n    }\n    .chart-container {\n      width: 100%;\n      height: 450px;\n    }\n  "],
-  "mappings": ";AACI,CAAC;AACC,SAAO;AACP,cAAY;AACZ,iBAAe;AACf,YAAU;AACZ;AACA,CAAC;AACC,SAAO;AACP,UAAQ;AACV;",
-  "names": []
-}
