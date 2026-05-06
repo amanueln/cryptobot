@@ -4,54 +4,60 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 
 // ── Hardcoded simple-slider mapping tables ──────────────────────────────────
+// Slider positions 2, 3, 4 mirror the backend's Conservative, Recommended,
+// Aggressive profile entry_gates exactly (so picking a built-in profile from
+// the dropdown lands the slider on the matching position). Positions 1 and 5
+// are extrapolations beyond Conservative/Aggressive.
 const RISK_LEVELS = [
   {
     label: 'Very Conservative',
-    adx_min: 30, rsi_min: 55, rsi_max: 60, ath_dist_max: -15,
-    chg3h_atr_max: 2.0, chg3h_atr_min: -2.0,
+    adx_min: 25, rsi_min: 54, rsi_max: 60, ath_dist_max: -15,
+    chg3h_atr_max: 3.0, chg3h_atr_min: -1.5,
   },
   {
-    label: 'Conservative',
-    adx_min: 27, rsi_min: 52, rsi_max: 62, ath_dist_max: -12,
-    chg3h_atr_max: 2.5, chg3h_atr_min: -2.5,
+    label: 'Conservative',  // matches backend CONSERVATIVE
+    adx_min: 25, rsi_min: 52, rsi_max: 62, ath_dist_max: -12,
+    chg3h_atr_max: 3.0, chg3h_atr_min: -2.0,
   },
   {
-    label: 'Balanced',
+    label: 'Balanced',  // matches backend RECOMMENDED v2.0
     adx_min: 25, rsi_min: 50, rsi_max: 65, ath_dist_max: -10,
     chg3h_atr_max: 3.0, chg3h_atr_min: -3.0,
   },
   {
-    label: 'Aggressive',
-    adx_min: 22, rsi_min: 48, rsi_max: 70, ath_dist_max: -8,
-    chg3h_atr_max: 3.5, chg3h_atr_min: -3.5,
+    label: 'Aggressive',  // matches backend AGGRESSIVE
+    adx_min: 25, rsi_min: 48, rsi_max: 65, ath_dist_max: -8,
+    chg3h_atr_max: 3.0, chg3h_atr_min: -5.0,
   },
   {
     label: 'Very Aggressive',
-    adx_min: 20, rsi_min: 45, rsi_max: 72, ath_dist_max: -7,
-    chg3h_atr_max: 4.0, chg3h_atr_min: -4.0,
+    adx_min: 25, rsi_min: 45, rsi_max: 70, ath_dist_max: -6,
+    chg3h_atr_max: 3.0, chg3h_atr_min: -7.0,
   },
 ];
 
+// Profit-taking positions 2, 3, 4 mirror backend Conservative / Recommended /
+// Aggressive trail.progressive exactly. Positions 1 and 5 extrapolate.
 const PROFIT_LEVELS = [
   {
     label: 'Very Quick',
-    progressive: [[2.0, 0.5], [5.0, 1.0], [7.0, 0.5], [10.0, 0.3]],
+    progressive: [[1.0, 0.5], [3.0, 1.5], [5.0, 1.0], [8.0, 0.5]],
   },
   {
-    label: 'Quick',
-    progressive: [[2.0, 0.7], [5.0, 1.5], [7.0, 0.7], [10.0, 0.4]],
+    label: 'Quick',  // matches backend CONSERVATIVE trail (wider give-back, earlier triggers)
+    progressive: [[1.5, 1.5], [5.0, 2.5], [7.0, 1.5], [10.0, 0.75]],
   },
   {
-    label: 'Balanced',
+    label: 'Balanced',  // matches backend RECOMMENDED v2.0 trail
     progressive: [[2.0, 1.0], [6.0, 2.0], [8.0, 1.0], [12.0, 0.5]],
   },
   {
-    label: 'Let it run',
-    progressive: [[2.0, 1.5], [7.0, 2.5], [10.0, 1.5], [15.0, 1.0]],
+    label: 'Let it run',  // matches backend AGGRESSIVE trail (tighter give-back, later triggers)
+    progressive: [[2.0, 1.0], [7.0, 1.5], [9.0, 0.75], [14.0, 0.35]],
   },
   {
     label: 'Patient',
-    progressive: [[2.0, 2.0], [8.0, 3.0], [12.0, 2.0], [18.0, 1.5]],
+    progressive: [[2.5, 0.7], [9.0, 1.0], [12.0, 0.5], [18.0, 0.25]],
   },
 ];
 
@@ -556,18 +562,39 @@ export class MomentumStrategyComponent implements OnInit {
   }
 
   private _detectRiskLevel(eg: any): number {
-    const adx = eg?.adx_min;
+    if (!eg) return 3;
+    // Match on the fields that discriminate between data-backed profiles.
+    // ADX is intentionally identical across all three (data didn't support
+    // varying it), so we match on rsi_min, rsi_max, ath_dist_max, and
+    // chg3h_atr_min — the gates the backend profiles actually differ on.
     for (let i = 0; i < RISK_LEVELS.length; i++) {
-      if (RISK_LEVELS[i].adx_min === adx) return i + 1;
+      const r = RISK_LEVELS[i];
+      if (
+        r.rsi_min === eg.rsi_min &&
+        r.rsi_max === eg.rsi_max &&
+        r.ath_dist_max === eg.ath_dist_max &&
+        r.chg3h_atr_min === eg.chg3h_atr_min
+      ) {
+        return i + 1;
+      }
     }
-    return 3; // default balanced
+    // No exact preset match — values are custom-tuned. Find the closest
+    // level by ath_dist_max distance and return that as a fallback.
+    let bestIdx = 2;
+    let bestDist = Infinity;
+    for (let i = 0; i < RISK_LEVELS.length; i++) {
+      const d = Math.abs((RISK_LEVELS[i].ath_dist_max || 0) - (eg.ath_dist_max || 0));
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    return bestIdx + 1;
   }
 
   private _detectProfitLevel(progressive: any[]): number {
     if (!progressive || progressive.length === 0) return 3;
-    const str = JSON.stringify(progressive);
+    const norm = (arr: any[]) => JSON.stringify(arr.map(t => [Number(t[0]), Number(t[1])]));
+    const str = norm(progressive);
     for (let i = 0; i < PROFIT_LEVELS.length; i++) {
-      if (JSON.stringify(PROFIT_LEVELS[i].progressive) === str) return i + 1;
+      if (norm(PROFIT_LEVELS[i].progressive) === str) return i + 1;
     }
     return 3;
   }
