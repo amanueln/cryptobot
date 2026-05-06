@@ -416,6 +416,12 @@ export interface MomentumTradeData {
   entry_price: number | null;
   buy_fee: number | null;
   closed: boolean;
+  peak_price: number | null;
+  peak_pnl_pct: number | null;
+  pnl_pct: number | null;
+  peak_gross: number | null;
+  peak_net: number | null;
+  money_left_on_table: number | null;
 }
 
 export interface MomentumEquityData {

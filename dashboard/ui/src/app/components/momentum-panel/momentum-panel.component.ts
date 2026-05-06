@@ -671,6 +671,17 @@ Chart.register(...registerables, zoomPlugin);
                       {{ t.net_pnl >= 0 ? 'WIN' : 'LOSS' }} {{ t.net_pnl >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl) }}
                     </span>
                     <span class="result-breakdown">price {{ t.net_pnl + t.fee + (t.buy_fee || 0) >= 0 ? '+' : '' }}{{ formatCurrency(t.net_pnl + t.fee + (t.buy_fee || 0)) }} / fees -{{ formatCurrency(t.fee + (t.buy_fee || 0)) }}</span>
+                    @if (t.peak_pnl_pct != null && t.peak_net != null) {
+                      <span class="peak-breakdown">
+                        peak {{ t.peak_pnl_pct >= 0 ? '+' : '' }}{{ t.peak_pnl_pct.toFixed(1) }}%
+                        @if (t.money_left_on_table != null && t.money_left_on_table > 1) {
+                          — at peak: <span class="peak-net">{{ t.peak_net >= 0 ? '+' : '' }}{{ formatCurrency(t.peak_net) }}</span>
+                          (missed {{ formatCurrency(t.money_left_on_table) }})
+                        } @else if (t.money_left_on_table != null && t.money_left_on_table <= 1) {
+                          — sold near peak ✓
+                        }
+                      </span>
+                    }
                   } @else if (t.side === 'buy' && t.closed) {
                     <span class="status-badge closed">Closed</span>
                   } @else if (t.side === 'buy') {
@@ -1349,6 +1360,8 @@ Chart.register(...registerables, zoomPlugin);
     .amount-fee { display: block; font-size: 10px; color: #6b7280; }
     .trade-arrow { color: #6b7280; margin: 0 2px; }
     .result-breakdown { display: block; font-size: 10px; color: #6b7280; font-weight: 400; }
+    .peak-breakdown { display: block; font-size: 10px; color: #94a3b8; font-weight: 400; margin-top: 2px; }
+    .peak-breakdown .peak-net { color: #38bdf8; font-weight: 600; }
     .status-badge {
       font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
     }

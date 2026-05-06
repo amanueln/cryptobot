@@ -2430,7 +2430,8 @@ def api_momentum_trades():
     try:
         # Get all trades to compute P&L (need full history for matching)
         all_rows = conn.execute(
-            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, reason
+            """SELECT id, timestamp, pair, side, price, amount, cost_usd, fee, reason,
+                      peak_price, peak_pnl_pct, pnl_pct
                FROM momentum_trades ORDER BY id ASC"""
         ).fetchall()
     except Exception:
@@ -2471,6 +2472,19 @@ def api_momentum_trades():
             r["net_pnl"] = r["cost_usd"] - total_buy_cost if total_buy_cost else None
             r["entry_price"] = entry_price
             r["buy_fee"] = buy_fee
+            # Peak-vs-actual comparison: what we'd have netted if we'd
+            # sold at the peak instead of where we actually exited.
+            # peak_gross = entry_cost * (peak_pnl_pct / 100), so peak_net
+            # = peak_gross - both fees.
+            if r.get("peak_pnl_pct") is not None and total_buy_cost:
+                peak_gross = total_buy_cost * (r["peak_pnl_pct"] / 100.0)
+                r["peak_gross"] = peak_gross
+                r["peak_net"] = peak_gross - (buy_fee + (r["fee"] or 0))
+                r["money_left_on_table"] = r["peak_net"] - r["net_pnl"] if r["net_pnl"] is not None else None
+            else:
+                r["peak_gross"] = None
+                r["peak_net"] = None
+                r["money_left_on_table"] = None
         results.append(r)
 
     # Mark buys that have been sold
