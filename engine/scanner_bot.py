@@ -18,6 +18,17 @@ logger = logging.getLogger("scanner_bot")
 
 MILESTONES = [10, 15, 20, 30, 50]
 
+# Progressive trail tiers — port of momentum bot's SAFE-A.
+# Each tuple: (peak_pct_min, trail_pct). When peak crosses peak_pct_min,
+# trail activates at peak * (1 - trail_pct/100). The tightest qualifying
+# tier wins. Trail only ratchets up — never decreases.
+TRAIL_PROGRESSIVE = [
+    (2.0, 1.0),
+    (6.0, 2.0),
+    (8.0, 1.0),
+    (12.0, 0.5),
+]
+
 
 @dataclass
 class Position:
@@ -244,28 +255,53 @@ class ExitDecision:
     exit_reason: str | None = None
 
 
+def compute_trail_stop(p: Position) -> float | None:
+    """Compute current trail stop price based on peak. Returns None if trail
+    is not yet armed (peak hasn't reached the first tier threshold)."""
+    if p.peak_price is None or p.entry_price <= 0:
+        return None
+    peak_pct = (p.peak_price - p.entry_price) / p.entry_price * 100
+    chosen_trail_pct: float | None = None
+    for peak_thresh, trail_pct in TRAIL_PROGRESSIVE:
+        if peak_pct >= peak_thresh:
+            chosen_trail_pct = trail_pct  # tightest qualifying wins (last)
+    if chosen_trail_pct is None:
+        return None
+    return p.peak_price * (1 - chosen_trail_pct / 100)
+
+
 def tick_position(p: Position, current_price: float, now: datetime) -> ExitDecision:
     """Mutate Position with current_price/peak/pct then decide whether to exit.
 
-    Exit priority: manual > stop > time-cap.
-    Manual exits at current_price; stop exits at stop_price; time-cap at current_price.
+    Exit priority: manual > trail_stop > stop_15pct > time_24h.
     """
     p.current_price = current_price
     p.current_pct = (current_price - p.entry_price) / p.entry_price * 100
-    # Peak is the highest price seen since entry, but never below entry — a
-    # position whose price only ever fell shouldn't report a "peak" below cost.
     floor = p.entry_price
     candidate = max(current_price, floor)
     if p.peak_price is None or candidate > p.peak_price:
         p.peak_price = candidate
     p.last_tick_ts = now.isoformat()
 
+    # Update trail stop — ratchet up only, never down
+    new_trail = compute_trail_stop(p)
+    if new_trail is not None:
+        if p.trail_stop_price is None or new_trail > p.trail_stop_price:
+            p.trail_stop_price = new_trail
+
+    # 1. Manual sell
     if p.manual_sell_requested:
         return ExitDecision("close", exit_price=current_price, exit_reason="manual")
 
+    # 2. Trail stop
+    if p.trail_stop_price is not None and current_price <= p.trail_stop_price:
+        return ExitDecision("close", exit_price=p.trail_stop_price, exit_reason="trail_stop")
+
+    # 3. -15% safety stop
     if current_price <= p.stop_price:
         return ExitDecision("close", exit_price=p.stop_price, exit_reason="stop_15pct")
 
+    # 4. 24h time cap
     hard_close = datetime.fromisoformat(p.hard_close_ts.replace("Z", "+00:00"))
     if hard_close.tzinfo is None:
         hard_close = hard_close.replace(tzinfo=timezone.utc)
