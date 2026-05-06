@@ -76,6 +76,11 @@ early_scanner:
   enabled: true
   scan_interval_minutes: 10
   discord_webhook: "https://discord.com/api/webhooks/1493262458461225051/_sN7ixCsX8xRQl4quKQ4DFrGVsasV4Ehngex6yKfqLsXJOoTxX8SM0jAO9Z4r4uoW_Vz"
+  # Strict Discord gate — combo must have n >= samples AND win_rate >= threshold
+  # to ping. Alerts are still persisted to DB (dashboard shows them); only the
+  # Discord notification is suppressed. Set very low to revert to old behavior.
+  discord_min_combo_win_rate: 70.0
+  discord_min_combo_samples: 10
 
 # Scanner Bot — paper-trades +1 alerts from Early Scanner
 scanner_bot:

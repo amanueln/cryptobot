@@ -294,12 +294,41 @@ def _fetch_candles_live(pair: str, hours: int = 76) -> list[dict] | None:
 class EarlyScanner:
     """Scans all Coinbase USD pairs for early momentum signals using live data."""
 
-    def __init__(self, db_path: str = DB_PATH, discord_webhook: str | None = None):
+    def __init__(
+        self,
+        db_path: str = DB_PATH,
+        discord_webhook: str | None = None,
+        discord_min_combo_win_rate: float = 70.0,
+        discord_min_combo_samples: int = COMBO_MIN_SAMPLES,
+    ):
         self.db_path = os.path.abspath(db_path)
         self.discord_webhook = discord_webhook
+        self.discord_min_combo_win_rate = discord_min_combo_win_rate
+        self.discord_min_combo_samples = discord_min_combo_samples
         _init_table(self.db_path)
         self._last_alert_time: dict[str, datetime] = {}  # pair -> last alert time
         self._load_recent_alerts()
+
+    def _combo_passes_discord_gate(self, combo_key: str | None) -> tuple[bool, str]:
+        """Return (allowed, reason). Strict mute: only proven combos with
+        n >= min_samples AND win_rate >= threshold get to ping."""
+        if not combo_key:
+            return False, "no_combo_key"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT total_alerts, win_rate FROM signal_combo_stats WHERE combo_key = ?",
+                (combo_key,),
+            ).fetchone()
+        if row is None:
+            return False, "no_track_record"
+        n = row["total_alerts"] or 0
+        wr = row["win_rate"] or 0.0
+        if n < self.discord_min_combo_samples:
+            return False, f"insufficient_samples (n={n}/{self.discord_min_combo_samples})"
+        if wr < self.discord_min_combo_win_rate:
+            return False, f"win_rate {wr:.1f}% < {self.discord_min_combo_win_rate:.1f}%"
+        return True, f"win_rate {wr:.1f}% (n={n})"
 
     def _load_recent_alerts(self):
         """Load recent alert times from DB to restore cooldowns across restarts."""
@@ -394,12 +423,14 @@ class EarlyScanner:
                 effective = a.get('effective_score', a['score'])
                 if effective < DISCORD_MIN_SCORE:
                     continue
-                # Mute Discord for learned-loser combos (score_adj == -1):
-                # combo has >=10 samples AND win rate < 35%. Alert still saved for learning.
-                if a.get('score_adj', 0) < 0:
+                # Strict combo gate: only ping Discord for combos with proven
+                # win-rate (n >= min_samples AND win_rate >= threshold). Alert
+                # is already persisted to DB above (dashboard still shows it).
+                allowed, reason = self._combo_passes_discord_gate(a.get('combo_key'))
+                if not allowed:
                     logger.info(
-                        "Discord muted for %s: combo %s has score_adj=%d (learned loser)",
-                        a['pair'], a.get('combo_key'), a['score_adj'],
+                        "Discord muted for %s combo=%s: %s",
+                        a['pair'], a.get('combo_key'), reason,
                     )
                     continue
                 self._notify_discord(a)

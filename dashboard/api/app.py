@@ -2915,15 +2915,22 @@ def _get_early_scanner():
             from engine.early_scanner import EarlyScanner
             # Try config file first, then env var
             webhook = os.environ.get("DISCORD_WEBHOOK", "")
+            es_cfg = {}
             try:
                 import yaml
                 cfg_path = os.path.join(project_root, "config", "bot_config.yaml")
                 with open(cfg_path) as f:
                     cfg = yaml.safe_load(f)
-                webhook = cfg.get("early_scanner", {}).get("discord_webhook", "") or webhook
+                es_cfg = cfg.get("early_scanner", {}) or {}
+                webhook = es_cfg.get("discord_webhook", "") or webhook
             except Exception:
                 pass
-            _early_scanner = EarlyScanner(db_path=DB_PATH, discord_webhook=webhook or None)
+            _early_scanner = EarlyScanner(
+                db_path=DB_PATH,
+                discord_webhook=webhook or None,
+                discord_min_combo_win_rate=float(es_cfg.get("discord_min_combo_win_rate", 70.0)),
+                discord_min_combo_samples=int(es_cfg.get("discord_min_combo_samples", 10)),
+            )
         except Exception as e:
             import traceback
             print(f"Early scanner init error: {e}")
