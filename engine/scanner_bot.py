@@ -511,12 +511,12 @@ class ScannerBot:
         opens = load_open_positions(self.db_path)
         positions_value = sum((p.current_price or p.entry_price) * p.shares for p in opens)
         unrealized = sum(((p.current_price or p.entry_price) - p.entry_price) * p.shares for p in opens)
-        cash = self.cfg.starting_cash_usd - sum(p.position_usd for p in opens)
 
         with sqlite3.connect(self.db_path, timeout=30) as conn:
             realized = conn.execute(
                 "SELECT COALESCE(SUM(net_pnl_usd), 0) FROM scanner_bot_trades"
             ).fetchone()[0]
+            cash = self.cfg.starting_cash_usd + realized - sum(p.position_usd for p in opens)
             # ignore concurrent equity collisions (PRIMARY KEY ts) — same-second writes are fine to drop
             conn.execute(
                 "INSERT OR REPLACE INTO scanner_bot_equity "
