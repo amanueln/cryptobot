@@ -675,7 +675,7 @@
     </div>
     <div class="actions">
       <button class="cancel" (click)="backToDashboard()">Cancel</button>
-      <button class="apply" [disabled]="!modified() || applying()" (click)="applyChanges()">
+      <button class="apply" [disabled]="!pendingApply() || applying()" (click)="applyChanges()">
         {{ applying() ? 'Applying…' : 'Apply changes' }}
       </button>
     </div>

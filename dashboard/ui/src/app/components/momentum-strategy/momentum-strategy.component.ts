@@ -79,6 +79,17 @@ export class MomentumStrategyComponent implements OnInit {
     JSON.stringify(this.currentValues()) !== JSON.stringify(this.savedValues())
   );
 
+  // Apply button enabled when the form values differ from what's actually
+  // running on the bot — true if the user tweaked things OR picked a
+  // different profile from the dropdown.
+  pendingApply = computed(() => {
+    const meta = this.activeStrategyMeta();
+    const cur = this.currentValues();
+    if (!meta || !cur || !Object.keys(cur).length) return false;
+    if (!meta.values) return false;
+    return JSON.stringify(cur) !== JSON.stringify(meta.values);
+  });
+
   mode = signal<'simple' | 'advanced'>('simple');
 
   // ── UI flags ────────────────────────────────────────────────────────────
@@ -381,7 +392,7 @@ export class MomentumStrategyComponent implements OnInit {
 
   // ── Apply ────────────────────────────────────────────────────────────────
   applyChanges() {
-    if (!this.modified() || this.applying()) return;
+    if (!this.pendingApply() || this.applying()) return;
     this.applying.set(true);
     this.api.applyStrategy({ profile_key: this.activeKey(), values: this.currentValues() }).subscribe({
       next: () => {
