@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS scanner_bot_positions (
   current_price REAL,
   current_pct REAL,
   peak_price REAL,
-  last_tick_ts TEXT
+  last_tick_ts TEXT,
+  trail_stop_price REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sbp_pair ON scanner_bot_positions (pair);
@@ -85,5 +86,14 @@ def init_schema(db_path: str) -> None:
         # executescript() issues an implicit COMMIT before running the script,
         # so no explicit conn.commit() is needed afterwards.
         conn.executescript(SCHEMA_SQL)
+
+        # Migration: add trail_stop_price column (live-DB safe — no-op if exists)
+        try:
+            conn.execute(
+                "ALTER TABLE scanner_bot_positions ADD COLUMN trail_stop_price REAL"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
     finally:
         conn.close()

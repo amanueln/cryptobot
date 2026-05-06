@@ -17,12 +17,14 @@ def test_save_and_load_position():
             position_usd=1000.0, shares=1000.0,
             stop_price=0.85, hard_close_ts="2026-04-30T10:00:00+00:00",
             milestones_hit=[],
+            trail_stop_price=0.92,
         )
         save_position(db, p)
         opens = load_open_positions(db)
         assert len(opens) == 1
         assert opens[0].pair == "HIGH-USD"
         assert opens[0].milestones_hit == []
+        assert opens[0].trail_stop_price == 0.92
 
 
 def test_milestones_round_trip_as_json():
@@ -57,8 +59,10 @@ def test_update_position_persists_tick_state():
         opens[0].current_pct = 12.0
         opens[0].peak_price = 1.15
         opens[0].milestones_hit = [10]
+        opens[0].trail_stop_price = 1.08
         update_position(db, opens[0])
         again = load_open_positions(db)
         assert again[0].current_price == 1.12
         assert again[0].peak_price == 1.15
         assert again[0].milestones_hit == [10]
+        assert again[0].trail_stop_price == 1.08

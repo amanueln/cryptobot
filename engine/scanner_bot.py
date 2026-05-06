@@ -37,6 +37,7 @@ class Position:
     current_pct: float | None = None
     peak_price: float | None = None
     last_tick_ts: str | None = None
+    trail_stop_price: float | None = None
 
 
 def save_position(db_path: str, p: Position) -> int:
@@ -45,13 +46,14 @@ def save_position(db_path: str, p: Position) -> int:
             "INSERT INTO scanner_bot_positions "
             "(alert_id, combo_key, pair, entry_ts, entry_price, position_usd, shares, "
             " stop_price, hard_close_ts, manual_sell_requested, milestones_hit, "
-            " current_price, current_pct, peak_price, last_tick_ts) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " current_price, current_pct, peak_price, last_tick_ts, trail_stop_price) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 p.alert_id, p.combo_key, p.pair, p.entry_ts, p.entry_price,
                 p.position_usd, p.shares, p.stop_price, p.hard_close_ts,
                 p.manual_sell_requested, json.dumps(p.milestones_hit),
                 p.current_price, p.current_pct, p.peak_price, p.last_tick_ts,
+                p.trail_stop_price,
             ),
         )
         p.id = cur.lastrowid
@@ -72,12 +74,13 @@ def update_position(db_path: str, p: Position) -> None:
         conn.execute(
             "UPDATE scanner_bot_positions SET "
             "manual_sell_requested=?, milestones_hit=?, "
-            "current_price=?, current_pct=?, peak_price=?, last_tick_ts=? "
+            "current_price=?, current_pct=?, peak_price=?, last_tick_ts=?, "
+            "trail_stop_price=? "
             "WHERE id=?",
             (
                 p.manual_sell_requested, json.dumps(p.milestones_hit),
                 p.current_price, p.current_pct, p.peak_price, p.last_tick_ts,
-                p.id,
+                p.trail_stop_price, p.id,
             ),
         )
 
@@ -290,6 +293,7 @@ def _row_to_position(r) -> Position:
         current_pct=r["current_pct"],
         peak_price=r["peak_price"],
         last_tick_ts=r["last_tick_ts"],
+        trail_stop_price=r["trail_stop_price"],
     )
 
 
