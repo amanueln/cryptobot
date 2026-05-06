@@ -29,6 +29,64 @@ TRAIL_PROGRESSIVE = [
     (12.0, 0.5),
 ]
 
+CANDLE_URL = "https://api.coinbase.com/api/v3/brokerage/market/products"
+
+
+def _fetch_atr_candles_live(pair: str, hours: int = 14) -> list[dict] | None:
+    """Fetch hourly OHLC candles from Coinbase for ATR calc.
+
+    Returns list of dicts with high/low/close keys, oldest first.
+    Returns None on failure (caller should fall back to fixed stop).
+    """
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours + 1)
+    params = {
+        "start": str(int(start.timestamp())),
+        "end": str(int(now.timestamp())),
+        "granularity": "ONE_HOUR",
+    }
+    try:
+        resp = requests.get(f"{CANDLE_URL}/{pair}/candles", params=params, timeout=10)
+        if resp.status_code != 200:
+            return None
+        raw = resp.json().get("candles", [])
+        if not raw:
+            return None
+        out = []
+        for c in reversed(raw):
+            out.append({"high": float(c["high"]), "low": float(c["low"]), "close": float(c["close"])})
+        return out
+    except Exception as e:
+        logger.debug("ATR candle fetch failed for %s: %s", pair, e)
+        return None
+
+
+def compute_atr_stop_price(
+    entry_price: float,
+    candles: list[dict] | None,
+    multiplier: float = 2.0,
+    min_pct: float = 3.0,
+    max_pct: float = 8.0,
+) -> float | None:
+    """Return ATR-derived stop price, or None if candles unusable.
+
+    ATR = mean(high - low) over candle window, expressed as % of last close.
+    Stop distance = ATR% * multiplier, clamped to [min_pct, max_pct].
+    Stop price = entry_price * (1 - stop_distance/100).
+    """
+    if not candles or entry_price <= 0:
+        return None
+    ranges = [c["high"] - c["low"] for c in candles if c["high"] > c["low"]]
+    if not ranges:
+        return None
+    atr = sum(ranges) / len(ranges)
+    last_close = candles[-1]["close"]
+    if last_close <= 0:
+        return None
+    atr_pct = (atr / last_close) * 100
+    stop_pct = max(min_pct, min(max_pct, atr_pct * multiplier))
+    return entry_price * (1 - stop_pct / 100)
+
 
 @dataclass
 class Position:
@@ -49,6 +107,7 @@ class Position:
     peak_price: float | None = None
     last_tick_ts: str | None = None
     trail_stop_price: float | None = None
+    trough_price: float | None = None
 
 
 def save_position(db_path: str, p: Position) -> int:
@@ -57,14 +116,15 @@ def save_position(db_path: str, p: Position) -> int:
             "INSERT INTO scanner_bot_positions "
             "(alert_id, combo_key, pair, entry_ts, entry_price, position_usd, shares, "
             " stop_price, hard_close_ts, manual_sell_requested, milestones_hit, "
-            " current_price, current_pct, peak_price, last_tick_ts, trail_stop_price) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " current_price, current_pct, peak_price, last_tick_ts, trail_stop_price, "
+            " trough_price) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 p.alert_id, p.combo_key, p.pair, p.entry_ts, p.entry_price,
                 p.position_usd, p.shares, p.stop_price, p.hard_close_ts,
                 p.manual_sell_requested, json.dumps(p.milestones_hit),
                 p.current_price, p.current_pct, p.peak_price, p.last_tick_ts,
-                p.trail_stop_price,
+                p.trail_stop_price, p.trough_price,
             ),
         )
         p.id = cur.lastrowid
@@ -86,12 +146,12 @@ def update_position(db_path: str, p: Position) -> None:
             "UPDATE scanner_bot_positions SET "
             "manual_sell_requested=?, milestones_hit=?, "
             "current_price=?, current_pct=?, peak_price=?, last_tick_ts=?, "
-            "trail_stop_price=? "
+            "trail_stop_price=?, trough_price=? "
             "WHERE id=?",
             (
                 p.manual_sell_requested, json.dumps(p.milestones_hit),
                 p.current_price, p.current_pct, p.peak_price, p.last_tick_ts,
-                p.trail_stop_price, p.id,
+                p.trail_stop_price, p.trough_price, p.id,
             ),
         )
 
@@ -119,18 +179,21 @@ def close_position(
     pct = (exit_price - p.entry_price) / p.entry_price * 100
     peak = p.peak_price if p.peak_price is not None else p.entry_price
     peak_pct = (peak - p.entry_price) / p.entry_price * 100
+    trough = p.trough_price if p.trough_price is not None else p.entry_price
+    mae_pct = (trough - p.entry_price) / p.entry_price * 100
 
     with sqlite3.connect(db_path, timeout=30) as conn:
         conn.execute(
             "INSERT INTO scanner_bot_trades "
             "(alert_id, combo_key, pair, entry_ts, entry_price, "
             " exit_ts, exit_price, position_usd, shares, "
-            " gross_pnl_usd, fees_usd, net_pnl_usd, pct, peak_pct, exit_reason) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " gross_pnl_usd, fees_usd, net_pnl_usd, pct, peak_pct, exit_reason, "
+            " max_adverse_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 p.alert_id, p.combo_key, p.pair, p.entry_ts, p.entry_price,
                 exit_ts, exit_price, p.position_usd, p.shares,
-                gross, fees, net, pct, peak_pct, exit_reason,
+                gross, fees, net, pct, peak_pct, exit_reason, mae_pct,
             ),
         )
         conn.execute("DELETE FROM scanner_bot_positions WHERE id=?", (p.id,))
@@ -143,8 +206,12 @@ class EntryConfig:
     max_concurrent: int
     starting_cash_usd: float
     same_pair_cooldown_hours: int
-    stop_pct: float        # e.g. 15.0 means -15% stop
+    stop_pct: float        # fallback stop when ATR fetch fails
     hold_hours: int        # e.g. 24
+    atr_period: int = 14           # hourly candles to average for ATR
+    atr_multiplier: float = 2.0    # stop = ATR% * this, clamped
+    min_stop_pct: float = 3.0      # never tighter than this
+    max_stop_pct: float = 8.0      # never looser than this
 
 
 @dataclass
@@ -168,7 +235,12 @@ def _cash_available(db_path: str, cfg: EntryConfig) -> float:
     return cfg.starting_cash_usd - committed
 
 
-def decide_entry(db_path: str, alert_id: int, cfg: EntryConfig) -> EntryDecision:
+def decide_entry(
+    db_path: str,
+    alert_id: int,
+    cfg: EntryConfig,
+    candles_fetcher=_fetch_atr_candles_live,
+) -> EntryDecision:
     with sqlite3.connect(db_path, timeout=30) as conn:
         conn.row_factory = sqlite3.Row
         a = conn.execute(
@@ -221,7 +293,13 @@ def decide_entry(db_path: str, alert_id: int, cfg: EntryConfig) -> EntryDecision
     # All checks passed
     entry_price = a["price"]
     shares = cfg.position_usd / entry_price
-    stop_price = entry_price * (1 - cfg.stop_pct / 100)
+    candles = candles_fetcher(a["pair"], cfg.atr_period)
+    atr_stop = compute_atr_stop_price(
+        entry_price, candles,
+        multiplier=cfg.atr_multiplier,
+        min_pct=cfg.min_stop_pct, max_pct=cfg.max_stop_pct,
+    )
+    stop_price = atr_stop if atr_stop is not None else entry_price * (1 - cfg.stop_pct / 100)
     alert_ts = datetime.fromisoformat(a["timestamp"].replace("Z", "+00:00"))
     if alert_ts.tzinfo is None:
         alert_ts = alert_ts.replace(tzinfo=timezone.utc)
@@ -281,6 +359,10 @@ def tick_position(p: Position, current_price: float, now: datetime) -> ExitDecis
     candidate = max(current_price, floor)
     if p.peak_price is None or candidate > p.peak_price:
         p.peak_price = candidate
+    # Trough — ratchet down only, capped at entry (so trade that never bleeds = MAE 0)
+    trough_candidate = min(current_price, p.entry_price)
+    if p.trough_price is None or trough_candidate < p.trough_price:
+        p.trough_price = trough_candidate
     p.last_tick_ts = now.isoformat()
 
     # Update trail stop — ratchet up only, never down
@@ -330,6 +412,7 @@ def _row_to_position(r) -> Position:
         peak_price=r["peak_price"],
         last_tick_ts=r["last_tick_ts"],
         trail_stop_price=r["trail_stop_price"],
+        trough_price=r["trough_price"] if "trough_price" in r.keys() else None,
     )
 
 
@@ -407,6 +490,7 @@ class ScannerBot:
         cfg: EntryConfig,
         discord_webhook: str | None,
         price_fn=None,                # injectable for tests
+        candles_fetcher=None,         # injectable for tests
         poll_interval_sec: int = 30,
         alert_max_age_minutes: int = 5,
         seed_cursor_from_max: bool = True,
@@ -415,6 +499,7 @@ class ScannerBot:
         self.cfg = cfg
         self.discord_webhook = discord_webhook
         self.price_fn = price_fn or _fetch_coinbase_price
+        self.candles_fetcher = candles_fetcher or _fetch_atr_candles_live
         self.poll_interval_sec = poll_interval_sec
         self.alert_max_age_minutes = alert_max_age_minutes
         # On startup, seed the cursor to the current max alert id so historical
@@ -470,7 +555,8 @@ class ScannerBot:
             ).fetchall()
 
         for row in new_alerts:
-            d = decide_entry(self.db_path, alert_id=row["id"], cfg=self.cfg)
+            d = decide_entry(self.db_path, alert_id=row["id"], cfg=self.cfg,
+                             candles_fetcher=self.candles_fetcher)
             record_decision(self.db_path, alert_id=d.alert_id, ts=now.isoformat(),
                             combo_key=d.combo_key, pair=d.pair,
                             decision=d.action, reason=d.reason)

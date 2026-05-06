@@ -146,8 +146,12 @@ def run_scanner_bot():
             max_concurrent=int(sb.get("max_concurrent", 3)),
             starting_cash_usd=float(sb.get("starting_cash_usd", 3000.0)),
             same_pair_cooldown_hours=int(sb.get("same_pair_cooldown_hours", 4)),
-            stop_pct=float(sb.get("stop_pct", 15.0)),
+            stop_pct=float(sb.get("stop_pct", 8.0)),
             hold_hours=int(sb.get("hold_hours", 24)),
+            atr_period=int(sb.get("atr_period", 14)),
+            atr_multiplier=float(sb.get("atr_multiplier", 2.0)),
+            min_stop_pct=float(sb.get("min_stop_pct", 3.0)),
+            max_stop_pct=float(sb.get("max_stop_pct", 8.0)),
         )
         bot = ScannerBot(
             db_path=db_path,

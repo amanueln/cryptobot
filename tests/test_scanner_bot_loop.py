@@ -28,7 +28,8 @@ def test_tick_opens_position_from_new_alert():
         # after that point. Tests would fail under the new init behavior if we
         # added the alert first (cursor would skip it).
         bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None,
-                         price_fn=MagicMock(return_value=1.0))
+                         price_fn=MagicMock(return_value=1.0),
+                         candles_fetcher=lambda *a, **k: None)
         _add_alert(db, 1, "mom_reversal+strong_move", "HIGH-USD",
                    datetime.now(timezone.utc).isoformat(), 1.0)
         bot.tick(now=datetime.now(timezone.utc))
@@ -48,7 +49,8 @@ def test_tick_closes_position_on_stop():
         init_schema(db); _seed_alert_table(db)
 
         price = MagicMock(side_effect=[1.0, 0.80])  # open at 1.0, then drop to 0.80
-        bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None, price_fn=price)
+        bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None, price_fn=price,
+                         candles_fetcher=lambda *a, **k: None)
         _add_alert(db, 1, "mom_reversal+strong_move", "HIGH-USD",
                    datetime.now(timezone.utc).isoformat(), 1.0)
         bot.tick(now=datetime.now(timezone.utc))
@@ -77,7 +79,8 @@ def test_startup_seeds_cursor_to_max_alert_id_skipping_history():
                        datetime.now(timezone.utc).isoformat(), 1.0)
 
         bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None,
-                         price_fn=MagicMock(return_value=1.0))
+                         price_fn=MagicMock(return_value=1.0),
+                         candles_fetcher=lambda *a, **k: None)
         # Cursor must be seeded to 5, not 0.
         assert bot._last_alert_check_id == 5
         bot.tick(now=datetime.now(timezone.utc))
@@ -95,6 +98,7 @@ def test_freshness_filter_skips_stale_alerts():
 
         bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None,
                          price_fn=MagicMock(return_value=1.0),
+                         candles_fetcher=lambda *a, **k: None,
                          alert_max_age_minutes=5)
 
         # Insert a stale alert (10 minutes old).
@@ -113,7 +117,8 @@ def test_tick_writes_equity_snapshot():
         db = os.path.join(d, "candles.db")
         init_schema(db); _seed_alert_table(db)
         bot = ScannerBot(db_path=db, cfg=_cfg(), discord_webhook=None,
-                         price_fn=MagicMock(return_value=1.0))
+                         price_fn=MagicMock(return_value=1.0),
+                         candles_fetcher=lambda *a, **k: None)
         bot.tick(now=datetime(2026, 4, 29, 10, 0, tzinfo=timezone.utc))
         with sqlite3.connect(db) as conn:
             r = conn.execute(

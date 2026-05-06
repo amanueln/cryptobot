@@ -59,13 +59,18 @@ def _cfg():
     )
 
 
+def _no_candles(*_a, **_kw):
+    """Stub candle fetcher that forces fallback to fixed stop_pct."""
+    return None
+
+
 def test_entry_skips_non_target_combo():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         db = os.path.join(d, "candles.db")
         init_schema(db); _seed_alert_table(db)
         _add_alert(db, 1, "accumulation+bottom_bounce", "HIGH-USD",
                    "2026-04-29T10:00:00+00:00", 1.0)
-        decision = decide_entry(db, alert_id=1, cfg=_cfg())
+        decision = decide_entry(db, alert_id=1, cfg=_cfg(), candles_fetcher=_no_candles)
         assert decision.action == "skip"
         assert "combo_not_eligible" in decision.reason
 
@@ -84,7 +89,7 @@ def test_entry_skips_at_capacity():
                 position_usd=1000.0, shares=1000.0, stop_price=0.85,
                 hard_close_ts="2026-04-30T09:00:00+00:00",
             ))
-        decision = decide_entry(db, alert_id=1, cfg=_cfg())
+        decision = decide_entry(db, alert_id=1, cfg=_cfg(), candles_fetcher=_no_candles)
         assert decision.action == "skip"
         assert "at_capacity" in decision.reason
 
@@ -105,7 +110,7 @@ def test_entry_skips_same_pair_cooldown():
             )
         _add_alert(db, 1, "mom_reversal+strong_move", "HIGH-USD",
                    datetime.now(timezone.utc).isoformat(), 1.0)
-        decision = decide_entry(db, alert_id=1, cfg=_cfg())
+        decision = decide_entry(db, alert_id=1, cfg=_cfg(), candles_fetcher=_no_candles)
         assert decision.action == "skip"
         assert "same_pair_cooldown" in decision.reason
 
@@ -116,7 +121,7 @@ def test_entry_accepted_clean_path():
         init_schema(db); _seed_alert_table(db)
         _add_alert(db, 1, "mom_reversal+strong_move", "HIGH-USD",
                    "2026-04-29T10:00:00+00:00", 1.0)
-        decision = decide_entry(db, alert_id=1, cfg=_cfg())
+        decision = decide_entry(db, alert_id=1, cfg=_cfg(), candles_fetcher=_no_candles)
         assert decision.action == "open"
         # entry_price comes from alert
         assert decision.entry_price == 1.0
