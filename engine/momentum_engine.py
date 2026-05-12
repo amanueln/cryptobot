@@ -828,6 +828,13 @@ class MomentumEngine:
             if accel <= 0:
                 _log_reject(pair, "accel <= 0", accel=accel, price=cur_price)
                 continue
+            # accel_max: cap to block parabolic exhaustion spikes (e.g. TROLL +206%)
+            _accel_max = self.config.get("entry_gates", {}).get("accel_max")
+            if _accel_max is not None and accel > _accel_max:
+                reason = f"accel {accel:.1%} > {_accel_max:.0%} (exhaustion cap)"
+                self._entry_rejections.append(f"{pair}: {reason}")
+                _log_reject(pair, reason, accel=accel, price=cur_price)
+                continue
             # RSI filter: skip overbought coins
             _rsi_max = self.config.get("entry_gates", {}).get("rsi_max", RSI_MAX)
             rsi = _rsi(closes, RSI_PERIOD)
