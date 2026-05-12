@@ -850,6 +850,15 @@ class SimRunner:
                     )
                     logger.info(f"[MOMENTUM] {trade.side.upper()} {short} @ {_fmt_price(trade.price)} — {trade.reason}")
 
+        # Donchian shadow — observation-only signal logging. Does NOT trade.
+        # Compares Donchian 20h breakout entries against the real acceleration
+        # scanner for 2 weeks before any swap decision.
+        try:
+            from engine import donchian_shadow
+            donchian_shadow.maybe_log_signals(self.momentum_engine, self.trade_logger.db_path)
+        except Exception:
+            logger.exception("donchian_shadow logging failed (non-fatal)")
+
         # Snapshot momentum equity
         now = datetime.utcnow()
         mom = self.momentum_engine
