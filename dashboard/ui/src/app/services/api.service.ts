@@ -788,6 +788,52 @@ export class ApiService {
   getStrategyChangelog() { return this.http.get<any>(`${API}/momentum/strategy/recommended/changelog`); }
   getActiveStrategy() { return this.http.get<any>(`${API}/momentum/strategy/active`); }
 
+  // --- Donchian shadow comparison ---
+
+  getDonchianTodayStrip() {
+    return this.http.get<{
+      status: 'gathering' | 'early_ship_eligible' | 'decision_time' | 'no_data' | 'no_table';
+      message: string;
+      days: number;
+      fair_days: number;
+      winning_days: number;
+      consistency_threshold: number;
+      today_date: string;
+      today_donch_n: number;
+      today_donch_pnl: number;
+      today_real_n: number;
+      today_real_pnl: number;
+      today_delta: number;
+      today_real_in_cash: boolean;
+      cum_donch_pnl: number;
+      cum_real_pnl: number;
+      cum_delta: number;
+      cum_donch_trades: number;
+    }>(`${API}/donchian/today-strip`);
+  }
+
+  getDonchianDailyCompare() {
+    return this.http.get<Array<{
+      date: string;
+      donch_n_signals: number;
+      donch_n_kept: number;
+      donch_wins: number;
+      donch_pnl_usd: number;
+      real_n: number;
+      real_wins: number;
+      real_pnl_usd: number;
+      delta_usd: number;
+      real_in_cash_all_day: number;
+      cum_donch_usd: number;
+      cum_real_usd: number;
+      cum_delta_usd: number;
+    }>>(`${API}/donchian/daily-compare`);
+  }
+
+  getDonchianRecentShadows(limit = 50) {
+    return this.http.get<any[]>(`${API}/donchian/recent-shadows?limit=${limit}`);
+  }
+
   // --- Scanner Bot ---
 
   getScannerBotPositions() {

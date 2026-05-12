@@ -1,0 +1,23 @@
+#!/bin/bash
+# /etc/cron.d/cryptobot-donchian-daily-report
+#
+# Runs at 08:00 UTC every day. Executes the donchian_daily_compare script
+# inside the cryptobot container. Writes one row per day to
+# donchian_daily_compare and refreshes any unreplayed donchian_shadow rows.
+#
+# Install on Zima:
+#   sudo cp ops/cron/cryptobot-donchian-daily-report /etc/cron.d/
+#   sudo chmod 644 /etc/cron.d/cryptobot-donchian-daily-report
+#
+# Logs go to /var/log/cryptobot-donchian-daily.log. To tail:
+#   tail -f /var/log/cryptobot-donchian-daily.log
+#
+# Manually run for a specific date:
+#   docker exec cryptobot python3 /app/src/research/scripts/donchian_daily_compare.py --date 2026-05-13
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Run at 08:00 UTC daily — yesterday's data is finalized by then.
+# Discord summaries disabled — dashboard tile is the source of truth.
+0 8 * * * root /usr/bin/docker exec cryptobot python3 /app/src/research/scripts/donchian_daily_compare.py >> /var/log/cryptobot-donchian-daily.log 2>&1

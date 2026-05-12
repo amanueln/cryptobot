@@ -22,6 +22,7 @@ import { MomentumPanelComponent } from '../momentum-panel/momentum-panel.compone
 import { EarlyScannerComponent } from '../early-scanner/early-scanner.component';
 import { PositionCardsComponent } from '../position-cards/position-cards.component';
 import { ScannerBotComponent } from '../scanner-bot/scanner-bot.component';
+import { DonchianShadowComponent } from '../donchian-shadow/donchian-shadow.component';
 import { forkJoin } from 'rxjs';
 
 Chart.register(...registerables);
@@ -37,7 +38,7 @@ const STARTING_BALANCE = 3000;
     TradeLogComponent, DcaSimulatorComponent, RegimeVisualizerComponent,
     SelfCheckComponent, PairScannerComponent, AdaptationsComponent,
     MomentumPanelComponent, EarlyScannerComponent, PositionCardsComponent,
-    ScannerBotComponent,
+    ScannerBotComponent, DonchianShadowComponent,
   ],
   template: `
     <div class="cc-root">
@@ -71,6 +72,7 @@ const STARTING_BALANCE = 3000;
       <!-- MOMENTUM PANEL (shown when selected or no dual mode) -->
       @if (momentumEnabled() && activeEngine() === 'momentum') {
         <app-momentum-panel />
+        <app-donchian-shadow />
       }
 
       <!-- EARLY SCANNER PANEL -->

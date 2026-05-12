@@ -3103,6 +3103,125 @@ _SCANNER_BOT_TABLES = (
 )
 
 
+# ============================================================================
+# Donchian shadow comparison — daily Donch vs Real readout for the dashboard.
+# Backing tables: donchian_shadow (per-signal log) + donchian_daily_compare
+# (one row per UTC day, written by the 8 AM cron job).
+# ============================================================================
+
+@app.route("/api/donchian/daily-compare")
+def donchian_daily_compare():
+    """Return all daily-compare rows in chronological order.
+
+    Each row has Donch totals, Real totals, delta, in_cash_flag.
+    UI plots cumulative + day-by-day table.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT * FROM donchian_daily_compare ORDER BY date"
+            )]
+        except sqlite3.OperationalError:
+            rows = []
+    # Compute running cumulative for the UI
+    cum_donch = 0.0
+    cum_real = 0.0
+    for r in rows:
+        cum_donch += r.get("donch_pnl_usd") or 0
+        cum_real += r.get("real_pnl_usd") or 0
+        r["cum_donch_usd"] = round(cum_donch, 2)
+        r["cum_real_usd"] = round(cum_real, 2)
+        r["cum_delta_usd"] = round(cum_donch - cum_real, 2)
+    return jsonify(rows)
+
+
+@app.route("/api/donchian/today-strip")
+def donchian_today_strip():
+    """Last 24h snapshot for the small status strip at top of the tile.
+
+    Looks at the most recent daily-compare row. Returns the date, totals,
+    status pill ('gathering' | 'eligible' | 'decision_time'), and a
+    plain-language message for display.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = list(conn.execute(
+                "SELECT * FROM donchian_daily_compare ORDER BY date"
+            ))
+        except sqlite3.OperationalError:
+            return jsonify({"status": "no_table", "days": 0,
+                            "message": "donchian_daily_compare not yet created"})
+    if not rows:
+        return jsonify({"status": "no_data", "days": 0,
+                        "message": "no daily rows yet — shadow mode just started"})
+
+    n_days = len(rows)
+    fair = [r for r in rows if not (r["real_in_cash_all_day"] or 0)]
+    fair_n = len(fair)
+    total_donch = sum(r["donch_pnl_usd"] or 0 for r in rows)
+    total_real = sum(r["real_pnl_usd"] or 0 for r in rows)
+    total_kept = sum(r["donch_n_kept"] or 0 for r in rows)
+    winning_days = sum(1 for r in fair if (r["delta_usd"] or 0) > 0)
+    consistency_threshold = max(1, int(0.6 * fair_n + 0.5)) if fair_n else 0
+    delta = total_donch - total_real
+
+    today = dict(rows[-1])
+
+    if n_days >= 14:
+        status = "decision_time"
+        msg = "14-day window complete — review full results and decide."
+    elif n_days >= 7:
+        if delta >= 200 and total_kept >= 20 and winning_days >= consistency_threshold:
+            status = "early_ship_eligible"
+            msg = (f"Eligible for early ship — Δ ${delta:+.2f}, {total_kept} Donch trades, "
+                   f"{winning_days}/{fair_n} winning days. Manual review recommended.")
+        else:
+            status = "gathering"
+            msg = (f"Day {n_days}: insufficient signal for early ship "
+                   f"(Δ ${delta:+.2f}, {total_kept} trades, {winning_days}/{fair_n} winning days)")
+    else:
+        status = "gathering"
+        msg = f"Day {n_days} of 14 — gathering data. Decision check starts day 7."
+
+    return jsonify({
+        "status": status, "message": msg, "days": n_days,
+        "fair_days": fair_n, "winning_days": winning_days,
+        "consistency_threshold": consistency_threshold,
+        "today_date": today["date"],
+        "today_donch_n": today["donch_n_kept"],
+        "today_donch_pnl": round(today["donch_pnl_usd"] or 0, 2),
+        "today_real_n": today["real_n"],
+        "today_real_pnl": round(today["real_pnl_usd"] or 0, 2),
+        "today_delta": round(today["delta_usd"] or 0, 2),
+        "today_real_in_cash": bool(today["real_in_cash_all_day"] or 0),
+        "cum_donch_pnl": round(total_donch, 2),
+        "cum_real_pnl": round(total_real, 2),
+        "cum_delta": round(delta, 2),
+        "cum_donch_trades": total_kept,
+    })
+
+
+@app.route("/api/donchian/recent-shadows")
+def donchian_recent_shadows():
+    """Last N shadow signals with their replayed outcomes."""
+    limit = _scanner_bot_int_arg("limit", 50)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT id, ts, pair, entry_price, breakout_pct, rsi, adx, accel, "
+                "replayed, exit_ts, exit_price, exit_reason, pnl_pct, peak_pct, "
+                "mae_pct, hours_held, net_usd, kept_in_queue, bot_in_position "
+                "FROM donchian_shadow ORDER BY ts DESC LIMIT ?",
+                (limit,)
+            )]
+        except sqlite3.OperationalError:
+            rows = []
+    return jsonify(rows)
+
+
 @app.route("/api/scanner-bot/reset", methods=["POST"])
 def scanner_bot_reset():
     """Wipe ALL scanner bot state (positions, trades, equity, decisions).
