@@ -57,6 +57,97 @@ import { ApiService, SelfCheckData, fmt12Hour } from '../../services/api.service
         </div>
       </div>
 
+      <!-- Research Findings -->
+      <div class="section research-findings">
+        <span class="section-title">Research findings</span>
+        <div class="research-list">
+          <div class="research-item parked">
+            <div class="research-header">
+              <span class="research-status status-parked">PARKED</span>
+              <span class="research-date">2026-05-13</span>
+            </div>
+            <div class="research-title">Scanner bot exits — 14 variants tested, none beat baseline by $500</div>
+            <div class="research-body">
+              Tested wider trails, tighter trails, partial exits, profit ladders, time-of-day rules,
+              volume-aware suspension, accel-aware switching, and conditional 75/25 splits with 4 stop levels.
+              Best result was Opt 14 (conditional 75/25 + -15% stop on runner half) at +$108 vs baseline.
+              <br><br>
+              <strong>Two-peak pattern is real but unexploitable:</strong> 22 of 49 Scanner Bot trades had a
+              second peak ≥3% above the first within 24h. But the pullback between peak 1 and peak 2 routinely
+              exceeds -8%, killing any "let it ride" mechanism on the runner slice. Wider stop on the runner
+              slice didn't help — no slice hit between -8% and -20%, suggesting the pullback either stays
+              shallow (above -8%) or goes deep (below -20%) and doesn't recover within the 24h hold window.
+            </div>
+          </div>
+
+          <div class="research-item parked">
+            <div class="research-header">
+              <span class="research-status status-parked">FINDING</span>
+              <span class="research-date">2026-05-13</span>
+            </div>
+            <div class="research-title">Scanner bot entry signal — +1 combo is the worst signal tested</div>
+            <div class="research-body">
+              Tested 17 alternative entry signals on the same 41-pair universe over 27 days. <strong>Every
+              alternative beats the +1 combo baseline by $1,200+.</strong> The +1 combo signal
+              (mom_reversal+strong_move / mom_reversal+squeeze) loses -$1,777 over 59 trades.
+              <br><br>
+              <strong>Top candidate: Donchian + Volume combined</strong> — buy when price closes above 20-period
+              high AND volume is >3x the 20-period average. Result: <strong>+$3,189 over 59 trades</strong>
+              (vs baseline -$1,777). Walk-forward validation: +$520 train, +$2,670 test. Same trade frequency
+              (2.19/day), much better outcome. Max drawdown only $120.
+              <br><br>
+              Mirrors the Donchian discovery on the momentum bot. Both signals (acceleration on momentum,
+              +1 combo on scanner) appear to enter at exhaustion tops. Breakout-based signals enter at
+              confirmation instead. Pattern is consistent.
+              <br><br>
+              <strong>Status: research complete. Not yet shipped.</strong> Same approach as momentum bot —
+              add a Donchian shadow logger to Scanner Bot for live verification before swapping the signal.
+            </div>
+          </div>
+
+          <div class="research-item shipped">
+            <div class="research-header">
+              <span class="research-status status-shipped">SHIPPED</span>
+              <span class="research-date">2026-05-12</span>
+            </div>
+            <div class="research-title">Ticker logger — perfect reconciliation data for future research</div>
+            <div class="research-body">
+              Added scanner_bot_ticker_log table that captures every 30s price poll while a position is open.
+              Pure observation, no trading impact. Future exit-strategy research can replay the bot's exact
+              price stream and reconcile within ±$0 instead of ±$50+ from 1-min candle approximations.
+            </div>
+          </div>
+
+          <div class="research-item in-progress">
+            <div class="research-header">
+              <span class="research-status status-progress">IN PROGRESS</span>
+              <span class="research-date">2026-05-12</span>
+            </div>
+            <div class="research-title">Donchian shadow mode — momentum bot</div>
+            <div class="research-body">
+              Logging Donchian 20h breakouts while the live momentum bot continues with its acceleration
+              signal. Daily comparison cron writes one row to donchian_daily_compare at 08:00 UTC.
+              14-day comparison window. Decision rule: if Donchian beats real by $200+ AND ≥20 trades
+              AND ≥60% winning days, eligible to ship.
+            </div>
+          </div>
+
+          <div class="research-item parked">
+            <div class="research-header">
+              <span class="research-status status-parked">NEXT</span>
+              <span class="research-date">future</span>
+            </div>
+            <div class="research-title">Apply Donchian + Volume to Scanner Bot (after shadow validation)</div>
+            <div class="research-body">
+              The entry-signal research found Donchian + Volume would have flipped Scanner Bot from -$1,777
+              to +$3,189 over 27 days. Next step before swapping: add a Donchian shadow logger to Scanner Bot
+              (same pattern as momentum bot's shadow mode). Once 2-4 weeks of live shadow data confirms the
+              backtest, ship the swap.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Grid Performance by Spacing -->
       <div class="section" *ngIf="gridPerf().length">
         <span class="section-title">Grid Performance by Vol Regime</span>
@@ -177,6 +268,31 @@ import { ApiService, SelfCheckData, fmt12Hour } from '../../services/api.service
       font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;
       font-weight: 700; text-transform: uppercase;
     }
+
+    /* Research findings */
+    .research-findings { background: #1e2030; border-color: #3d3a5a; }
+    .research-list { display: flex; flex-direction: column; gap: 12px; }
+    .research-item {
+      background: #181a26; border-left: 3px solid #4b5563;
+      border-radius: 6px; padding: 12px 16px;
+    }
+    .research-item.shipped { border-left-color: #4ade80; }
+    .research-item.parked { border-left-color: #facc15; }
+    .research-item.in-progress { border-left-color: #60a5fa; }
+    .research-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+    }
+    .research-status {
+      font-size: 0.62rem; font-weight: 700; padding: 2px 8px;
+      border-radius: 4px; letter-spacing: 0.05em;
+    }
+    .status-shipped { background: #14532d; color: #bbf7d0; }
+    .status-parked  { background: #422006; color: #fef08a; }
+    .status-progress{ background: #1e3a8a; color: #bfdbfe; }
+    .research-date { font-size: 0.7rem; color: #6b7280; }
+    .research-title { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; margin-bottom: 4px; }
+    .research-body { font-size: 0.78rem; color: #9ca3af; line-height: 1.5; }
+    .research-body strong { color: #d1d5db; }
     .regime-low { background: #1a3a2a; color: #4ade80; }
     .regime-normal { background: #1e293b; color: #94a3b8; }
     .regime-high { background: #451a03; color: #fbbf24; }
