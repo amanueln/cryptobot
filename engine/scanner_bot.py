@@ -212,6 +212,15 @@ class EntryConfig:
     atr_multiplier: float = 2.0    # stop = ATR% * this, clamped
     min_stop_pct: float = 3.0      # never tighter than this
     max_stop_pct: float = 8.0      # never looser than this
+    # ---- Entry signal selection ----
+    # "combo_alerts" = react to early_scanner +1 combo alerts (legacy, historically loses money)
+    # "donchian_vol" = actively scan tracked pairs for 20-period high breakout + volume > 3x avg
+    # Backtest (2026-04-16 to 2026-05-13, 41 pairs, 27 days):
+    #   combo_alerts: -$1,777 / 59 trades / 49% WR
+    #   donchian_vol: +$3,189 / 59 trades / 63% WR (delta = +$4,966)
+    entry_source: str = "donchian_vol"
+    donchian_period: int = 20          # 20 hourly candles for the breakout high
+    donchian_vol_mult: float = 3.0     # volume must be > this × 20-period avg
 
 
 @dataclass
@@ -508,6 +517,9 @@ class ScannerBot:
         self._last_alert_check_id: int = (
             self._fetch_max_alert_id() if seed_cursor_from_max else 0
         )
+        # Donchian state — per-pair tracking
+        self._donchian_last_candle_ts: dict[str, int] = {}  # pair -> last hourly ts processed
+        self._donchian_candle_cache: dict[str, tuple[float, list[dict]]] = {}  # pair -> (fetched_at, candles)
 
     def _fetch_max_alert_id(self) -> int:
         try:
@@ -521,10 +533,16 @@ class ScannerBot:
             return 0
 
     def tick(self, now: datetime | None = None) -> None:
-        """One iteration: poll alerts, manage positions, snapshot equity."""
+        """One iteration: poll entry signals, manage positions, snapshot equity."""
         now = now or datetime.now(timezone.utc)
         try:
-            self._poll_alerts(now)
+            # Route entry path by config. Default is donchian_vol per research
+            # showing the +1 combo signal loses money.
+            src = getattr(self.cfg, "entry_source", "donchian_vol")
+            if src == "donchian_vol":
+                self._poll_donchian_signals(now)
+            else:  # "combo_alerts" — legacy +1 combo path
+                self._poll_alerts(now)
             self._manage_positions(now)
             self._snapshot_equity(now)
         except Exception:
@@ -574,6 +592,167 @@ class ScannerBot:
             # Only advance the cursor after the alert has been fully processed,
             # so a DB write failure mid-loop doesn't silently skip the alert.
             self._last_alert_check_id = max(self._last_alert_check_id, row["id"])
+
+    # ---------------- Donchian + Volume entry path ----------------
+
+    def _get_donchian_universe(self) -> list[str]:
+        """Pairs to scan for Donchian+Vol signals. Uses any pair that the early
+        scanner has alerted on in the last 14 days. Same universe shape the
+        backtest validated against."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+        try:
+            with sqlite3.connect(self.db_path, timeout=30) as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT pair FROM early_scanner_alerts WHERE created_at > ? "
+                    "ORDER BY pair",
+                    (cutoff,),
+                ).fetchall()
+            return [r[0] for r in rows]
+        except sqlite3.OperationalError:
+            return []
+
+    def _fetch_donchian_candles_cached(self, pair: str) -> list[dict] | None:
+        """Hourly candles with 1-hour cache. Cuts Coinbase API calls dramatically
+        — bot ticks every 30s but hourly candles only change at the top of each
+        hour, so refetching once an hour per pair is sufficient."""
+        now_unix = time.time()
+        cached = self._donchian_candle_cache.get(pair)
+        if cached is not None and (now_unix - cached[0]) < 55 * 60:  # 55min TTL
+            return cached[1]
+        # Need at least 21 candles for the 20-period Donchian + volume avg.
+        # Fetch 25 to give buffer; reuse the existing ATR-candles fetcher
+        # since it returns the same shape (high/low/close per hour).
+        candles = self.candles_fetcher(pair, 25)
+        if not candles:
+            self._donchian_candle_cache[pair] = (now_unix, [])
+            return None
+        self._donchian_candle_cache[pair] = (now_unix, candles)
+        return candles
+
+    def _check_donchian_vol_breakout(self, candles: list[dict]) -> bool:
+        """Last closed candle's close > prior 20-period high AND volume > 3x avg."""
+        period = self.cfg.donchian_period
+        vol_mult = self.cfg.donchian_vol_mult
+        if len(candles) < period + 1:
+            return False
+        latest = candles[-1]
+        prior = candles[-(period + 1):-1]  # the 20 candles BEFORE the latest
+        prior_high = max(c.get("high", c.get("close", 0)) for c in prior)
+        if latest["close"] <= prior_high:
+            return False
+        prior_vols = [c.get("volume", 0) for c in prior]
+        avg_vol = sum(prior_vols) / period if prior_vols else 0
+        if avg_vol <= 0:
+            return False
+        latest_vol = latest.get("volume", 0)
+        if latest_vol <= vol_mult * avg_vol:
+            return False
+        return True
+
+    def _decide_entry_donchian(self, pair: str, current_price: float,
+                               candles: list[dict]) -> EntryDecision:
+        """Entry-decision path for Donchian+Vol signals. Same gates as the
+        combo-alert path (cash, capacity, same-pair cooldown) plus ATR stop
+        from the existing candles fetch.
+
+        Synthetic alert_id = -int(unix_ts) per second to satisfy NOT NULL +
+        unique constraints without colliding with positive combo-alert IDs.
+        """
+        cfg = self.cfg
+        # Cash check
+        if _cash_available(self.db_path, cfg) < cfg.position_usd:
+            return EntryDecision("skip", "insufficient_cash", alert_id=0,
+                                 combo_key="donchian_vol", pair=pair)
+        # Capacity check
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            n_open = conn.execute(
+                "SELECT COUNT(*) FROM scanner_bot_positions"
+            ).fetchone()[0]
+        if n_open >= cfg.max_concurrent:
+            return EntryDecision("skip", f"at_capacity ({n_open}/{cfg.max_concurrent})",
+                                 alert_id=0, combo_key="donchian_vol", pair=pair)
+        # Same-pair cooldown
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(hours=cfg.same_pair_cooldown_hours)).isoformat()
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            recent = conn.execute(
+                "SELECT 1 FROM scanner_bot_trades WHERE pair=? AND exit_ts > ?",
+                (pair, cutoff),
+            ).fetchone()
+        if recent:
+            return EntryDecision("skip",
+                                 f"same_pair_cooldown ({cfg.same_pair_cooldown_hours}h)",
+                                 alert_id=0, combo_key="donchian_vol", pair=pair)
+        # Open position is also a same-pair block
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
+            already = conn.execute(
+                "SELECT 1 FROM scanner_bot_positions WHERE pair=?", (pair,)
+            ).fetchone()
+        if already:
+            return EntryDecision("skip", "already_open",
+                                 alert_id=0, combo_key="donchian_vol", pair=pair)
+
+        # All checks passed — compute ATR stop using the candles we already have
+        shares = cfg.position_usd / current_price
+        atr_stop = compute_atr_stop_price(
+            current_price, candles,
+            multiplier=cfg.atr_multiplier,
+            min_pct=cfg.min_stop_pct, max_pct=cfg.max_stop_pct,
+        )
+        stop_price = (atr_stop if atr_stop is not None
+                      else current_price * (1 - cfg.stop_pct / 100))
+        hard_close = (datetime.now(timezone.utc)
+                      + timedelta(hours=cfg.hold_hours)).isoformat()
+        # Synthetic unique alert_id: negative unix-second timestamp
+        synthetic_id = -int(datetime.now(timezone.utc).timestamp())
+        return EntryDecision(
+            action="open", reason=None,
+            alert_id=synthetic_id, combo_key="donchian_vol", pair=pair,
+            entry_price=current_price, shares=shares,
+            stop_price=stop_price, hard_close_ts=hard_close,
+        )
+
+    def _poll_donchian_signals(self, now: datetime) -> None:
+        """Scan tracked-pair universe for Donchian+Vol breakouts and trigger entries."""
+        pairs = self._get_donchian_universe()
+        if not pairs:
+            return
+        for pair in pairs:
+            candles = self._fetch_donchian_candles_cached(pair)
+            if not candles or len(candles) < self.cfg.donchian_period + 1:
+                continue
+            latest = candles[-1]
+            # Dedup: only process each unique hourly candle once per pair
+            if self._donchian_last_candle_ts.get(pair) == latest.get("ts"):
+                continue
+            self._donchian_last_candle_ts[pair] = latest.get("ts", 0)
+            if not self._check_donchian_vol_breakout(candles):
+                continue
+            # Got a breakout — get live price
+            cp = self.price_fn(pair)
+            if cp is None:
+                continue
+            d = self._decide_entry_donchian(pair, cp, candles)
+            try:
+                record_decision(
+                    self.db_path,
+                    alert_id=d.alert_id or 0, ts=now.isoformat(),
+                    combo_key=d.combo_key, pair=d.pair,
+                    decision=d.action, reason=d.reason,
+                )
+            except Exception:
+                logger.exception("donchian decision log failed (non-fatal)")
+            if d.action == "open":
+                p = Position(
+                    alert_id=d.alert_id, combo_key=d.combo_key, pair=d.pair,
+                    entry_ts=now.isoformat(),
+                    entry_price=d.entry_price, position_usd=self.cfg.position_usd,
+                    shares=d.shares, stop_price=d.stop_price,
+                    hard_close_ts=d.hard_close_ts,
+                )
+                save_position(self.db_path, p)
+                logger.info("scanner_bot opened %s @ %.6f (DONCHIAN_VOL synthetic_id=%d)",
+                            d.pair, d.entry_price, d.alert_id)
 
     def _manage_positions(self, now: datetime) -> None:
         for p in load_open_positions(self.db_path):

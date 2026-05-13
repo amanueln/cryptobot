@@ -15,6 +15,9 @@ def _cfg():
         eligible_combos=("mom_reversal+strong_move",),
         position_usd=1000.0, max_concurrent=3, starting_cash_usd=3000.0,
         same_pair_cooldown_hours=4, stop_pct=15.0, hold_hours=24,
+        # These tests exercise the legacy +1 combo path. The Donchian path
+        # has its own (forthcoming) tests; force the legacy entry source here.
+        entry_source="combo_alerts",
     )
 
 

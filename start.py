@@ -152,6 +152,9 @@ def run_scanner_bot():
             atr_multiplier=float(sb.get("atr_multiplier", 2.0)),
             min_stop_pct=float(sb.get("min_stop_pct", 3.0)),
             max_stop_pct=float(sb.get("max_stop_pct", 8.0)),
+            entry_source=str(sb.get("entry_source", "donchian_vol")),
+            donchian_period=int(sb.get("donchian_period", 20)),
+            donchian_vol_mult=float(sb.get("donchian_vol_mult", 3.0)),
         )
         bot = ScannerBot(
             db_path=db_path,
