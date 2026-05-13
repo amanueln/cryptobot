@@ -78,6 +78,19 @@ CREATE TABLE IF NOT EXISTS scanner_bot_alert_decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sbad_ts ON scanner_bot_alert_decisions (ts);
+
+-- Ticker log: every 30s ticker poll while a position is open.
+-- Gives perfect reconciliation data for backtesting alternative exit logic.
+-- Pure observation, no trading impact.
+CREATE TABLE IF NOT EXISTS scanner_bot_ticker_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  pair TEXT NOT NULL,
+  price REAL NOT NULL,
+  position_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sbtl_position ON scanner_bot_ticker_log (position_id);
+CREATE INDEX IF NOT EXISTS idx_sbtl_ts ON scanner_bot_ticker_log (ts);
 """
 
 

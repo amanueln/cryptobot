@@ -580,6 +580,17 @@ class ScannerBot:
             cp = self.price_fn(p.pair)
             if cp is None:
                 continue
+            # Ticker log: append every successful price poll while position is open.
+            # Pure observation — gives perfect reconciliation data for exit-logic backtests.
+            try:
+                with sqlite3.connect(self.db_path, timeout=10) as _conn:
+                    _conn.execute(
+                        "INSERT INTO scanner_bot_ticker_log (ts, pair, price, position_id) "
+                        "VALUES (?, ?, ?, ?)",
+                        (now.isoformat(), p.pair, cp, p.id),
+                    )
+            except Exception:
+                logger.exception("ticker_log write failed (non-fatal)")
             decision = tick_position(p, current_price=cp, now=now)
             check_milestones(p, webhook=self.discord_webhook)
             update_position(self.db_path, p)
