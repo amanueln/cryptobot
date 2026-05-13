@@ -756,63 +756,18 @@ def api_status():
 
     starting_balance = 3000.0
 
-    # Compute live positions value from trade history (FIFO)
-    # This is more accurate than the equity_snapshots which may be stale
-    live_positions_value = 0.0
-    trade_rows = conn.execute(
-        """SELECT pair, side, price, amount, cost_usd FROM sim_trades ORDER BY id ASC"""
-    ).fetchall()
-
-    # Build open lots per pair using FIFO
-    open_lots: dict[str, list[tuple[float, float]]] = {}  # pair -> [(price, amount)]
-    for tr in trade_rows:
-        pair_key = tr["pair"]
-        if tr["side"] == "buy":
-            open_lots.setdefault(pair_key, []).append((tr["price"], tr["amount"]))
-        elif tr["side"] == "sell":
-            remaining = tr["amount"]
-            lots = open_lots.get(pair_key, [])
-            while remaining > 0 and lots:
-                lot_price, lot_amt = lots[0]
-                if lot_amt <= remaining:
-                    remaining -= lot_amt
-                    lots.pop(0)
-                else:
-                    lots[0] = (lot_price, lot_amt - remaining)
-                    remaining = 0
-
-    # Value open lots at current market price
-    for pair_key, lots in open_lots.items():
-        if not lots:
-            continue
-        price_row = conn.execute(
-            "SELECT close FROM candles WHERE pair = ? ORDER BY timestamp DESC LIMIT 1",
-            (pair_key,),
-        ).fetchone()
-        if price_row:
-            current_price = price_row["close"]
-            for _, amt in lots:
-                live_positions_value += current_price * amt
-
-    # Use equity snapshot for total equity, but override balance/positions with live data
-    snapshot_equity = eq_row["equity"] if eq_row else starting_balance
-
-    # Live cash: use cost_usd which already includes fees
-    # For buys: cost_usd = total USD spent (fee included in deduction)
-    # For sells: cost_usd = net USD received (fee already subtracted)
-    total_spent = 0.0
-    total_received = 0.0
-    for tr in trade_rows:
-        if tr["side"] == "buy":
-            total_spent += tr["cost_usd"]
-        else:
-            total_received += tr["cost_usd"]
-
-    live_cash = starting_balance - total_spent + total_received
-    live_equity = live_cash + live_positions_value
-    pnl = live_equity - starting_balance
+    # equity_snapshots is the bot's authoritative state — it writes a row every
+    # tick with cash, positions_value, and total equity. Read it directly.
+    if eq_row:
+        equity = eq_row["equity"]
+        live_cash = eq_row["balance_usd"]
+        live_positions_value = eq_row["positions_value"]
+    else:
+        equity = starting_balance
+        live_cash = starting_balance
+        live_positions_value = 0.0
+    pnl = equity - starting_balance
     pnl_pct = (pnl / starting_balance) * 100 if starting_balance > 0 else 0.0
-    equity = live_equity
 
     # Per-pair latest prices and trade counts
     active_pairs = _get_active_pairs(conn)
