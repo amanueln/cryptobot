@@ -110,6 +110,14 @@ class PairEngine:
                         "name": self.name,
                         "trade": trade,
                     })
+                    # Persist grid state after every position-changing trade so
+                    # a restart doesn't silently abandon held positions.
+                    if hasattr(self.strategy, "grid_levels"):
+                        try:
+                            from engine.grid_persistence import save_state
+                            save_state(self.pair, self.strategy, self.simulator)
+                        except Exception:
+                            pass  # never crash the trading loop on a persistence error
 
         return events
 
@@ -2112,6 +2120,18 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
 
         name = f"{pair.split('-')[0]}-grid"
         runner.add_pair(name, strategy, pair, "ONE_HOUR", alloc_per_pair, maker_fee, taker_fee, slippage)
+
+        # Restore persisted state if we have it (open positions, learned spacing,
+        # trailing-adjusted bounds, cash balance). A clean process restart will
+        # now continue where the bot left off instead of starting from scratch.
+        try:
+            from engine.grid_persistence import load_state, restore_into
+            engine = runner.engines[-1]
+            saved = load_state(pair)
+            if saved:
+                restore_into(saved, engine.strategy, engine.simulator)
+        except Exception:
+            logger.exception("grid_persistence restore failed for %s — starting fresh", pair)
 
     # --- ML Predictor ---
     if use_ml:

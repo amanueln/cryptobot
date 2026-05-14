@@ -120,12 +120,20 @@ def _score_pair_worker(args: tuple) -> "PairScore | None":
     }
     regime_bonus = bonus_map.get(regime, 0.1)
 
-    # 6. Quick grid backtest
+    # 6. Quick grid backtest — walk-forward to avoid lookahead bias.
+    # Previously this set grid bounds from min/max of the SAME candle window
+    # it then traded through, giving the grid perfect knowledge of the future
+    # price range. Live trading can't see future range, so the score systematically
+    # overpredicted. Fix: use the first half of candles to set bounds (training)
+    # and run the simulated trades on the second half (test).
     alloc = starting_balance / max_active
     backtest_pnl = 0.0
-    if len(candles) >= 50:
-        low = min(c.low for c in candles) * 0.98
-        high = max(c.high for c in candles) * 1.02
+    if len(candles) >= 100:
+        mid = len(candles) // 2
+        train_candles = candles[:mid]
+        test_candles = candles[mid:]
+        low = min(c.low for c in train_candles) * 0.98
+        high = max(c.high for c in train_candles) * 1.02
         bt_config = {
             "pair": pair, "granularity": "ONE_HOUR",
             "upper_price": high, "lower_price": low, "num_grids": 20,
@@ -137,7 +145,7 @@ def _score_pair_worker(args: tuple) -> "PairScore | None":
         strategy.configure(bt_config)
         backtester = Backtester()
         try:
-            result = backtester.run(strategy, candles, alloc)
+            result = backtester.run(strategy, test_candles, alloc)
             backtest_pnl = result.total_pnl
         except Exception:
             pass
