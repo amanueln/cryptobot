@@ -20,4 +20,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Run at 08:00 UTC daily — yesterday's data is finalized by then.
 # Discord summaries disabled — dashboard tile is the source of truth.
-0 8 * * * root /usr/bin/docker exec cryptobot python3 /app/src/research/scripts/donchian_daily_compare.py >> /var/log/cryptobot-donchian-daily.log 2>&1
+#
+# NOTE: Zima's busybox crond does NOT support the per-line user field that
+# vixie cron uses in /etc/cron.d/. Including `root` after the schedule made
+# busybox interpret "root" as the command, producing "root: command not
+# found" silent failures every day. Schedule line below omits the user field.
+0 8 * * * /usr/bin/docker exec cryptobot python3 /app/src/research/scripts/donchian_daily_compare.py >> /var/log/cryptobot-donchian-daily.log 2>&1
