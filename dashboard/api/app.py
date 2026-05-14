@@ -1061,78 +1061,52 @@ def api_grid_levels():
 
 @app.route("/api/positions")
 def api_positions():
-    """Reconstruct current open positions from trade history.
+    """Return open positions from the grid bot's persisted state.
 
-    For each pair, walk all trades chronologically using FIFO lots.
-    BUYs add lots; SELLs consume them. Remaining lots form open positions.
+    Reads /app/persistent/grid_state/{pair}.json — the authoritative live
+    state, written by the bot on every trade. The old approach walked
+    sim_trades FIFO and treated every unmatched buy as an open lot, which
+    surfaced "phantom" positions from before persistence shipped (positions
+    the bot had abandoned on restart but whose buy receipts remained in
+    sim_trades).
     """
+    import json
+
     conn = get_db()
     active_pairs = _get_active_pairs(conn)
-
     positions = []
+    state_dir = "/app/persistent/grid_state"
+
     for pair in active_pairs:
-        trades = conn.execute(
-            """SELECT side, price, amount, fee, timestamp
-               FROM sim_trades
-               WHERE pair = ?
-               ORDER BY id ASC""",
-            (pair,),
-        ).fetchall()
-
-        # FIFO lots: (qty, price_per_unit, fee_per_unit, timestamp)
-        lots: list[tuple] = []
-
-        for t in trades:
-            if t["side"] == "buy":
-                buy_qty = t["amount"]
-                buy_fee = t["fee"] or 0
-                if buy_qty > 0:
-                    lots.append((buy_qty, t["price"], buy_fee / buy_qty, t["timestamp"]))
-            elif t["side"] == "sell":
-                remaining = t["amount"]
-                while remaining > 1e-12 and lots:
-                    lot_qty, lot_price, lot_fpu, lot_ts = lots[0]
-                    take = min(remaining, lot_qty)
-                    remaining -= take
-                    if take >= lot_qty - 1e-12:
-                        lots.pop(0)
-                    else:
-                        lots[0] = (lot_qty - take, lot_price, lot_fpu, lot_ts)
-
-        if not lots:
+        state_path = os.path.join(state_dir, pair.replace("/", "_") + ".json")
+        if not os.path.exists(state_path):
+            continue
+        try:
+            with open(state_path) as f:
+                state = json.load(f)
+        except Exception:
             continue
 
-        # Compute position from remaining lots
-        qty = sum(l[0] for l in lots)
-        if qty < 1e-12:
+        pos = state.get("position")
+        if not pos or pos.get("amount", 0) <= 1e-12:
             continue
 
-        cost_basis = sum(l[0] * (l[1] + l[2]) for l in lots)  # price + fee_per_unit
-        avg_entry = cost_basis / qty if qty > 0 else 0
+        qty = float(pos["amount"])
+        avg_entry = float(pos["avg_entry_price"])
+        cost_basis = float(pos["cost_basis"])
 
-        # hold_since = timestamp of earliest remaining lot
-        hold_since = lots[0][3]
-
-        # Estimate sell fee rate from recent sells, or use 0.6% as default
-        avg_sell_fee_rate = 0.006
-        recent_sells = conn.execute(
-            """SELECT fee, amount, price FROM sim_trades
-               WHERE pair = ? AND side = 'sell'
-               ORDER BY id DESC LIMIT 5""",
-            (pair,),
-        ).fetchall()
-        if recent_sells:
-            rates = []
-            for s in recent_sells:
-                gross = s["amount"] * s["price"]
-                if gross > 0:
-                    rates.append(s["fee"] / gross)
-            if rates:
-                avg_sell_fee_rate = sum(rates) / len(rates)
-
-        # breakeven_price = avg_entry_with_fees / (1 - sell_fee_rate)
-        # So that selling at breakeven_price covers entry cost + estimated sell fee
-        breakeven_price = avg_entry / (1 - avg_sell_fee_rate) if avg_sell_fee_rate < 1 else avg_entry
+        # Target sell: for each held grid level, the next active level above is
+        # the sell target. Average those for the aggregated position card.
+        grid_levels = state.get("grid_levels", [])
+        targets: list[float] = []
+        for i, gl in enumerate(grid_levels):
+            if not gl.get("holding"):
+                continue
+            for next_gl in grid_levels[i + 1:]:
+                if next_gl.get("active", True):
+                    targets.append(float(next_gl["price"]))
+                    break
+        target_price = sum(targets) / len(targets) if targets else 0.0
 
         # Current price from latest candle
         price_row = conn.execute(
@@ -1140,6 +1114,10 @@ def api_positions():
             (pair,),
         ).fetchone()
         current_price = price_row["close"] if price_row else 0
+
+        # Breakeven: include estimated sell-side fee
+        SELL_FEE_RATE = 0.006
+        breakeven_price = avg_entry / (1 - SELL_FEE_RATE) if avg_entry > 0 else 0
 
         unrealized_pnl = (current_price - avg_entry) * qty
         unrealized_pnl_pct = ((current_price / avg_entry) - 1) * 100 if avg_entry > 0 else 0
@@ -1153,8 +1131,9 @@ def api_positions():
             "market_value": round(current_price * qty, 2),
             "unrealized_pnl": round(unrealized_pnl, 2),
             "unrealized_pnl_pct": round(unrealized_pnl_pct, 2),
-            "hold_since": hold_since,
+            "hold_since": state.get("saved_at"),
             "breakeven_price": round(breakeven_price, 8),
+            "target_price": round(target_price, 8),
         })
 
     conn.close()
