@@ -784,15 +784,23 @@ def api_status():
             (pair,),
         ).fetchone()["cnt"]
 
-        # Grid fill: net held levels = buys - sells
-        buys = conn.execute(
-            "SELECT COUNT(*) as c FROM sim_trades WHERE pair = ? AND side = 'buy'",
-            (pair,),
-        ).fetchone()["c"]
-        sells = conn.execute(
-            "SELECT COUNT(*) as c FROM sim_trades WHERE pair = ? AND side = 'sell'",
-            (pair,),
-        ).fetchone()["c"]
+        # Grid fill: count levels actually held right now (from persisted state).
+        # The old approach (sim_trades buys - sells) accumulated orphan buys from
+        # before persistence shipped — restart-wiped positions whose sells never
+        # fired left a permanent +N "filled" indicator for every dead position.
+        grid_held = 0
+        grid_total = DEFAULT_NUM_GRIDS
+        try:
+            import json
+            state_path = f"/app/persistent/grid_state/{pair.replace('/', '_')}.json"
+            if os.path.exists(state_path):
+                with open(state_path) as gf:
+                    gstate = json.load(gf)
+                grid_held = sum(1 for gl in gstate.get("grid_levels", []) if gl.get("holding"))
+                if gstate.get("num_grids"):
+                    grid_total = int(gstate["num_grids"])
+        except Exception:
+            pass  # fall through to grid_held=0; never break the dashboard
 
         pairs_info.append({
             "pair": pair,
@@ -800,8 +808,8 @@ def api_status():
             "last_candle": price_row["timestamp"] if price_row else None,
             "trade_count": trade_count,
             "regime": _detect_regime_for_pair(conn, pair),
-            "grid_held": max(0, buys - sells),
-            "grid_total": DEFAULT_NUM_GRIDS,
+            "grid_held": grid_held,
+            "grid_total": grid_total,
         })
 
     # Last trade
