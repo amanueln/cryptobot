@@ -117,7 +117,9 @@ def maybe_log_signals(engine, db_path: str) -> int:
             int(in_position), active_pair, active_pnl,
             rsi_val, adx_val, accel_val,
             0,           # replayed
-            None, None, None, None, None, None, None, None, None,
+            # 8 unfilled exit-outcome columns: exit_ts, exit_price, exit_reason,
+            # pnl_pct, peak_pct, mae_pct, hours_held, net_usd
+            None, None, None, None, None, None, None, None,
             0,           # kept_in_queue (filled by daily script)
             now_iso,
         ))
