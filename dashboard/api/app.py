@@ -3055,9 +3055,12 @@ _SCANNER_BOT_TABLES = (
 def donchian_daily_compare():
     """Return all daily-compare rows in chronological order.
 
-    Each row has Donch totals, Real totals, delta, in_cash_flag.
-    UI plots cumulative + day-by-day table.
+    Each row has Donch totals, Real totals, delta, in_cash_flag, plus
+    per-day pair breakdown (donch_pairs, real_pairs) so the UI can
+    surface "what was actually traded each day".
     """
+    POSITION_USD = 3000.0
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         try:
@@ -3065,8 +3068,55 @@ def donchian_daily_compare():
                 "SELECT * FROM donchian_daily_compare ORDER BY date"
             )]
         except sqlite3.OperationalError:
-            rows = []
-    # Compute running cumulative for the UI
+            return jsonify([])
+
+        # Per-day pair breakdowns
+        for r in rows:
+            date_str = r["date"]
+            start_iso = f"{date_str}T00:00:00+00:00"
+            end_iso = f"{date_str}T23:59:59.999999+00:00"
+
+            # Donchian: pairs that "counted" (kept_in_queue=1, replayed)
+            donch_pairs = [
+                {"pair": pr, "net_usd": round(nu or 0, 2),
+                 "pnl_pct": round(pp or 0, 2)}
+                for pr, nu, pp in conn.execute(
+                    "SELECT pair, net_usd, pnl_pct FROM donchian_shadow "
+                    "WHERE ts BETWEEN ? AND ? AND kept_in_queue = 1 "
+                    "AND replayed = 1 ORDER BY ts",
+                    (start_iso, end_iso),
+                )
+            ]
+            r["donch_pairs"] = donch_pairs
+
+            # Real: round-trip pairs where the SELL happened on this date.
+            # Same FIFO-ish matching as donchian_daily_compare.real_trades_for_date.
+            win_start = (datetime.fromisoformat(start_iso)
+                         - timedelta(hours=72)).isoformat()
+            trade_rows = list(conn.execute(
+                "SELECT timestamp, pair, side, pnl_pct, fee, cost_usd "
+                "FROM momentum_trades "
+                "WHERE timestamp >= ? AND timestamp <= ? ORDER BY timestamp",
+                (win_start, end_iso),
+            ))
+            open_buys = {}
+            real_pairs = []
+            for ts, pair, side, pnl_pct, fee, cost_usd in trade_rows:
+                if side == "buy":
+                    open_buys[pair] = (cost_usd or POSITION_USD, fee or 0)
+                else:
+                    bp = open_buys.pop(pair, None)
+                    if bp is None or pnl_pct is None or ts < start_iso:
+                        continue
+                    net = bp[0] * (pnl_pct / 100) - (bp[1] + (fee or 0))
+                    real_pairs.append({
+                        "pair": pair,
+                        "net_usd": round(net, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                    })
+            r["real_pairs"] = real_pairs
+
+    # Cumulative for the chart
     cum_donch = 0.0
     cum_real = 0.0
     for r in rows:

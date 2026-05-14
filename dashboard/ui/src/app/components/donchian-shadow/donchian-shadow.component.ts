@@ -2,6 +2,12 @@ import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal, computed } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 
+interface PairEntry {
+  pair: string;
+  net_usd: number;
+  pnl_pct: number;
+}
+
 interface DailyRow {
   date: string;
   donch_n_kept: number;
@@ -13,6 +19,8 @@ interface DailyRow {
   cum_donch_usd: number;
   cum_real_usd: number;
   cum_delta_usd: number;
+  donch_pairs?: PairEntry[];
+  real_pairs?: PairEntry[];
 }
 
 @Component({
@@ -89,10 +97,10 @@ interface DailyRow {
           <thead>
             <tr>
               <th>Date</th>
-              <th class="num">Donch n</th>
               <th class="num">Donch $</th>
-              <th class="num">Real n</th>
+              <th>Donch pairs</th>
               <th class="num">Real $</th>
+              <th>Real pairs</th>
               <th class="num">Δ</th>
               <th>Flag</th>
             </tr>
@@ -100,13 +108,33 @@ interface DailyRow {
           <tbody>
             <tr *ngFor="let r of daily()">
               <td>{{ r.date }}</td>
-              <td class="num">{{ r.donch_n_kept }}</td>
               <td class="num" [class.pos]="r.donch_pnl_usd > 0" [class.neg]="r.donch_pnl_usd < 0">
                 {{ r.donch_pnl_usd | currency:'USD':'symbol':'1.2-2' }}
+                <span class="trade-count">({{ r.donch_n_kept }})</span>
               </td>
-              <td class="num">{{ r.real_n }}</td>
+              <td class="pairs">
+                <span *ngIf="r.donch_pairs && r.donch_pairs.length > 0; else dashD">
+                  <span *ngFor="let p of r.donch_pairs; let isLast = last" class="pair-chip"
+                        [class.pos]="p.net_usd > 0" [class.neg]="p.net_usd < 0">
+                    {{ shortPair(p.pair) }}
+                    <span class="chip-pnl">{{ p.net_usd >= 0 ? '+' : '' }}{{ p.net_usd | number:'1.0-0' }}</span>
+                  </span>
+                </span>
+                <ng-template #dashD><span class="dash">—</span></ng-template>
+              </td>
               <td class="num" [class.pos]="r.real_pnl_usd > 0" [class.neg]="r.real_pnl_usd < 0">
                 {{ r.real_pnl_usd | currency:'USD':'symbol':'1.2-2' }}
+                <span class="trade-count">({{ r.real_n }})</span>
+              </td>
+              <td class="pairs">
+                <span *ngIf="r.real_pairs && r.real_pairs.length > 0; else dashR">
+                  <span *ngFor="let p of r.real_pairs; let isLast = last" class="pair-chip"
+                        [class.pos]="p.net_usd > 0" [class.neg]="p.net_usd < 0">
+                    {{ shortPair(p.pair) }}
+                    <span class="chip-pnl">{{ p.net_usd >= 0 ? '+' : '' }}{{ p.net_usd | number:'1.0-0' }}</span>
+                  </span>
+                </span>
+                <ng-template #dashR><span class="dash">—</span></ng-template>
               </td>
               <td class="num" [class.pos]="r.delta_usd > 0" [class.neg]="r.delta_usd < 0">
                 {{ r.delta_usd | currency:'USD':'symbol':'1.2-2' }}
@@ -169,6 +197,19 @@ interface DailyRow {
     }
     .daily-table th { color: #888; font-weight: 600; }
     .daily-table td.num, .daily-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .daily-table td.pairs { font-size: 11px; line-height: 1.6; }
+    .trade-count { color: #666; font-size: 10px; margin-left: 4px; }
+    .pair-chip {
+      display: inline-flex; gap: 3px; align-items: center;
+      padding: 1px 6px; margin: 0 3px 2px 0; border-radius: 8px;
+      background: #242424; border: 1px solid #2f2f2f;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      white-space: nowrap;
+    }
+    .pair-chip.pos { background: rgba(74,222,128,0.10); border-color: rgba(74,222,128,0.30); color: #bbf7d0; }
+    .pair-chip.neg { background: rgba(248,113,113,0.10); border-color: rgba(248,113,113,0.30); color: #fecaca; }
+    .pair-chip .chip-pnl { color: inherit; opacity: 0.85; font-size: 10px; }
+    .dash { color: #555; }
     .loading { color: #666; font-size: 13px; padding: 12px; }
   `]
 })
@@ -176,6 +217,11 @@ export class DonchianShadowComponent implements OnInit, OnDestroy {
   strip = signal<any | null>(null);
   daily = signal<DailyRow[]>([]);
   private pollId: any = null;
+
+  /** Strip the -USD suffix so chips stay compact (BTRST instead of BTRST-USD). */
+  shortPair(pair: string): string {
+    return (pair || '').replace(/-USD$/, '');
+  }
 
   statusLabel = computed(() => {
     const s = this.strip();
