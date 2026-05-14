@@ -42,20 +42,15 @@ DB_PATH = os.environ.get(
 
 
 def get_pair_universe(conn: sqlite3.Connection, since_iso: str) -> list[str]:
-    """Pairs the bot was plausibly watching during the window."""
+    """Pairs the MOMENTUM bot was plausibly watching during the window.
+
+    Shadow mode compares Donchian vs the momentum bot specifically, so the
+    universe must mirror what the momentum bot was tracking. We exclude
+    grid bot pairs (sim_trades) — those are a separate strategy.
+    """
     pairs: set[str] = set()
 
-    # From scanner selections
-    for r in conn.execute(
-        "SELECT DISTINCT json_extract(value, '$.pair') as pair "
-        "FROM pair_scans, json_each(pair_scans.selected_pairs) "
-        "WHERE pair_scans.timestamp >= ?",
-        (since_iso,),
-    ):
-        if r[0]:
-            pairs.add(r[0])
-
-    # From momentum trades
+    # Pairs the momentum bot actually traded
     for r in conn.execute(
         "SELECT DISTINCT pair FROM momentum_trades WHERE timestamp >= ?",
         (since_iso,),
@@ -63,13 +58,17 @@ def get_pair_universe(conn: sqlite3.Connection, since_iso: str) -> list[str]:
         if r[0]:
             pairs.add(r[0])
 
-    # From sim_trades (grid bot)
-    for r in conn.execute(
-        "SELECT DISTINCT pair FROM sim_trades WHERE timestamp >= ?",
-        (since_iso,),
-    ):
-        if r[0]:
-            pairs.add(r[0])
+    # Pairs the momentum scanner discovered as candidates
+    # (early_scanner_alerts is the momentum bot's signal source)
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT pair FROM early_scanner_alerts WHERE created_at >= ?",
+            (since_iso,),
+        ):
+            if r[0]:
+                pairs.add(r[0])
+    except sqlite3.OperationalError:
+        pass  # table may not exist on older deploys
 
     return sorted(pairs)
 
