@@ -42,34 +42,21 @@ DB_PATH = os.environ.get(
 
 
 def get_pair_universe(conn: sqlite3.Connection, since_iso: str) -> list[str]:
-    """Pairs the MOMENTUM bot was plausibly watching during the window.
+    """Pairs the momentum bot actually traded during the window.
 
-    Shadow mode compares Donchian vs the momentum bot specifically, so the
-    universe must mirror what the momentum bot was tracking. We exclude
-    grid bot pairs (sim_trades) — those are a separate strategy.
+    Donchian shadow is comparing Donchian-vs-momentum-bot performance. The
+    fair universe is pairs the momentum bot itself acted on. early_scanner
+    alerts on the full Coinbase universe (~250 pairs) — way too broad; we'd
+    be giving Donchian a much wider watchlist than the bot had. Limiting
+    to momentum_trades.pair keeps the comparison apples-to-apples.
     """
     pairs: set[str] = set()
-
-    # Pairs the momentum bot actually traded
     for r in conn.execute(
         "SELECT DISTINCT pair FROM momentum_trades WHERE timestamp >= ?",
         (since_iso,),
     ):
         if r[0]:
             pairs.add(r[0])
-
-    # Pairs the momentum scanner discovered as candidates
-    # (early_scanner_alerts is the momentum bot's signal source)
-    try:
-        for r in conn.execute(
-            "SELECT DISTINCT pair FROM early_scanner_alerts WHERE created_at >= ?",
-            (since_iso,),
-        ):
-            if r[0]:
-                pairs.add(r[0])
-    except sqlite3.OperationalError:
-        pass  # table may not exist on older deploys
-
     return sorted(pairs)
 
 
