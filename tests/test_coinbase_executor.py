@@ -24,7 +24,12 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def fake_client():
-    """A MagicMock RESTClient that returns a 'success' shape on every call."""
+    """A MagicMock RESTClient that returns a 'success' shape on every call.
+
+    Includes stub responses for the live API calls the executor makes during
+    pre-flight (get_accounts, get_product). Without these, attribute access
+    on a bare MagicMock returns truthy values (e.g. bool(MagicMock()) == True),
+    which would falsely block every order in tests."""
     client = MagicMock()
     client.market_order_buy.return_value = {
         "success": True,
@@ -41,6 +46,21 @@ def fake_client():
             {"currency": "USD", "available_balance": {"value": "293.73"}},
             {"currency": "BTC", "available_balance": {"value": "0.001"}},
         ]
+    }
+    # Pre-flight 2 (product validation) calls get_product. Return a tradable
+    # default; individual tests can override on the fake_client to simulate
+    # halted/disabled/min-size-blocked products.
+    client.get_product.return_value = {
+        "status": "online",
+        "trading_disabled": False,
+        "is_disabled": False,
+        "cancel_only": False,
+        "view_only": False,
+        "base_min_size": "0.0001",
+        "quote_min_size": "1.00",
+        "base_increment": "0.00000001",
+        "quote_increment": "0.01",
+        "price": "78000.00",
     }
     return client
 
