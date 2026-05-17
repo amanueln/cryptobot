@@ -1891,12 +1891,45 @@ class SimRunner:
                 new_engines.append(engine)
                 print(f"  [SCAN] Added engine for {pair}")
 
-        # Keep engines with open positions even if deselected by scanner
+        # Retire engines for pairs the selector dropped. Previously we kept
+        # any engine with open positions to avoid abandoning trades, but
+        # without an exit condition this leaked engines on every swap — each
+        # one still contributing its own $allocation to total equity, so the
+        # bot's tracked balance ballooned past total_allocation. (8 engines
+        # × $1000 = $8000 instead of 3 × $1000 = $3000.)
+        #
+        # Correct behavior: liquidate any held positions at current market,
+        # remove the engine, and delete its persisted state file so it
+        # doesn't resurrect on next restart.
+        from exchange.models import Candle as _Candle
+        from engine.grid_persistence import _state_path as _gp_path
         kept_pairs = {e.pair for e in new_engines}
         for pair, engine in existing.items():
-            if pair not in kept_pairs and engine.has_open_positions():
-                new_engines.append(engine)
-                print(f"  [SCAN] Keeping {pair} — has open positions")
+            if pair in kept_pairs:
+                continue
+            if engine.has_open_positions():
+                last_price = engine.last_price or 0.0
+                if last_price > 0:
+                    synthetic = _Candle(
+                        pair=pair, granularity="ONE_HOUR",
+                        timestamp=datetime.utcnow(),
+                        open=last_price, high=last_price, low=last_price,
+                        close=last_price, volume=0.0,
+                    )
+                    signals = engine.strategy._liquidate_all(synthetic, "pair_retired")
+                    for sig in signals:
+                        engine.simulator.execute(sig, last_price, synthetic.timestamp)
+                    print(f"  [SCAN] Retired {pair} — liquidated {len(signals)} "
+                          f"position(s) at ${last_price:.6g}")
+                else:
+                    print(f"  [SCAN] Retired {pair} — no last_price; positions abandoned")
+            # Drop the persisted state file so it doesn't get restored next boot
+            try:
+                p = _gp_path(pair)
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                logger.exception("failed to remove grid_state for %s (non-fatal)", pair)
 
         self.engines = new_engines
 
