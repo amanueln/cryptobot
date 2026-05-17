@@ -2599,16 +2599,35 @@ def api_momentum_trades():
 
 @app.route("/api/momentum/events")
 def api_momentum_events():
-    """Activity log for momentum engine."""
+    """Activity log for momentum engine.
+
+    When LIVE_TRADING_ENABLED, hides paper-trade event types
+    (momentum_buy/sell) because those entries refer to fake-money trades
+    from before live mode was enabled — confusing for the operator who
+    is now watching real money. Scanner activity, config reloads, and
+    recommended-version events still show (mode-neutral).
+
+    Live trades themselves surface via /api/momentum/trades, which
+    reads live_trades when live mode is on."""
+    live_mode = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("true", "1", "yes")
     limit = int(request.args.get("limit", 50))
 
     conn = get_db()
     try:
-        rows = conn.execute(
-            """SELECT timestamp, event_type, title, detail
-               FROM momentum_events ORDER BY id DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
+        if live_mode:
+            rows = conn.execute(
+                "SELECT timestamp, event_type, title, detail "
+                "FROM momentum_events "
+                "WHERE event_type NOT IN ('momentum_buy', 'momentum_sell') "
+                "ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT timestamp, event_type, title, detail "
+                "FROM momentum_events ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     except Exception:
         conn.close()
         return jsonify([])
@@ -3416,9 +3435,19 @@ def scanner_bot_alert_decisions():
 # ---------- /api/momentum/strategy/* ----------
 
 def _strategy_profiles_path() -> str:
-    """Absolute path to data/strategy_profiles.json."""
+    """Absolute path to the strategy profile state file.
+
+    Defers to engine.strategy_profiles.DEFAULT_FILE_PATH so the API + engine
+    always agree on where to read/write. In production this resolves to
+    /app/persistent/strategy_profiles.json (mounted volume — survives
+    container recreation). In local dev it falls back to repo-relative
+    data/strategy_profiles.json."""
+    from engine.strategy_profiles import DEFAULT_FILE_PATH
+    if os.path.isabs(DEFAULT_FILE_PATH):
+        return DEFAULT_FILE_PATH
+    # Relative dev path: anchor to repo root (two levels up from this file)
     return os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "data", "strategy_profiles.json")
+        os.path.join(os.path.dirname(__file__), "..", "..", DEFAULT_FILE_PATH)
     )
 
 

@@ -25,7 +25,26 @@ from engine.recommended_config import BUILTIN_PROFILES
 from engine.strategy_schema import validate_profile
 
 
-DEFAULT_FILE_PATH = "data/strategy_profiles.json"
+def _resolve_default_path() -> str:
+    """Pick a persistent path for the profile state file.
+
+    In production the container has /app/persistent mounted from the host;
+    state written there survives container recreation (including CasaOS
+    Save+restart, which RECREATES the container and wipes anything inside
+    /app/src that isn't symlinked). For local dev (no /app/persistent),
+    fall back to the repo-relative path.
+
+    History: 2026-05-17 a CasaOS env-var change recreated the container and
+    silently wiped 8.9KB of user profile state because this file was at
+    /app/src/data/strategy_profiles.json — inside the image, not on a
+    mount. Don't let that happen again.
+    """
+    if os.path.isdir("/app/persistent"):
+        return "/app/persistent/strategy_profiles.json"
+    return "data/strategy_profiles.json"
+
+
+DEFAULT_FILE_PATH = _resolve_default_path()
 
 
 def _default_state() -> dict:
