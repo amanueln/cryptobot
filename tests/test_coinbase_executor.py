@@ -350,3 +350,64 @@ def test_wait_for_fill_returns_error_when_no_order_id(db_path, fake_client):
     out = ex.wait_for_fill("", timeout_sec=1)
     assert out["filled"] is False
     assert "no_coinbase_order_id" in (out["error"] or "")
+
+
+# --- Pair allowlist wildcard ---
+
+def test_pair_allow_all_via_wildcard_kwarg(db_path, fake_client, monkeypatch):
+    """pair_allowlist=['*'] means trust whatever the strategy picks."""
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client, pair_allowlist=["*"])
+    # Any pair, even one we've never heard of
+    r = ex.submit_market_buy("RANDOMCOIN-USD", quote_size_usd=2.0)
+    assert r.ok is True
+    assert ex.pair_allow_all is True
+    assert ex.pair_allowlist == set()  # the '*' is consumed, no concrete pairs
+
+
+def test_pair_allow_all_via_env_var(db_path, fake_client, monkeypatch):
+    """LIVE_PAIR_ALLOWLIST=* env var sets wildcard mode."""
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    monkeypatch.setenv("LIVE_PAIR_ALLOWLIST", "*")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client)
+    assert ex.pair_allow_all is True
+    r = ex.submit_market_buy("OBSCURECOIN-USD", quote_size_usd=2.0)
+    assert r.ok is True
+
+
+def test_pair_allowlist_with_wildcard_plus_extras_still_allows_all(db_path, fake_client, monkeypatch):
+    """If '*' is mixed with concrete pairs, wildcard wins (allow_all=True)."""
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client,
+                          pair_allowlist=["BTC-USD", "*", "ETH-USD"])
+    assert ex.pair_allow_all is True
+    r = ex.submit_market_buy("DOGE-USD", quote_size_usd=2.0)
+    assert r.ok is True
+
+
+def test_pair_allow_all_still_honors_other_gates(db_path, fake_client, monkeypatch):
+    """Wildcard only bypasses the pair check — not size/exposure/kill switch."""
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client, pair_allowlist=["*"],
+                          max_order_usd=10.0)
+    r = ex.submit_market_buy("DOGE-USD", quote_size_usd=999.0)
+    assert r.ok is False
+    assert "blocked_order_too_large" in r.reason
+
+
+def test_sell_allows_all_pairs_in_wildcard_mode(db_path, fake_client, monkeypatch):
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client, pair_allowlist=["*"])
+    r = ex.submit_market_sell("UNKNOWN-USD", base_size=0.001)
+    assert r.ok is True
+
+
+def test_no_wildcard_still_blocks_unlisted(db_path, fake_client, monkeypatch):
+    """Sanity: when no wildcard is set, an unlisted pair is still blocked."""
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+    ex = CoinbaseExecutor(db_path=db_path, client=fake_client,
+                          pair_allowlist=["BTC-USD"])
+    assert ex.pair_allow_all is False
+    r = ex.submit_market_buy("DOGE-USD", quote_size_usd=2.0)
+    assert r.ok is False
+    assert "blocked_pair_not_allowlisted" in r.reason

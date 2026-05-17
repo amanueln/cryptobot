@@ -93,11 +93,18 @@ class CoinbaseExecutor:
                                  else float(os.environ.get("LIVE_MAX_EXPOSURE_USD", DEFAULT_MAX_EXPOSURE_USD)))
         self.daily_loss_cap_usd = (daily_loss_cap_usd if daily_loss_cap_usd is not None
                                    else float(os.environ.get("LIVE_DAILY_LOSS_CAP_USD", DEFAULT_DAILY_LOSS_CAP_USD)))
+        # Pair allowlist + wildcard support. `LIVE_PAIR_ALLOWLIST=*` means
+        # "trust whatever the strategy picks" — useful when the strategy has
+        # its own pair filter (e.g., the momentum scanner's top-30-by-volume)
+        # and we don't want this guard to silently veto its choices.
         if pair_allowlist is None:
             raw = os.environ.get("LIVE_PAIR_ALLOWLIST", "")
-            self.pair_allowlist = {p.strip() for p in raw.split(",") if p.strip()}
+            entries = [p.strip() for p in raw.split(",") if p.strip()]
+            self.pair_allow_all = ("*" in entries)
+            self.pair_allowlist = set(entries) - {"*"}
         else:
-            self.pair_allowlist = set(pair_allowlist)
+            self.pair_allow_all = ("*" in pair_allowlist)
+            self.pair_allowlist = set(pair_allowlist) - {"*"}
 
         # rate-limit window
         self._rl_n = rate_limit_n
@@ -155,7 +162,7 @@ class CoinbaseExecutor:
         paused, why = self.is_paused()
         if paused:
             return False, f"blocked_paused: {why}"
-        if pair not in self.pair_allowlist:
+        if not self.pair_allow_all and pair not in self.pair_allowlist:
             return False, f"blocked_pair_not_allowlisted: {pair} not in {sorted(self.pair_allowlist)[:5]}"
         if notional_usd > self.max_order_usd + 1e-6:
             return False, f"blocked_order_too_large: ${notional_usd:.2f} > ${self.max_order_usd:.2f}"
@@ -223,7 +230,7 @@ class CoinbaseExecutor:
         paused, why = self.is_paused()
         if paused:
             return OrderResult(ok=False, reason=f"blocked_paused: {why}")
-        if pair not in self.pair_allowlist:
+        if not self.pair_allow_all and pair not in self.pair_allowlist:
             return OrderResult(ok=False, reason=f"blocked_pair_not_allowlisted: {pair}")
         if not self._rate_limit_ok():
             return OrderResult(ok=False, reason="blocked_rate_limit")
