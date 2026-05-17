@@ -2256,7 +2256,23 @@ def api_momentum_status():
         # Daily loss budget — sum sells today vs cap
         daily_cap = float(os.environ.get("LIVE_DAILY_LOSS_CAP_USD", 30.0))
         conn.close()
-        return jsonify({
+
+        # Engine-state fields (wall_aware, regime, etc.) come from the same
+        # momentum_status.json the paper response reads — the engine writes
+        # this file in both modes. Without it, UI toggles (e.g. wall-aware)
+        # default to OFF because the wall_aware field is undefined on the
+        # response payload.
+        engine_state = {}
+        try:
+            state_path = os.path.join(os.path.dirname(__file__), "..", "..",
+                                      "data", "momentum_status.json")
+            if os.path.exists(state_path):
+                with open(state_path) as f:
+                    engine_state = json.load(f)
+        except Exception:
+            pass
+
+        payload = {
             "live": True,
             "enabled": True,
             "status": "paused" if row["paused"] else "active",
@@ -2272,7 +2288,16 @@ def api_momentum_status():
             "pause_reason": row["pause_reason"],
             "daily_loss_cap": daily_cap,
             "ts": row["ts"],
-        })
+        }
+        for key in ("regime_bullish", "regime_state", "regime_hysteresis",
+                    "exit_cooldown_remaining", "hours_in_position",
+                    "warmup_done", "was_cash", "next_rebal_hours",
+                    "btc_price", "btc_ma",
+                    "lockout_pair", "lockout_until", "loss_lockouts",
+                    "wall_aware"):
+            if key in engine_state:
+                payload[key] = engine_state[key]
+        return jsonify(payload)
 
     # PAPER MODE (original behaviour)
     # Latest equity snapshot
