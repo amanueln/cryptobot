@@ -72,7 +72,11 @@ const STARTING_BALANCE = 3000;
       <!-- MOMENTUM PANEL (shown when selected or no dual mode) -->
       @if (momentumEnabled() && activeEngine() === 'momentum') {
         <app-momentum-panel />
-        <app-donchian-shadow />
+        <!-- Donchian Shadow is a paper-vs-paper comparison; not useful when
+             the user is watching real money. Hide in LIVE mode. -->
+        @if (!isMomentumLive()) {
+          <app-donchian-shadow />
+        }
       }
 
       <!-- EARLY SCANNER PANEL -->
@@ -415,6 +419,9 @@ export class CommandCenterComponent implements OnInit, AfterViewInit {
 
   pairs = computed(() => this.api.status()?.pairs ?? []);
   momentumHoldings = computed(() => this.api.momentumStatus()?.holdings ?? []);
+  /** True when LIVE_TRADING_ENABLED is set on the server.
+   * Drives "hide paper-mode UI" decisions like the Donchian Shadow panel. */
+  isMomentumLive = computed(() => this.api.momentumStatus()?.live === true);
 
   // Cards render from positions(), but the momentum engine surfaces its holdings in a separate
   // shape. Synthesize PositionData from each holding so every open position has a card with the
