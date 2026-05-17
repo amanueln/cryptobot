@@ -348,8 +348,17 @@ class SimRunner:
         cash, holdings, and trade count so the engine doesn't re-buy
         positions it already sold.
 
+        Skipped in LIVE mode: in live, the engine reconciles cash from
+        Coinbase's actual USD balance during __init__, and positions
+        will be reconstructed from live_positions (separate code path).
+        Restoring paper state here would silently overwrite the live
+        reconcile with the paper bot's last equity snapshot.
+
         Returns True if state was restored, False if no prior state exists.
         """
+        if getattr(self.momentum_engine, "executor", None) is not None:
+            logger.info("LIVE mode: skipping paper-state restore (live reconcile is the source of truth)")
+            return False
         import sqlite3, json as _json
         try:
             conn = sqlite3.connect(self.trade_logger.db_path)
