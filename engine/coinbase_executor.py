@@ -194,7 +194,7 @@ class CoinbaseExecutor:
             )
             return OrderResult(ok=False, reason=why, local_order_id=local_id)
 
-        # PRE-FLIGHT: confirm Coinbase actually has the cash (drift detector).
+        # PRE-FLIGHT 1: confirm Coinbase actually has the cash (drift detector).
         # The bot's internal self.cash is reconciled at startup but isn't
         # re-queried before each trade. Manual transfers, conversions, or
         # missed-fill scenarios could leave the bot's tracking stale.
@@ -208,6 +208,21 @@ class CoinbaseExecutor:
             )
             return OrderResult(ok=False, reason=f"blocked_{cash_why.split(':')[0]}",
                                detail=cash_why, local_order_id=local_id)
+
+        # PRE-FLIGHT 2: confirm the pair is tradable + order meets minimums.
+        # Pairs go offline/halted occasionally; submitting to a halted pair
+        # wastes a round-trip and pollutes live_orders with confusing errors.
+        # Cached 1h to keep load minimal.
+        product_ok, product_why = self.verify_product_tradable(pair, notional)
+        if not product_ok:
+            local_id = self._record_order(
+                client_order_id=None, pair=pair, side="buy", order_type="market",
+                quote_size=notional, base_size=None, limit_price=None,
+                intent=intent, strategy=strategy, signal_source_id=signal_source_id,
+                result_status="rejected", result_message=product_why,
+            )
+            return OrderResult(ok=False, reason=f"blocked_{product_why.split(':')[0]}",
+                               detail=product_why, local_order_id=local_id)
 
         client_order_id = self._new_client_order_id()
         local_id = self._record_order(
@@ -329,6 +344,86 @@ class CoinbaseExecutor:
                 bal_obj = _attr(a, 'available_balance') or {}
                 return float(_attr(bal_obj, 'value') or 0)
         return 0.0
+
+    def get_product_info(self, pair: str) -> dict:
+        """Per-pair trading rules from Coinbase.
+
+        Endpoint: GET /api/v3/brokerage/products/{product_id}
+        (SDK: RESTClient.get_product).
+
+        Returns a flat dict with the fields the bot cares about:
+          - status: 'online' when tradable
+          - trading_disabled / is_disabled / cancel_only / view_only: bool gates
+          - base_min_size / quote_min_size: minimum order sizes (as strings)
+          - base_increment / quote_increment: precision steps (as strings)
+          - price: last trade price (string)
+        On failure returns {'error': str} so callers can decide whether to
+        proceed cautiously or block.
+
+        Per-pair info is cached for 1 hour — these rules don't change often
+        but we shouldn't bombard the API on every tick."""
+        # Cache: pair -> (fetched_at_unix, dict)
+        cache = getattr(self, "_product_cache", None)
+        if cache is None:
+            cache = {}
+            self._product_cache = cache
+        now = time.time()
+        cached = cache.get(pair)
+        if cached and (now - cached[0]) < 3600:
+            return cached[1]
+        try:
+            client = self._get_client()
+            resp = client.get_product(product_id=pair)
+            # Flat object — read attrs
+            info = {
+                "pair": pair,
+                "status": _attr(resp, "status"),
+                "trading_disabled": bool(_attr(resp, "trading_disabled")),
+                "is_disabled": bool(_attr(resp, "is_disabled")),
+                "cancel_only": bool(_attr(resp, "cancel_only")),
+                "view_only": bool(_attr(resp, "view_only")),
+                "base_min_size": _attr(resp, "base_min_size"),
+                "quote_min_size": _attr(resp, "quote_min_size"),
+                "base_increment": _attr(resp, "base_increment"),
+                "quote_increment": _attr(resp, "quote_increment"),
+                "price": _attr(resp, "price"),
+            }
+            cache[pair] = (now, info)
+            return info
+        except Exception as e:
+            return {"pair": pair, "error": f"{type(e).__name__}: {e}"}
+
+    def verify_product_tradable(self, pair: str, quote_usd: float) -> tuple[bool, str]:
+        """Pre-flight: confirm the pair is currently tradable AND the order
+        size meets the per-pair minimum.
+
+        Returns (ok, reason). Empty reason on success.
+
+        Per Coinbase docs, a product is tradable iff:
+            status == 'online' AND NOT trading_disabled
+                                AND NOT is_disabled
+                                AND NOT cancel_only AND NOT view_only
+        And `quote_size >= float(quote_min_size)` for the buy to clear the
+        minimum-order check."""
+        info = self.get_product_info(pair)
+        if "error" in info:
+            return False, f"product_info_unavailable: {info['error']}"
+        if info.get("status") != "online":
+            return False, f"pair_halted: status={info.get('status')!r}"
+        if info.get("trading_disabled") or info.get("is_disabled"):
+            return False, "pair_trading_disabled"
+        if info.get("cancel_only"):
+            return False, "pair_cancel_only"
+        if info.get("view_only"):
+            return False, "pair_view_only"
+        # Numeric min size check (string → float)
+        try:
+            qmin = float(info.get("quote_min_size") or 0)
+        except (TypeError, ValueError):
+            qmin = 0.0
+        if quote_usd + 1e-6 < qmin:
+            return False, f"below_quote_min: order ${quote_usd:.2f} < min ${qmin:.2f}"
+        return True, ""
 
     # ------------------------------------------------------------------
     # Kill switch / state
