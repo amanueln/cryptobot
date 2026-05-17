@@ -208,9 +208,37 @@ class MomentumEngine:
                  pairs: list[str] | None = None,
                  wall_aware_config: dict | None = None,
                  entry_pause_config: dict | None = None,
-                 config: dict | None = None):
+                 config: dict | None = None,
+                 executor=None,
+                 live_db_path: str | None = None):
         self.starting_balance = allocation_usd
-        self.cash = allocation_usd
+
+        # LIVE mode: when executor is provided, _buy/_sell route through
+        # Coinbase instead of the paper simulator. self.cash is then
+        # reconciled from real USD balance on the exchange (capped at
+        # allocation_usd so a too-rich account can't accidentally over-trade).
+        self.executor = executor
+        self.live_db_path = live_db_path
+        if executor is not None:
+            try:
+                real_cash = executor.get_usd_cash()
+                # Cap at allocation so the bot can't ever spend more than what
+                # we said the live experiment is sized at, even if there's more
+                # actual USD sitting in the connected portfolio.
+                self.cash = min(real_cash, allocation_usd)
+                logger.warning(
+                    "MomentumEngine in LIVE mode: reconciled cash=$%.2f "
+                    "(coinbase=$%.2f, alloc=$%.2f)",
+                    self.cash, real_cash, allocation_usd,
+                )
+            except Exception:
+                # If reconcile fails (network, auth glitch), fall back to alloc.
+                # The first order will then fail at the Coinbase API call rather
+                # than silently mis-tracking — safer to start known-clean.
+                logger.exception("LIVE reconcile failed; starting at allocation_usd")
+                self.cash = allocation_usd
+        else:
+            self.cash = allocation_usd
         self.fee_rate = fee_rate
         self.holdings: dict[str, MomentumHolding] = {}
         self.pairs: list[str] = list(pairs) if pairs else list(DEFAULT_PAIRS)
@@ -1496,14 +1524,52 @@ class MomentumEngine:
         return None
 
     def _buy(self, pair: str, amount_usd: float, timestamp: datetime, reason: str) -> Trade | None:
-        """Buy a coin with given USD amount. Sets ATR-calibrated stop at entry."""
+        """Buy a coin with given USD amount. Sets ATR-calibrated stop at entry.
+
+        Paper mode: simulates fill at current candle close.
+        Live mode (self.executor != None): submits a real Coinbase market buy,
+        waits for fill, uses ACTUAL fill price + size + fee — never the
+        candle-close estimate. Records to live_orders / live_trades /
+        live_positions so the live dashboard can reconcile back to truth."""
         if amount_usd > self.cash or amount_usd < 1:
             return None
 
-        price = self._closes[pair][-1]
-        fee = amount_usd * self.fee_rate
-        crypto_amount = (amount_usd - fee) / price
-        self.cash -= amount_usd
+        if self.executor is not None:
+            # LIVE: real Coinbase order
+            order = self.executor.submit_market_buy(
+                pair, quote_size_usd=amount_usd,
+                intent="entry", strategy="momentum_rotation",
+            )
+            if not order.ok:
+                logger.warning("LIVE buy rejected for %s: %s (%s)",
+                               pair, order.reason, order.detail or "")
+                return None
+            fill = self.executor.wait_for_fill(order.coinbase_order_id, timeout_sec=25)
+            if not fill["filled"]:
+                logger.error("LIVE buy NOT FILLED in 25s for %s — status=%s err=%s. "
+                             "No holding recorded; bot will continue without position.",
+                             pair, fill["status"], fill.get("error"))
+                return None
+            price = fill["avg_price"]
+            crypto_amount = fill["filled_size"]
+            fee = fill["fee_usd"]
+            notional = fill["notional_usd"]
+            self.cash -= (notional + fee)
+            self._record_live_trade(
+                local_order_id=order.local_order_id,
+                coinbase_order_id=order.coinbase_order_id,
+                pair=pair, side="buy", fill_price=price,
+                fill_size=crypto_amount, fee_usd=fee, notional_usd=notional,
+                timestamp=timestamp, intent="entry", strategy="momentum_rotation",
+            )
+            logger.warning("LIVE buy filled: %s %.8f @ $%.4f (notional $%.2f, fee $%.4f)",
+                           pair, crypto_amount, price, notional, fee)
+        else:
+            # PAPER: simulate from candle close
+            price = self._closes[pair][-1]
+            fee = amount_usd * self.fee_rate
+            crypto_amount = (amount_usd - fee) / price
+            self.cash -= amount_usd
 
         # Calculate ATR-calibrated stop: adapts to each coin's volatility
         _atr_stop_mult = self.config.get("exits", {}).get("atr_stop_mult", ATR_STOP_MULT)
@@ -1526,10 +1592,18 @@ class MomentumEngine:
             atr_stop_price=stop_price, trail_stop_price=0.0,
         )
 
+        # In live mode, also record the open position for restart recovery
+        if self.executor is not None:
+            self._record_live_position(
+                pair=pair, entry_ts=timestamp, entry_price=price,
+                entry_notional_usd=crypto_amount * price, amount=crypto_amount,
+                fees_paid_usd=fee, stop_price=stop_price,
+            )
+
         trade = Trade(
             timestamp=timestamp, pair=pair, side="buy", price=price,
-            amount=crypto_amount, cost_usd=amount_usd, fee=fee,
-            strategy="momentum_rotation", reason=reason,
+            amount=crypto_amount, cost_usd=amount_usd if self.executor is None else (crypto_amount * price),
+            fee=fee, strategy="momentum_rotation", reason=reason,
         )
         self.trades.append(trade)
         self.trade_count += 1
@@ -1574,18 +1648,58 @@ class MomentumEngine:
             logger.warning("loss_lockouts: failed to save (%s)", e)
 
     def _sell(self, pair: str, timestamp: datetime, reason: str) -> Trade | None:
-        """Sell all holdings of a coin. Tracks pair for lockout."""
+        """Sell all holdings of a coin. Tracks pair for lockout.
+
+        Paper mode: simulates sell at current candle close.
+        Live mode (self.executor != None): submits a real Coinbase market
+        sell for the entire held amount, waits for fill, uses ACTUAL
+        fill price + proceeds + fees. If the live sell rejects or
+        doesn't fill in time, the holding STAYS — we don't pretend to
+        have sold something that's still on the exchange. The next tick
+        will retry."""
         holding = self.holdings.get(pair)
         if not holding:
             return None
 
-        price = self._closes[pair][-1]
         closes = self._closes.get(pair, [])
         highs = self._highs.get(pair, [])
         lows = self._lows.get(pair, [])
-        gross_usd = holding.shares * price
-        fee = gross_usd * self.fee_rate
-        net_usd = gross_usd - fee
+
+        if self.executor is not None:
+            # LIVE: submit market sell for the exact amount held
+            order = self.executor.submit_market_sell(
+                pair, base_size=holding.shares,
+                intent="exit", strategy="momentum_rotation",
+            )
+            if not order.ok:
+                logger.error("LIVE sell rejected for %s: %s — POSITION STILL HELD",
+                             pair, order.reason)
+                return None
+            fill = self.executor.wait_for_fill(order.coinbase_order_id, timeout_sec=25)
+            if not fill["filled"]:
+                logger.error("LIVE sell NOT FILLED in 25s for %s — POSITION STILL HELD "
+                             "(status=%s). Will retry on next tick.",
+                             pair, fill["status"])
+                return None
+            price = fill["avg_price"]
+            gross_usd = fill["notional_usd"]
+            fee = fill["fee_usd"]
+            net_usd = gross_usd - fee
+            logger.warning("LIVE sell filled: %s %.8f @ $%.4f (proceeds $%.2f, fee $%.4f, net $%.2f)",
+                           pair, holding.shares, price, gross_usd, fee, net_usd)
+            self._record_live_trade(
+                local_order_id=order.local_order_id,
+                coinbase_order_id=order.coinbase_order_id,
+                pair=pair, side="sell", fill_price=price,
+                fill_size=fill["filled_size"], fee_usd=fee, notional_usd=gross_usd,
+                timestamp=timestamp, intent="exit", strategy="momentum_rotation",
+            )
+        else:
+            # PAPER: simulate from candle close
+            price = self._closes[pair][-1]
+            gross_usd = holding.shares * price
+            fee = gross_usd * self.fee_rate
+            net_usd = gross_usd - fee
 
         # Capture exit snapshot before we delete the holding
         pnl_pct = (price - holding.entry_price) / holding.entry_price * 100 if holding.entry_price > 0 else 0
@@ -1661,6 +1775,11 @@ class MomentumEngine:
 
         self.cash += net_usd
 
+        # In live mode, close out the live_positions row so the dashboard +
+        # restart-recovery code see a clean exit. Paper mode skips this.
+        if self.executor is not None:
+            self._close_live_position(pair, exit_ts=timestamp, exit_price=price)
+
         del self.holdings[pair]
 
         trade = Trade(
@@ -1671,6 +1790,70 @@ class MomentumEngine:
         self.trades.append(trade)
         self.trade_count += 1
         return trade
+
+    # ------------------------------------------------------------------
+    # LIVE persistence helpers
+    # ------------------------------------------------------------------
+    # These write to the live_* tables defined in engine/live_schema.py.
+    # In paper mode they are never called.
+
+    def _live_db(self) -> str:
+        return self.live_db_path or "data/candles.db"
+
+    def _record_live_trade(self, *, local_order_id, coinbase_order_id, pair, side,
+                           fill_price, fill_size, fee_usd, notional_usd,
+                           timestamp, intent, strategy) -> None:
+        """Insert a row in live_trades after a confirmed fill."""
+        import sqlite3
+        now = datetime.utcnow().isoformat()
+        try:
+            with sqlite3.connect(self._live_db(), timeout=10) as conn:
+                conn.execute(
+                    "INSERT INTO live_trades ("
+                    "  order_local_id, client_order_id, coinbase_order_id,"
+                    "  coinbase_trade_id, ts, pair, side, fill_price, fill_size,"
+                    "  fee_usd, notional_usd, intent, strategy, created_at"
+                    ") VALUES (?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (local_order_id, coinbase_order_id,
+                     timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp),
+                     pair, side, fill_price, fill_size, fee_usd, notional_usd,
+                     intent, strategy, now),
+                )
+        except Exception:
+            logger.exception("failed to record live_trade (non-fatal)")
+
+    def _record_live_position(self, *, pair, entry_ts, entry_price,
+                              entry_notional_usd, amount, fees_paid_usd,
+                              stop_price=None, signal_source_id=None) -> None:
+        """Upsert a row into live_positions on entry."""
+        import sqlite3
+        now = datetime.utcnow().isoformat()
+        ts = entry_ts.isoformat() if hasattr(entry_ts, 'isoformat') else str(entry_ts)
+        try:
+            with sqlite3.connect(self._live_db(), timeout=10) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO live_positions ("
+                    "  pair, entry_ts, entry_price, entry_notional_usd, amount,"
+                    "  fees_paid_usd, stop_price, trail_high, hard_close_ts,"
+                    "  strategy, signal_source_id, created_at, updated_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
+                    (pair, ts, entry_price, entry_notional_usd, amount,
+                     fees_paid_usd, stop_price, entry_price,
+                     "momentum_rotation", signal_source_id, now, now),
+                )
+        except Exception:
+            logger.exception("failed to record live_position (non-fatal)")
+
+    def _close_live_position(self, pair: str, *, exit_ts, exit_price) -> None:
+        """Remove the open live_positions row after a confirmed exit. The
+        full exit accounting (PnL, fees, peak) lives in live_trades — this
+        table is just 'what's currently open'."""
+        import sqlite3
+        try:
+            with sqlite3.connect(self._live_db(), timeout=10) as conn:
+                conn.execute("DELETE FROM live_positions WHERE pair = ?", (pair,))
+        except Exception:
+            logger.exception("failed to close live_position (non-fatal)")
 
     def _exit_all(self, timestamp: datetime, reason: str) -> list[Trade]:
         """Sell all holdings and go to cash."""

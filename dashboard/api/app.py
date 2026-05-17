@@ -2194,9 +2194,87 @@ def api_momentum_wall_aware_toggle():
 
 @app.route("/api/momentum/status")
 def api_momentum_status():
-    """Full status of the momentum rotation engine."""
+    """Full status of the momentum rotation engine.
+
+    When LIVE_TRADING_ENABLED is set, reads from the live_* tables instead
+    of momentum_* tables. The response includes a `live: True/False` flag
+    so the dashboard can render the LIVE pill + show real-money balance."""
+    live_mode = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("true", "1", "yes")
     conn = get_db()
 
+    if live_mode:
+        # In live mode the dashboard reads from live_equity. live_equity
+        # has a different schema (cash_usd / total_equity_usd) — map it
+        # to the same shape the rest of this function expects.
+        try:
+            row = conn.execute(
+                "SELECT ts, cash_usd, positions_value_usd, total_equity_usd, "
+                "  realized_pnl_usd, unrealized_pnl_usd, open_positions, paused, pause_reason "
+                "FROM live_equity ORDER BY ts DESC LIMIT 1"
+            ).fetchone()
+        except Exception:
+            row = None
+        live_alloc = float(os.environ.get("LIVE_MAX_EXPOSURE_USD", 300.0))
+        starting_balance = live_alloc
+        if row is None:
+            conn.close()
+            return jsonify({
+                "live": True, "enabled": True, "status": "starting",
+                "equity": starting_balance, "cash": starting_balance,
+                "positions_value": 0, "pnl": 0, "pnl_pct": 0,
+                "starting_balance": starting_balance,
+                "trade_count": 0, "holdings": [], "paused": False,
+                "message": "Live trading enabled — no fills yet",
+            })
+        cash = row["cash_usd"] or 0.0
+        positions_value = row["positions_value_usd"] or 0.0
+        equity = row["total_equity_usd"] or (cash + positions_value)
+        pnl = equity - starting_balance
+        pnl_pct = (pnl / starting_balance * 100) if starting_balance > 0 else 0
+        # Live positions
+        holdings = []
+        try:
+            for r in conn.execute(
+                "SELECT pair, entry_price, amount, entry_notional_usd, "
+                "  fees_paid_usd, stop_price, trail_high "
+                "FROM live_positions"
+            ):
+                holdings.append({
+                    "pair": r["pair"],
+                    "entry_price": r["entry_price"],
+                    "amount": r["amount"],
+                    "entry_notional_usd": r["entry_notional_usd"],
+                    "fees_paid_usd": r["fees_paid_usd"],
+                    "stop_price": r["stop_price"],
+                    "trail_high": r["trail_high"],
+                })
+        except Exception:
+            pass
+        trade_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM live_trades"
+        ).fetchone()["cnt"]
+        # Daily loss budget — sum sells today vs cap
+        daily_cap = float(os.environ.get("LIVE_DAILY_LOSS_CAP_USD", 30.0))
+        conn.close()
+        return jsonify({
+            "live": True,
+            "enabled": True,
+            "status": "paused" if row["paused"] else "active",
+            "equity": round(equity, 2),
+            "cash": round(cash, 2),
+            "positions_value": round(positions_value, 2),
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "starting_balance": starting_balance,
+            "trade_count": trade_count,
+            "holdings": holdings,
+            "paused": bool(row["paused"]),
+            "pause_reason": row["pause_reason"],
+            "daily_loss_cap": daily_cap,
+            "ts": row["ts"],
+        })
+
+    # PAPER MODE (original behaviour)
     # Latest equity snapshot
     try:
         eq_row = conn.execute(
@@ -2204,7 +2282,7 @@ def api_momentum_status():
         ).fetchone()
     except Exception:
         conn.close()
-        return jsonify({"error": "Momentum engine not active", "enabled": False})
+        return jsonify({"error": "Momentum engine not active", "enabled": False, "live": False})
 
     # Starting balance from config
     starting_balance = 3000.0
@@ -2334,11 +2412,38 @@ def api_momentum_status():
 
 @app.route("/api/momentum/equity")
 def api_momentum_equity():
-    """Equity history for the momentum engine."""
+    """Equity history for the momentum engine.
+
+    When LIVE_TRADING_ENABLED, returns live_equity rows instead of momentum_equity."""
+    live_mode = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("true", "1", "yes")
     hours = int(request.args.get("hours", 72))
     start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
-
     conn = get_db()
+
+    if live_mode:
+        try:
+            rows = conn.execute(
+                "SELECT ts, total_equity_usd, cash_usd, positions_value_usd, "
+                "  CASE WHEN paused THEN 'paused' ELSE 'active' END as status "
+                "FROM live_equity WHERE ts >= ? ORDER BY ts ASC",
+                (start,),
+            ).fetchall()
+        except Exception:
+            conn.close()
+            return jsonify([])
+        conn.close()
+        return jsonify([
+            {
+                "time": r["ts"],
+                "equity": r["total_equity_usd"],
+                "cash": r["cash_usd"],
+                "positions_value": r["positions_value_usd"],
+                "status": r["status"],
+            }
+            for r in rows
+        ])
+
+    # PAPER mode
     try:
         rows = conn.execute(
             """SELECT timestamp, equity, cash, positions_value, status
@@ -2365,10 +2470,63 @@ def api_momentum_equity():
 
 @app.route("/api/momentum/trades")
 def api_momentum_trades():
-    """Recent momentum rotation trades with P&L computed for sells."""
-    limit = int(request.args.get("limit", 50))
+    """Recent momentum rotation trades with P&L computed for sells.
 
+    LIVE mode: returns live_trades rows. The buy/sell P&L matching below is
+    paper-only; live fills already carry their actual fees and we do a simpler
+    match (each sell paired with the most recent buy on the same pair)."""
+    live_mode = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("true", "1", "yes")
+    limit = int(request.args.get("limit", 50))
     conn = get_db()
+
+    if live_mode:
+        try:
+            rows = conn.execute(
+                "SELECT id, ts, pair, side, fill_price, fill_size, notional_usd, "
+                "  fee_usd, intent FROM live_trades ORDER BY id ASC"
+            ).fetchall()
+        except Exception:
+            conn.close()
+            return jsonify([])
+        # Simple FIFO match for live: each sell uses the most recent buy on that pair
+        last_buy_by_pair = {}  # pair -> {entry_price, entry_notional, entry_fee}
+        results = []
+        for r in rows:
+            d = dict(r)
+            rec = {
+                "id": d["id"],
+                "timestamp": d["ts"],
+                "pair": d["pair"],
+                "side": d["side"],
+                "price": d["fill_price"],
+                "amount": d["fill_size"],
+                "cost_usd": d["notional_usd"],
+                "fee": d["fee_usd"],
+                "reason": d["intent"],
+                "entry_price": None, "net_pnl": None, "buy_fee": None,
+            }
+            if d["side"] == "buy":
+                last_buy_by_pair[d["pair"]] = {
+                    "entry_price": d["fill_price"],
+                    "entry_notional": d["notional_usd"],
+                    "entry_fee": d["fee_usd"],
+                }
+            elif d["side"] == "sell":
+                buy = last_buy_by_pair.pop(d["pair"], None)
+                if buy:
+                    rec["entry_price"] = buy["entry_price"]
+                    rec["buy_fee"] = buy["entry_fee"]
+                    # Net P&L = sell_notional - sell_fee - buy_notional - buy_fee
+                    rec["net_pnl"] = round(
+                        d["notional_usd"] - d["fee_usd"]
+                        - buy["entry_notional"] - buy["entry_fee"], 4,
+                    )
+            results.append(rec)
+        conn.close()
+        # Return most-recent first, limit applied
+        return jsonify(list(reversed(results[-limit:])))
+
+    # PAPER mode (original)
     try:
         # Get all trades to compute P&L (need full history for matching)
         all_rows = conn.execute(

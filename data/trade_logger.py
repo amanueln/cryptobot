@@ -617,6 +617,31 @@ class TradeLogger:
         finally:
             conn.close()
 
+    def log_live_equity(self, timestamp: datetime, cash: float, positions_value: float,
+                        realized_pnl: float, unrealized_pnl: float,
+                        open_positions: int, paused: bool = False,
+                        pause_reason: str | None = None) -> None:
+        """Periodic snapshot for the LIVE-mode dashboard.
+
+        Writes to live_equity (separate from paper momentum_equity). The
+        primary key is `ts`, so two calls in the same wall-clock second
+        will collide — use INSERT OR REPLACE to keep the latest value."""
+        total_equity = cash + positions_value
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO live_equity "
+                "(ts, cash_usd, positions_value_usd, total_equity_usd, "
+                " realized_pnl_usd, unrealized_pnl_usd, open_positions, paused, pause_reason) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (timestamp.isoformat(), cash, positions_value, total_equity,
+                 realized_pnl, unrealized_pnl, open_positions,
+                 1 if paused else 0, pause_reason),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
     def backfill_gate_outcomes(self) -> int:
         """Fill in follow-up prices for gate log entries that are old enough.
 

@@ -27,6 +27,12 @@ Chart.register(...registerables, zoomPlugin);
       <div class="engine-tab">
         <span class="engine-dot" [class.active]="isHolding()" [class.idle]="!isHolding() && isRunning()" [class.inactive]="!isRunning()"></span>
         <span class="engine-name">Momentum Rotation</span>
+        <!-- LIVE pill (real Coinbase money) — only visible when LIVE_TRADING_ENABLED on Zima -->
+        <span *ngIf="status()?.live" class="live-pill"
+              [class.paused]="status()?.paused"
+              [title]="status()?.paused ? ('PAUSED — ' + (status()?.pause_reason || 'kill switch tripped')) : 'Real money — orders go to Coinbase'">
+          {{ status()?.paused ? '🟡 PAUSED' : '🔴 LIVE' }}
+        </span>
         <span class="engine-tag" [class.holding]="isHolding()" [class.idle]="!isHolding() && isRunning()" [class.inactive]="!isRunning()">
           {{ engineTagText() }}
         </span>
@@ -745,6 +751,26 @@ Chart.register(...registerables, zoomPlugin);
     .engine-tag.holding { background: rgba(74,222,128,0.12); color: #4ade80; }
     .engine-tag.idle { background: rgba(251,191,36,0.1); color: #fbbf24; }
     .engine-tag.inactive { background: rgba(100,116,139,0.12); color: #64748b; }
+    /* LIVE pill — only shown when LIVE_TRADING_ENABLED on the server. Red
+       background to be visually distinct from paper mode at a glance. */
+    .live-pill {
+      font-size: 10px; font-weight: 800; letter-spacing: 0.10em;
+      padding: 3px 10px; border-radius: 4px; text-transform: uppercase;
+      background: rgba(248,113,113,0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(248,113,113,0.45);
+      animation: live-pulse 2s ease-in-out infinite;
+    }
+    .live-pill.paused {
+      background: rgba(251,191,36,0.18);
+      color: #fde68a;
+      border-color: rgba(251,191,36,0.55);
+      animation: none;
+    }
+    @keyframes live-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.45); }
+      50%      { box-shadow: 0 0 0 4px rgba(248,113,113,0); }
+    }
     .engine-alloc {
       margin-left: auto; font-size: 10px; color: #6b7280;
       font-family: 'JetBrains Mono', monospace;

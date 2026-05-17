@@ -867,10 +867,31 @@ class SimRunner:
         except Exception:
             logger.exception("donchian_shadow logging failed (non-fatal)")
 
-        # Snapshot momentum equity
+        # Snapshot momentum equity (paper) OR live equity (LIVE mode).
+        # We write the appropriate table based on whether the engine has
+        # an executor; the dashboard reads the matching table via the same
+        # LIVE_TRADING_ENABLED env-var check.
         now = datetime.utcnow()
         mom = self.momentum_engine
         holdings_json = json.dumps(mom.get_holdings_info())
+        if getattr(mom, "executor", None) is not None:
+            # LIVE mode: also write paper snapshot so paper history doesn't
+            # have gaps, but the dashboard reads live_equity in this mode.
+            try:
+                positions_value = mom.get_positions_value()
+                # Realized = total trade PnL since start (simple: trades count
+                # * fee_rate isn't right; better to compute from live_trades
+                # later). For now leave 0 and compute in a follow-up.
+                self.trade_logger.log_live_equity(
+                    now, mom.cash, positions_value,
+                    realized_pnl=0.0,
+                    unrealized_pnl=positions_value - sum(
+                        h.shares * h.entry_price for h in mom.holdings.values()
+                    ),
+                    open_positions=len(mom.holdings),
+                )
+            except Exception:
+                logger.exception("live equity snapshot failed (non-fatal)")
         self.trade_logger.log_momentum_equity(
             now, mom.get_equity(), mom.cash, mom.get_positions_value(),
             mom.status, holdings_json
@@ -2219,12 +2240,40 @@ def build_runner(poll_seconds: int = 60, warmup_days: int = 30, use_ml: bool = F
             _engine_config.update(_profile_values)
             # Create scanner first — it will find the best pairs
             runner.momentum_scanner = MomentumScanner(runner.client, runner.candle_store)
+
+            # LIVE mode: build a CoinbaseExecutor and inject it into the engine.
+            # The executor itself enforces LIVE_TRADING_ENABLED before any order
+            # — we always build it so we can READ Coinbase state (reconcile,
+            # balance display) without trading. Orders are blocked at the
+            # executor's gate when the env var is unset.
+            live_executor = None
+            live_db_path_for_engine = None
+            try:
+                if os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("true", "1", "yes"):
+                    from engine.coinbase_executor import CoinbaseExecutor
+                    live_executor = CoinbaseExecutor(db_path="data/candles.db")
+                    live_db_path_for_engine = "data/candles.db"
+                    # Reduce the engine's allocation to the live position size
+                    # so reconcile + cash math match the smaller live capital.
+                    live_alloc = float(os.environ.get("LIVE_MAX_EXPOSURE_USD", 300.0))
+                    if live_alloc < mom_alloc:
+                        logger.warning(
+                            "LIVE_TRADING_ENABLED: reducing momentum allocation from "
+                            "$%.0f (paper) to $%.0f (live)", mom_alloc, live_alloc,
+                        )
+                        mom_alloc = live_alloc
+            except Exception:
+                logger.exception("CoinbaseExecutor init failed; momentum will run in paper mode")
+                live_executor = None
+
             runner.momentum_engine = MomentumEngine(
                 allocation_usd=mom_alloc,
                 fee_rate=taker_fee,
                 wall_aware_config=wall_aware_config,
                 entry_pause_config=entry_pause_config,
                 config=_engine_config,
+                executor=live_executor,
+                live_db_path=live_db_path_for_engine,
                 # pairs will be set by scanner during warmup
             )
             # Give engine access to the live L2 book for wall-aware trail.

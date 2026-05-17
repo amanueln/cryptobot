@@ -340,6 +340,14 @@ export interface MomentumStatusData {
   loss_lockouts?: Record<string, string>;
   wall_aware?: WallAwareState;
   error?: string;
+  // LIVE-mode fields: present when the bot is connected to Coinbase Advanced
+  // Trade (LIVE_TRADING_ENABLED env var on Zima). Absent or false otherwise.
+  live?: boolean;
+  paused?: boolean;
+  pause_reason?: string | null;
+  daily_loss_cap?: number;
+  ts?: string;
+  message?: string;
 }
 
 export interface MomentumHoldingData {
