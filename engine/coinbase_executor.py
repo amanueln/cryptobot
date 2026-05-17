@@ -342,14 +342,24 @@ class CoinbaseExecutor:
 
     def _post_submit_handle(self, local_id, client_order_id, pair, side,
                             intent, strategy, resp) -> OrderResult:
-        """Update live_orders + write to live_trades if we have fill info."""
-        # Successful immediate response shape (SDK returns a dict-like):
-        # { 'success': True, 'order_id': '...', 'success_response': {...} }
-        # On failure: { 'success': False, 'error_response': {...}, 'failure_reason': '...' }
+        """Update live_orders + write to live_trades if we have fill info.
+
+        SDK response shape (real, verified via smoke test):
+          success: { 'success': True, 'success_response': {'order_id': '...', ...}, 'order_configuration': {...} }
+          failure: { 'success': False, 'error_response': {...}, 'failure_reason': '...' }
+
+        We were previously reading top-level 'order_id' which doesn't exist on
+        the live response — the order_id is nested under 'success_response'.
+        Read both locations for forward-compat across SDK versions.
+        """
         success = _attr(resp, "success")
-        coinbase_id = _attr(resp, "order_id")
+        # Prefer nested success_response.order_id (current shape); fall back to top-level.
+        success_resp = _attr(resp, "success_response") or {}
+        coinbase_id = _attr(success_resp, "order_id") or _attr(resp, "order_id")
         if not success:
-            err = _attr(resp, "error_response") or _attr(resp, "failure_reason") or "unknown_failure"
+            err_resp = _attr(resp, "error_response") or {}
+            err = (_attr(err_resp, "error_details") or _attr(err_resp, "message")
+                   or _attr(resp, "failure_reason") or "unknown_failure")
             with sqlite3.connect(self.db_path, timeout=10) as conn:
                 conn.execute(
                     "UPDATE live_orders SET coinbase_order_id=?, result_status=?, result_message=? WHERE id=?",
@@ -357,7 +367,7 @@ class CoinbaseExecutor:
                 )
             return OrderResult(ok=False, reason="rejected", detail=str(err)[:200],
                                local_order_id=local_id, coinbase_order_id=coinbase_id)
-        # Mark accepted; fill details come from a separate poll
+        # Mark accepted; fill details come from a separate poll via wait_for_fill().
         with sqlite3.connect(self.db_path, timeout=10) as conn:
             conn.execute(
                 "UPDATE live_orders SET coinbase_order_id=?, result_status=? WHERE id=?",
@@ -365,6 +375,63 @@ class CoinbaseExecutor:
             )
         return OrderResult(ok=True, reason="submitted",
                            local_order_id=local_id, coinbase_order_id=coinbase_id)
+
+    # ------------------------------------------------------------------
+    # Fill polling
+    # ------------------------------------------------------------------
+
+    def wait_for_fill(
+        self, coinbase_order_id: str, *,
+        timeout_sec: int = 20, poll_interval_sec: float = 1.0,
+    ) -> dict:
+        """Poll Coinbase for a fill. Returns a dict with:
+            {
+              'filled': bool,             # True if status in FILLED/CANCELLED/EXPIRED
+              'status': str,              # raw Coinbase status string
+              'filled_size': float,       # crypto amount filled
+              'avg_price': float,         # weighted-avg fill price
+              'fee_usd': float,           # total fees paid in USD
+              'notional_usd': float,      # avg_price * filled_size
+            }
+        Times out after `timeout_sec` and returns whatever state we last saw.
+        Never raises — errors are recorded in the dict under 'error'."""
+        out = {
+            "filled": False, "status": "unknown",
+            "filled_size": 0.0, "avg_price": 0.0,
+            "fee_usd": 0.0, "notional_usd": 0.0,
+            "error": None,
+        }
+        if not coinbase_order_id:
+            out["error"] = "no_coinbase_order_id"
+            return out
+        client = self._get_client()
+        deadline = time.time() + timeout_sec
+        last_resp = None
+        while time.time() < deadline:
+            try:
+                resp = client.get_order(order_id=coinbase_order_id)
+                last_resp = resp
+                order = _attr(resp, "order") or resp  # SDK varies
+                status = str(_attr(order, "status") or "").upper()
+                filled_size = float(_attr(order, "filled_size") or 0)
+                avg_price = float(_attr(order, "average_filled_price") or 0)
+                fee = float(_attr(order, "total_fees") or 0)
+                out.update({
+                    "status": status,
+                    "filled_size": filled_size,
+                    "avg_price": avg_price,
+                    "fee_usd": fee,
+                    "notional_usd": avg_price * filled_size,
+                })
+                if status in ("FILLED", "CANCELLED", "EXPIRED", "FAILED"):
+                    out["filled"] = (status == "FILLED")
+                    return out
+            except Exception as e:
+                out["error"] = f"{type(e).__name__}: {e}"
+            time.sleep(poll_interval_sec)
+        # Timed out — return the last-known partial state if any
+        out["status"] = out.get("status", "timeout")
+        return out
 
     def _record_order_error(self, local_id, exc) -> OrderResult:
         msg = f"{type(exc).__name__}: {exc}"[:500]

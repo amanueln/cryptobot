@@ -252,3 +252,101 @@ def test_check_can_place_order_combines_all_gates(db_path, fake_client, monkeypa
     ok, why = ex.check_can_place_order("DOGE-USD", 5.0)
     assert ok is False
     assert "blocked_pair_not_allowlisted" in why
+
+
+# --- order_id parsing (regression — smoke test caught this missing) ---
+
+def test_buy_captures_coinbase_order_id_from_nested_success_response(db_path, fake_client):
+    """Live SDK response nests order_id under success_response, not top-level.
+    Our code must read both for forward-compat."""
+    fake_client.market_order_buy.return_value = {
+        "success": True,
+        "success_response": {
+            "order_id": "abcd-1234",
+            "client_order_id": "bot-xyz",
+            "product_id": "BTC-USD",
+        },
+        "order_configuration": {},
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    r = ex.submit_market_buy("BTC-USD", quote_size_usd=2.0)
+    assert r.ok is True
+    assert r.coinbase_order_id == "abcd-1234"
+    with sqlite3.connect(db_path) as conn:
+        cb_id = conn.execute(
+            "SELECT coinbase_order_id FROM live_orders ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+    assert cb_id == "abcd-1234"
+
+
+def test_buy_captures_coinbase_order_id_from_top_level_fallback(db_path, fake_client):
+    """Older SDK versions may put order_id at the top level. Don't lose it."""
+    fake_client.market_order_buy.return_value = {
+        "success": True,
+        "order_id": "old-shape-id",
+        "success_response": {},
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    r = ex.submit_market_buy("BTC-USD", quote_size_usd=2.0)
+    assert r.coinbase_order_id == "old-shape-id"
+
+
+def test_buy_rejected_with_nested_error_response(db_path, fake_client):
+    """Failure shape: 'error_response' has 'error_details' or 'message'."""
+    fake_client.market_order_buy.return_value = {
+        "success": False,
+        "error_response": {"error_details": "PREVIEW_INSUFFICIENT_FUNDS"},
+        "failure_reason": "INSUFFICIENT_FUNDS",
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    r = ex.submit_market_buy("BTC-USD", quote_size_usd=2.0)
+    assert r.ok is False
+    assert "PREVIEW_INSUFFICIENT_FUNDS" in r.detail
+
+
+# --- wait_for_fill ---
+
+def test_wait_for_fill_returns_filled_state(db_path, fake_client):
+    fake_client.get_order.return_value = {
+        "order": {
+            "status": "FILLED",
+            "filled_size": "0.00002524",
+            "average_filled_price": "78029.64",
+            "total_fees": "0.0236",
+        }
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    out = ex.wait_for_fill("some-order-id", timeout_sec=1, poll_interval_sec=0.01)
+    assert out["filled"] is True
+    assert out["status"] == "FILLED"
+    assert out["filled_size"] == pytest.approx(0.00002524)
+    assert out["avg_price"] == pytest.approx(78029.64)
+    assert out["fee_usd"] == pytest.approx(0.0236)
+    assert out["notional_usd"] == pytest.approx(0.00002524 * 78029.64)
+
+
+def test_wait_for_fill_handles_cancelled(db_path, fake_client):
+    fake_client.get_order.return_value = {
+        "order": {"status": "CANCELLED", "filled_size": "0", "average_filled_price": "0", "total_fees": "0"}
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    out = ex.wait_for_fill("x", timeout_sec=1, poll_interval_sec=0.01)
+    assert out["filled"] is False
+    assert out["status"] == "CANCELLED"
+
+
+def test_wait_for_fill_times_out_when_still_pending(db_path, fake_client):
+    fake_client.get_order.return_value = {
+        "order": {"status": "PENDING", "filled_size": "0", "average_filled_price": "0", "total_fees": "0"}
+    }
+    ex = _enabled_executor(db_path, fake_client)
+    out = ex.wait_for_fill("x", timeout_sec=0.5, poll_interval_sec=0.1)
+    assert out["filled"] is False
+    assert out["status"] == "PENDING"
+
+
+def test_wait_for_fill_returns_error_when_no_order_id(db_path, fake_client):
+    ex = _enabled_executor(db_path, fake_client)
+    out = ex.wait_for_fill("", timeout_sec=1)
+    assert out["filled"] is False
+    assert "no_coinbase_order_id" in (out["error"] or "")
