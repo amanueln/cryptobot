@@ -224,6 +224,23 @@ class CoinbaseExecutor:
             return OrderResult(ok=False, reason=f"blocked_{product_why.split(':')[0]}",
                                detail=product_why, local_order_id=local_id)
 
+        # PRE-FLIGHT 3: dry-run via Coinbase preview_order. Catches edge cases
+        # the local pre-flights can't see — precision rounding, post-only on
+        # crossing markets, momentary halts, exact-fee math. If preview errs,
+        # the real submit would fail too (and cost us a wasted round-trip
+        # of network + bookkeeping). Errs list is the gate; non-empty = block.
+        preview = self.preview_market_buy(pair, notional)
+        if not preview.get("ok"):
+            why = f"preview_rejected: {','.join(preview.get('errs', []))[:200]}"
+            local_id = self._record_order(
+                client_order_id=None, pair=pair, side="buy", order_type="market",
+                quote_size=notional, base_size=None, limit_price=None,
+                intent=intent, strategy=strategy, signal_source_id=signal_source_id,
+                result_status="rejected", result_message=why,
+            )
+            return OrderResult(ok=False, reason="blocked_preview_failed",
+                               detail=why, local_order_id=local_id)
+
         client_order_id = self._new_client_order_id()
         local_id = self._record_order(
             client_order_id=client_order_id, pair=pair, side="buy", order_type="market",
@@ -392,6 +409,61 @@ class CoinbaseExecutor:
             return info
         except Exception as e:
             return {"pair": pair, "error": f"{type(e).__name__}: {e}"}
+
+    def preview_market_buy(self, pair: str, quote_usd: float) -> dict:
+        """Dry-run a market buy WITHOUT submitting. Coinbase tells us what
+        would happen — projected fill price, fee, slippage, AND any errors
+        that would block submission.
+
+        Endpoint: POST /api/v3/brokerage/orders/preview
+        (SDK: RESTClient.preview_market_order_buy).
+
+        Returns a dict:
+          ok                  — True iff errs is empty (safe to submit)
+          errs                — list of preview-rejection codes
+                                (PREVIEW_INSUFFICIENT_FUND/S, PREVIEW_INVALID_PRODUCT_ID,
+                                 PREVIEW_INVALID_ORDER_CONFIG — catch-all for halts/
+                                 precision/min-size, etc.)
+          warnings            — non-fatal warnings (BIG_ORDER, SMALL_ORDER)
+          projected_fill_price (str) — Coinbase's estimate
+          projected_base_size (str)
+          projected_fee_usd   (str) — commission_total
+          slippage            (str) — vs best bid/ask
+          best_bid, best_ask  (str)
+
+        Docs inconsistency: Coinbase docs spell it both PREVIEW_INSUFFICIENT_FUND
+        and PREVIEW_INSUFFICIENT_FUNDS. We test for the substring 'INSUFFICIENT'
+        to be safe."""
+        try:
+            client = self._get_client()
+            resp = client.preview_market_order_buy(
+                product_id=pair,
+                quote_size=f"{float(quote_usd):.2f}",
+            )
+            errs = _attr(resp, "errs") or []
+            warnings = _attr(resp, "warning") or []
+            # Normalise errs/warnings to strings (SDK may return enum-like objects)
+            err_strs = [str(e) for e in errs] if errs else []
+            warn_strs = [str(w) for w in warnings] if warnings else []
+            return {
+                "ok": len(err_strs) == 0,
+                "errs": err_strs,
+                "warnings": warn_strs,
+                "projected_quote_size": _attr(resp, "quote_size"),
+                "projected_base_size": _attr(resp, "base_size"),
+                "projected_fill_price": _attr(resp, "est_average_filled_price"),
+                "projected_fee_usd": _attr(resp, "commission_total"),
+                "slippage": _attr(resp, "slippage"),
+                "best_bid": _attr(resp, "best_bid"),
+                "best_ask": _attr(resp, "best_ask"),
+                "order_total": _attr(resp, "order_total"),
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "errs": [f"preview_failed: {type(e).__name__}: {e}"],
+                "warnings": [],
+            }
 
     def get_fee_tier_info(self, product_type: str = "SPOT") -> dict:
         """Current fee tier + 30-day volume, so the dashboard can show what

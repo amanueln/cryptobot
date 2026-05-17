@@ -62,6 +62,21 @@ def fake_client():
         "quote_increment": "0.01",
         "price": "78000.00",
     }
+    # Pre-flight 3 (preview_order) calls preview_market_order_buy. Return a
+    # clean preview by default (empty errs). Tests that want to exercise the
+    # rejection path can override .errs on the fake_client per-test.
+    client.preview_market_order_buy.return_value = {
+        "errs": [],
+        "warning": [],
+        "quote_size": "2.00",
+        "base_size": "0.00002524",
+        "est_average_filled_price": "78000.00",
+        "commission_total": "0.024",
+        "slippage": "0",
+        "best_bid": "77995.00",
+        "best_ask": "78005.00",
+        "order_total": "2.024",
+    }
     return client
 
 
