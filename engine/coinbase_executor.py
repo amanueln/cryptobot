@@ -393,6 +393,64 @@ class CoinbaseExecutor:
         except Exception as e:
             return {"pair": pair, "error": f"{type(e).__name__}: {e}"}
 
+    def get_fee_tier_info(self, product_type: str = "SPOT") -> dict:
+        """Current fee tier + 30-day volume, so the dashboard can show what
+        you're actually paying and how close you are to the next tier.
+
+        Endpoint: GET /api/v3/brokerage/transaction_summary
+        (SDK: RESTClient.get_transaction_summary — singular).
+
+        Returns:
+          {
+            "pricing_tier": str,      # e.g. "Advanced 1" or "<$10k"
+            "maker_fee_rate": float,  # decimal e.g. 0.006 = 0.6%
+            "taker_fee_rate": float,  # decimal e.g. 0.012 = 1.2%
+            "total_volume_30d": float,
+            "usd_from": float,        # current tier band start
+            "usd_to": float,          # current tier band end (= next-tier threshold)
+            "to_next_tier_usd": float, # how much more volume needed
+            "error": str (optional)   # only on failure
+          }
+
+        Inconsistency note (verified 2026-05-17): the docs schema page emphasizes
+        aop_from/aop_to (assets-on-platform) but the live response still returns
+        usd_from/usd_to (30d volume band). Use usd_* for the next-tier calc;
+        aop_* is a separate Coinbase ONE qualification axis, not 30d volume."""
+        try:
+            client = self._get_client()
+            resp = client.get_transaction_summary(product_type=product_type)
+            total_volume = float(_attr(resp, "total_volume") or 0)
+            tier_obj = _attr(resp, "fee_tier") or {}
+            pricing_tier = _attr(tier_obj, "pricing_tier") or "?"
+            try:
+                maker = float(_attr(tier_obj, "maker_fee_rate") or 0)
+            except (TypeError, ValueError):
+                maker = 0.0
+            try:
+                taker = float(_attr(tier_obj, "taker_fee_rate") or 0)
+            except (TypeError, ValueError):
+                taker = 0.0
+            try:
+                usd_from = float(_attr(tier_obj, "usd_from") or 0)
+            except (TypeError, ValueError):
+                usd_from = 0.0
+            try:
+                usd_to = float(_attr(tier_obj, "usd_to") or 0)
+            except (TypeError, ValueError):
+                usd_to = 0.0
+            to_next = max(0.0, usd_to - total_volume)
+            return {
+                "pricing_tier": pricing_tier,
+                "maker_fee_rate": maker,
+                "taker_fee_rate": taker,
+                "total_volume_30d": total_volume,
+                "usd_from": usd_from,
+                "usd_to": usd_to,
+                "to_next_tier_usd": to_next,
+            }
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
     def verify_product_tradable(self, pair: str, quote_usd: float) -> tuple[bool, str]:
         """Pre-flight: confirm the pair is currently tradable AND the order
         size meets the per-pair minimum.

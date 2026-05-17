@@ -2661,6 +2661,23 @@ def api_momentum_events():
     return jsonify([dict(row) for row in rows])
 
 
+@app.route("/api/momentum/fee_tier")
+def api_momentum_fee_tier():
+    """Current Coinbase fee tier + 30-day volume.
+
+    Surfaces what the user is ACTUALLY paying in fees and how close they
+    are to the next tier (where rates drop). Live read from Coinbase via
+    CoinbaseExecutor.get_fee_tier_info(). Available in both paper and live
+    modes — it's read-only, no orders involved."""
+    try:
+        from engine.coinbase_executor import CoinbaseExecutor
+        ex = CoinbaseExecutor(db_path=DB_PATH)
+        info = ex.get_fee_tier_info(product_type="SPOT")
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/momentum/progress")
 def api_momentum_progress():
     """Warmup/scan progress for the momentum engine."""
