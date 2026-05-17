@@ -194,6 +194,21 @@ class CoinbaseExecutor:
             )
             return OrderResult(ok=False, reason=why, local_order_id=local_id)
 
+        # PRE-FLIGHT: confirm Coinbase actually has the cash (drift detector).
+        # The bot's internal self.cash is reconciled at startup but isn't
+        # re-queried before each trade. Manual transfers, conversions, or
+        # missed-fill scenarios could leave the bot's tracking stale.
+        cash_ok, live_balance, cash_why = self.verify_sufficient_cash(notional)
+        if not cash_ok:
+            local_id = self._record_order(
+                client_order_id=None, pair=pair, side="buy", order_type="market",
+                quote_size=notional, base_size=None, limit_price=None,
+                intent=intent, strategy=strategy, signal_source_id=signal_source_id,
+                result_status="rejected", result_message=cash_why,
+            )
+            return OrderResult(ok=False, reason=f"blocked_{cash_why.split(':')[0]}",
+                               detail=cash_why, local_order_id=local_id)
+
         client_order_id = self._new_client_order_id()
         local_id = self._record_order(
             client_order_id=client_order_id, pair=pair, side="buy", order_type="market",
@@ -261,7 +276,12 @@ class CoinbaseExecutor:
     # ------------------------------------------------------------------
 
     def get_usd_cash(self) -> float:
-        """Coinbase available USD balance in the connected portfolio."""
+        """Coinbase available USD balance in the connected portfolio.
+
+        Endpoint: GET /api/v3/brokerage/accounts (SDK: client.get_accounts()).
+        Iterates accounts and returns float(available_balance.value) for the
+        USD account. USD isn't always first in the list — don't index [0].
+        """
         client = self._get_client()
         resp = client.get_accounts()
         accounts = resp.get('accounts', []) if isinstance(resp, dict) else getattr(resp, 'accounts', [])
@@ -271,6 +291,33 @@ class CoinbaseExecutor:
                 bal_obj = _attr(a, 'available_balance') or {}
                 return float(_attr(bal_obj, 'value') or 0)
         return 0.0
+
+    def verify_sufficient_cash(self, quote_usd: float,
+                                buffer_usd: float = 0.05) -> tuple[bool, float, str]:
+        """Pre-flight: confirm Coinbase actually has enough USD to cover the
+        order, before we submit. Catches drift between the bot's internal cash
+        tracking and the real exchange balance (manual transfers, conversions,
+        out-of-band activity between init reconcile and now).
+
+        Returns (ok, live_balance, reason).
+
+        Coinbase's `market_order_buy` with `quote_size=$X` consumes EXACTLY
+        $X — the fee is taken from the crypto received, not added on top.
+        So no fee buffer is needed. The $0.05 default is just floating-point
+        safety / balance-refresh latency; anything bigger is over-restrictive.
+
+        Endpoint: GET /api/v3/brokerage/accounts (same as get_usd_cash)."""
+        try:
+            live = self.get_usd_cash()
+        except Exception as e:
+            return False, 0.0, f"live_cash_check_failed: {type(e).__name__}"
+        needed = quote_usd + buffer_usd
+        if live + 1e-6 < needed:
+            return False, live, (
+                f"insufficient_live_cash: have ${live:.2f}, "
+                f"need ${needed:.2f} (order ${quote_usd:.2f} + ${buffer_usd:.2f} buffer)"
+            )
+        return True, live, ""
 
     def get_crypto_balance(self, currency: str) -> float:
         """Available balance of a single crypto (e.g. 'BTC'). Returns 0 if none."""
